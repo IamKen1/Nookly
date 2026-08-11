@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=6144&& next dev --turbopack",
-    "build": "prisma generate && next build --turbopack",
+    "build": "prisma generate && prisma generate --schema=prisma/legacy-gfp.prisma && next build --turbopack",
+    "db:generate:legacy": "prisma generate --schema=prisma/legacy-gfp.prisma",
     "start": "next start",
     "lint": "eslint",
     "db:seed": "tsx prisma/seed.ts",

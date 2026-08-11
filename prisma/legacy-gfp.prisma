@@ -1,0 +1,395 @@
+// A second, standalone Prisma schema mirroring the legacy single-tenant
+// gfp-pos database, used ONLY by the platform admin "migrate gfp-pos data"
+// tool (src/lib/gfp-migration.ts) to read from that database. This is
+// completely separate from prisma/schema.prisma (Nookly's own multi-tenant
+// schema) — different generator output, different datasource env var.
+// Regenerate with: npx prisma generate --schema=prisma/legacy-gfp.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/legacy-gfp-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("GFP_DATABASE_URL")
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  username       String          @unique
+  password       String
+  firstName      String
+  lastName       String
+  role           UserRole        @default(CASHIER)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sales          Sale[]
+  stockMovements StockMovement[]
+
+  @@map("users")
+}
+
+model Customer {
+  id               String         @id @default(cuid())
+  firstName        String
+  lastName         String
+  email            String?        @unique
+  phone            String?
+  address          String?
+  city             String?
+  state            String?
+  zipCode          String?
+  dateOfBirth      DateTime?
+  gender           Gender?
+  insuranceCarrier String?
+  insuranceId      String?
+  insuranceGroup   String?
+  allergies        String?
+  medicalNotes     String?
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  loyaltyPoints    Int            @default(0)
+  prescriptions    Prescription[]
+  sales            Sale[]
+
+  @@map("customers")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Supplier {
+  id            String            @id @default(cuid())
+  name          String            @unique
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  products      ProductSupplier[]
+
+  @@map("suppliers")
+}
+
+model ReceiptSettings {
+  id                  String   @id @default(cuid())
+  code                String   @unique @default("default")
+  storeName           String   @default("KENDALL'S PHARMACY")
+  receiptTitle        String   @default("Official Receipt")
+  addressLine1        String   @default("Complete Address Here")
+  addressLine2        String?
+  contactNumber       String?
+  tin                 String?
+  permitNumber        String?
+  accreditationNumber String?
+  serialNumberLabel   String?
+  footerMessage       String   @default("Thank you for your purchase!")
+  showVatBreakdown    Boolean  @default(true)
+  showCashierName     Boolean  @default(true)
+  showCustomerName    Boolean  @default(true)
+  includeOrderRemarks Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("receipt_settings")
+}
+
+model NotificationSettings {
+  id                             String   @id @default(cuid())
+  code                           String   @unique @default("default")
+  emailNotificationsEnabled     Boolean  @default(true)
+  saleNotificationsEnabled      Boolean  @default(true)
+  lowStockNotificationsEnabled  Boolean  @default(true)
+  outOfStockNotificationsEnabled Boolean @default(true)
+  endOfDaySummaryEnabled        Boolean  @default(false)
+  monthlySummaryEnabled         Boolean  @default(false)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  @@map("notification_settings")
+}
+
+model ScheduledReportDelivery {
+  id         String              @id @default(cuid())
+  reportType ScheduledReportType
+  periodKey  String
+  sentAt     DateTime            @default(now())
+  createdAt  DateTime            @default(now())
+
+  @@unique([reportType, periodKey])
+  @@map("scheduled_report_deliveries")
+}
+
+model Product {
+  id                   String             @id @default(cuid())
+  name                 String
+  genericName          String?
+  brandName            String?
+  barcode              String?            @unique
+  ndcNumber            String?            @unique
+  description          String?
+  strength             String?
+  dosageForm           String?
+  manufacturer         String?
+  classification       String?
+  therapeuticUse       String?
+  costPrice            Decimal            @db.Decimal(10, 2)
+  costPricePerBox      Decimal?           @db.Decimal(10, 2)
+  sellingPrice         Decimal            @db.Decimal(10, 2)
+  insurancePrice       Decimal?           @db.Decimal(10, 2)
+  currentStock         Int                @default(0)
+  minimumStock         Int                @default(0)
+  maximumStock         Int?
+  reorderPoint         Int                @default(0)
+  drugSchedule         DrugSchedule?
+  requiresPrescription Boolean            @default(false)
+  isOTC                Boolean            @default(true)
+  isVatable            Boolean            @default(true)
+  isActive             Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  categoryId           String
+  imageUrl             String?
+  productType          String?
+  sku                  String?            @unique
+  weight               Float?
+  dimensions           String?
+  color                String?
+  size                 String?
+  material             String?
+  expiryDate           DateTime?
+  prescriptionItems    PrescriptionItem[]
+  batches              ProductBatch[]
+  suppliers            ProductSupplier[]
+  category             Category           @relation(fields: [categoryId], references: [id])
+  saleItems            SaleItem[]
+  stockMovements       StockMovement[]
+
+  @@map("products")
+}
+
+model ProductBatch {
+  id             String   @id @default(cuid())
+  batchNumber    String
+  expirationDate DateTime
+  quantity       Int
+  costPrice      Decimal  @db.Decimal(10, 2)
+  receivedDate   DateTime @default(now())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id])
+
+  @@unique([productId, batchNumber])
+  @@map("product_batches")
+}
+
+model ProductSupplier {
+  id           String   @id @default(cuid())
+  supplierCode String?
+  leadTime     Int?
+  minimumOrder Int?
+  productId    String
+  supplierId   String
+  product      Product  @relation(fields: [productId], references: [id])
+  supplier     Supplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([productId, supplierId])
+  @@map("product_suppliers")
+}
+
+model StockMovement {
+  id        String            @id @default(cuid())
+  type      StockMovementType
+  quantity  Int
+  reason    String?
+  reference String?
+  notes     String?
+  createdAt DateTime          @default(now())
+  productId String
+  userId    String
+  product   Product           @relation(fields: [productId], references: [id])
+  user      User              @relation(fields: [userId], references: [id])
+
+  @@map("stock_movements")
+}
+
+model Doctor {
+  id            String         @id @default(cuid())
+  firstName     String
+  lastName      String
+  specialty     String?
+  licenseNumber String?        @unique
+  deaNumber     String?        @unique
+  npiNumber     String?        @unique
+  phone         String?
+  email         String?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  prescriptions Prescription[]
+
+  @@map("doctors")
+}
+
+model Prescription {
+  id                 String             @id @default(cuid())
+  prescriptionNumber String             @unique
+  originalDate       DateTime
+  writtenDate        DateTime
+  instructions       String?
+  refillsAllowed     Int                @default(0)
+  refillsUsed        Int                @default(0)
+  daysSupply         Int?
+  status             PrescriptionStatus @default(PENDING)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  customerId         String
+  doctorId           String
+  items              PrescriptionItem[]
+  customer           Customer           @relation(fields: [customerId], references: [id])
+  doctor             Doctor             @relation(fields: [doctorId], references: [id])
+  sales              Sale[]
+
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id             String       @id @default(cuid())
+  quantity       Int
+  instructions   String?
+  substituted    Boolean      @default(false)
+  prescriptionId String
+  productId      String
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id])
+  product        Product      @relation(fields: [productId], references: [id])
+
+  @@map("prescription_items")
+}
+
+model Sale {
+  id              String        @id @default(cuid())
+  saleNumber      String        @unique
+  subtotal        Decimal       @db.Decimal(10, 2)
+  vatableSales    Decimal?      @db.Decimal(10, 2)
+  nonVatableSales Decimal?      @db.Decimal(10, 2)
+  taxAmount       Decimal       @db.Decimal(10, 2)
+  discountType    String?       @default("NONE")
+  discountAmount  Decimal       @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal       @db.Decimal(10, 2)
+  paymentMethod   PaymentMethod
+  cashReceived    Decimal?      @db.Decimal(10, 2)
+  changeGiven     Decimal?      @db.Decimal(10, 2)
+  insuranceClaim  Boolean       @default(false)
+  copayAmount     Decimal?      @db.Decimal(10, 2)
+  insurancePaid   Decimal?      @db.Decimal(10, 2)
+  orderRemarks    String?
+  status          SaleStatus    @default(COMPLETED)
+  saleDate        DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  customerId      String?
+  userId          String
+  prescriptionId  String?
+  items           SaleItem[]
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  prescription    Prescription? @relation(fields: [prescriptionId], references: [id])
+  user            User          @relation(fields: [userId], references: [id])
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id             String  @id @default(cuid())
+  quantity       Int
+  unitPrice      Decimal @db.Decimal(10, 2)
+  totalPrice     Decimal @db.Decimal(10, 2)
+  discountAmount Decimal @default(0) @db.Decimal(10, 2)
+  saleId         String
+  productId      String
+  product        Product @relation(fields: [productId], references: [id])
+  sale           Sale    @relation(fields: [saleId], references: [id])
+
+  @@map("sale_items")
+}
+
+enum UserRole {
+  ADMIN
+  PHARMACIST
+  PHARMACY_TECH
+  CASHIER
+  MANAGER
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum DrugSchedule {
+  SCHEDULE_I
+  SCHEDULE_II
+  SCHEDULE_III
+  SCHEDULE_IV
+  SCHEDULE_V
+}
+
+enum StockMovementType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+  EXPIRED
+  DAMAGED
+  TRANSFER
+}
+
+enum PrescriptionStatus {
+  PENDING
+  FILLED
+  PARTIAL
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  INSURANCE
+  CHECK
+  SPLIT
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  RETURNED
+}
+
+enum ScheduledReportType {
+  END_OF_DAY
+  MONTHLY_SUMMARY
+}

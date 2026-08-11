@@ -11,6 +11,7 @@ import PlanRequestsTab from "./PlanRequestsTab";
 import AdminsTab from "./AdminsTab";
 import AuditLogTab from "./AuditLogTab";
 import SupportTab from "./SupportTab";
+import GfpMigrationTab from "./GfpMigrationTab";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -19,6 +20,7 @@ const TABS = [
   { key: "support", label: "Support" },
   { key: "plans", label: "Plans" },
   { key: "plan-requests", label: "Plan requests" },
+  { key: "gfp-migration", label: "GFP Migration" },
   { key: "admins", label: "Admins" },
   { key: "audit-log", label: "Audit log" },
 ] as const;
@@ -95,6 +97,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
         {tab === "support" && <SupportTab adminEmail={adminEmail} />}
         {tab === "plans" && <PlansTab />}
         {tab === "plan-requests" && <PlanRequestsTab />}
+        {tab === "gfp-migration" && <GfpMigrationTab />}
         {tab === "admins" && <AdminsTab currentAdminEmail={adminEmail} />}
         {tab === "audit-log" && <AuditLogTab />}
       </div>
