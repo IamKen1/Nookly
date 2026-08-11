@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 
 export default function ImpersonationBanner() {
   const router = useRouter();
+  const pathname = usePathname();
   const [state, setState] = useState<{ impersonating: boolean; tenantName?: string | null } | null>(null);
   const [stopping, setStopping] = useState(false);
 
@@ -14,7 +15,10 @@ export default function ImpersonationBanner() {
       .then((res) => res.json())
       .then(setState)
       .catch(() => setState({ impersonating: false }));
-  }, []);
+    // Re-check on every route change (impersonate/stop both navigate right after
+    // changing the session cookie, so this is what actually picks up the change —
+    // router.refresh() alone doesn't remount this component or refetch its state).
+  }, [pathname]);
 
   if (!state?.impersonating) return null;
 
@@ -23,6 +27,7 @@ export default function ImpersonationBanner() {
     try {
       const res = await fetch("/api/nk-ops-72fq9/impersonate/stop", { method: "POST" });
       if (res.ok) {
+        setState({ impersonating: false });
         router.push("/nk-ops-72fq9");
         router.refresh();
       }
