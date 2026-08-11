@@ -108,6 +108,7 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
@@ -156,6 +157,7 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
             )}
           </tbody>
         </table>
+        </div>
       </div>
       <p className="text-xs text-zinc-600">
         Env-bootstrap admins are set via <code className="text-zinc-500">PLATFORM_ADMIN_EMAILS</code> and can&apos;t be revoked from here — remove them from the environment variable instead.

@@ -120,7 +120,7 @@ export default function GfpMigrationTab() {
 
       {summary && (
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
               <p className="text-xs uppercase text-zinc-500">Created</p>
               <p className="mt-1 text-2xl font-semibold text-emerald-400">{totalCreated}</p>
@@ -136,6 +136,7 @@ export default function GfpMigrationTab() {
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
@@ -158,6 +159,7 @@ export default function GfpMigrationTab() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}

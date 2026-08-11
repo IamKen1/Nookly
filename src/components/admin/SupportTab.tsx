@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Inbox, MailOpen, CheckCircle2, Archive, Send } from "lucide-react";
+import { Inbox, MailOpen, CheckCircle2, Archive, Send, ChevronLeft } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 
 interface TicketSummary {
@@ -51,6 +51,8 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Mobile only: which single panel is showing (desktop shows all 3 side by side).
+  const [mobileView, setMobileView] = useState<"folders" | "list" | "thread">("folders");
 
   const load = async () => {
     setLoading(true);
@@ -81,8 +83,14 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
   const loadDetail = async (id: string) => {
     setSelectedId(id);
     setDetail(null);
+    setMobileView("thread");
     const res = await fetch(`/api/nk-ops-72fq9/support-tickets/${id}`);
     if (res.ok) setDetail(await res.json());
+  };
+
+  const selectFolder = (key: (typeof FOLDERS)[number]["key"]) => {
+    setFolder(key);
+    setMobileView("list");
   };
 
   const sendReply = async (e: React.FormEvent) => {
@@ -124,8 +132,8 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
   };
 
   return (
-    <div className="grid gap-3 sm:grid-cols-[160px_280px_1fr]" style={{ minHeight: 480 }}>
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-2">
+    <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[160px_280px_1fr]" style={{ minHeight: 480 }}>
+      <div className={`rounded-2xl border border-zinc-800 bg-zinc-900 p-2 ${mobileView === "folders" ? "block" : "hidden"} sm:block`}>
         {FOLDERS.map((f) => {
           const Icon = f.icon;
           const count = tickets.filter((t) =>
@@ -140,8 +148,8 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
           return (
             <button
               key={f.key}
-              onClick={() => setFolder(f.key)}
-              className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+              onClick={() => selectFolder(f.key)}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm ${
                 folder === f.key ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800/60"
               }`}
             >
@@ -155,7 +163,14 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
         })}
       </div>
 
-      <div className="overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900">
+      <div className={`overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 ${mobileView === "list" ? "block" : "hidden"} sm:block`}>
+        <button
+          onClick={() => setMobileView("folders")}
+          className="flex w-full items-center gap-1.5 border-b border-zinc-800/60 px-3 py-2.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 sm:hidden"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Folders
+        </button>
         {loading ? (
           <p className="p-4 text-sm text-zinc-500">Loading...</p>
         ) : filtered.length === 0 ? (
@@ -183,12 +198,19 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
         )}
       </div>
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+      <div className={`rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5 ${mobileView === "thread" ? "block" : "hidden"} sm:block`}>
+        <button
+          onClick={() => setMobileView("list")}
+          className="mb-3 flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 sm:hidden"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Tickets
+        </button>
         {!detail ? (
           <p className="text-sm text-zinc-500">Select a ticket to read it.</p>
         ) : (
           <div className="flex h-full flex-col">
-            <div className="mb-3 flex items-start justify-between">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-white">{detail.subject}</h2>
                 <p className="text-xs text-zinc-500">

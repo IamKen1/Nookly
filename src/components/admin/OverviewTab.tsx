@@ -82,6 +82,7 @@ export default function OverviewTab() {
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
         <h3 className="text-sm font-semibold text-white">Recently signed up</h3>
+        <div className="overflow-x-auto">
         <table className="mt-3 w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase text-zinc-500">
@@ -102,6 +103,7 @@ export default function OverviewTab() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

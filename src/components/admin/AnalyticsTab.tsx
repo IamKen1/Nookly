@@ -144,6 +144,7 @@ export default function AnalyticsTab() {
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
         <h3 className="text-sm font-semibold text-white">Top tenants by all-time revenue</h3>
+        <div className="overflow-x-auto">
         <table className="mt-3 w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase text-zinc-500">
@@ -164,6 +165,7 @@ export default function AnalyticsTab() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

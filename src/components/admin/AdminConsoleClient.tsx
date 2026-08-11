@@ -45,44 +45,44 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="border-b border-zinc-800 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 text-red-400">
-              <ShieldCheck className="h-4.5 w-4.5" />
+      <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-400 sm:h-9 sm:w-9">
+              <ShieldCheck className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
             </span>
-            <div>
-              <h1 className="text-sm font-semibold text-white">Nookly Ops Console</h1>
-              <p className="text-xs text-zinc-500">{adminEmail}</p>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-semibold text-white">Nookly Ops Console</h1>
+              <p className="truncate text-xs text-zinc-500">{adminEmail}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <a
               href="/dashboard"
-              className="flex items-center gap-1.5 rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-zinc-500"
+              className="flex h-8 items-center gap-1.5 rounded-full border border-zinc-700 px-2.5 text-xs font-medium text-zinc-300 hover:border-zinc-500 sm:px-3"
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
-              Back to app
+              <span className="hidden sm:inline">Back to app</span>
             </a>
             <button
               onClick={handleLock}
               disabled={locking}
-              className="flex items-center gap-1.5 rounded-full border border-red-800 px-3 py-1.5 text-xs font-medium text-red-400 hover:border-red-600 disabled:opacity-50"
+              className="flex h-8 items-center gap-1.5 rounded-full border border-red-800 px-2.5 text-xs font-medium text-red-400 hover:border-red-600 disabled:opacity-50 sm:px-3"
             >
               <LogOut className="h-3.5 w-3.5" />
-              Lock console
+              <span className="hidden sm:inline">Lock console</span>
             </button>
           </div>
         </div>
       </header>
 
-      <div className="px-6 py-6">
-        <nav className="mb-6 flex gap-1 border-b border-zinc-800">
+      <div className="px-4 py-4 sm:px-6 sm:py-6">
+        <nav className="-mx-4 mb-6 flex gap-1 overflow-x-auto scrollbar-none border-b border-zinc-800 px-4 sm:mx-0 sm:px-0">
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`border-b-2 px-4 py-2.5 text-sm font-medium transition ${
+              className={`shrink-0 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium transition ${
                 tab === t.key ? "border-red-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300"
               }`}
             >

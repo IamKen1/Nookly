@@ -38,6 +38,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Selected plan is not available.' }, { status: 400 })
     }
 
+    // Pharmacy names must be unique (case-insensitive) — this also prevents a
+    // double-submitted signup from silently creating two workspaces with the
+    // same name under different slugs.
+    const existingByName = await prisma.tenant.findFirst({
+      where: { name: { equals: businessName.trim(), mode: 'insensitive' } },
+    })
+    if (existingByName) {
+      return NextResponse.json(
+        { error: 'A pharmacy with this name is already registered. Please choose a different name, or log in if this is your workspace.' },
+        { status: 409 }
+      )
+    }
+
+    const existingUsername = await prisma.user.findUnique({ where: { username } })
+    if (existingUsername) {
+      return NextResponse.json({ error: 'That username is already taken. Please choose another.' }, { status: 409 })
+    }
+
     const baseSlug = slugify(businessName) || 'store'
     let slug = baseSlug
     let attempt = 1

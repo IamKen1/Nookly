@@ -5,14 +5,14 @@ import { accountKeyFor, checkLoginRateLimit, getClientIp, recordFailedLoginAttem
 
 export async function POST(request: NextRequest) {
   try {
-    const { workspaceSlug, identifier, password, rememberMe } = await request.json()
+    const { identifier, password, rememberMe } = await request.json()
 
-    if (!workspaceSlug || !identifier || !password) {
+    if (!identifier || !password) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
     }
 
     const ip = getClientIp(request)
-    const accountKeyHash = accountKeyFor(workspaceSlug, identifier)
+    const accountKeyHash = accountKeyFor(identifier)
     const rateLimit = await checkLoginRateLimit(accountKeyHash, ip)
     if (rateLimit.limited) {
       return NextResponse.json(
@@ -21,23 +21,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const tenant = await prisma.tenant.findUnique({ where: { slug: workspaceSlug } })
-    if (!tenant || !tenant.isActive) {
+    // Usernames are globally unique, so a single lookup identifies both the
+    // user and their workspace — no need to ask for a workspace name at login.
+    const user = await prisma.user.findUnique({ where: { username: identifier } })
+
+    if (!user || !user.isActive || !(await verifyPassword(password, user.password))) {
       await recordFailedLoginAttempt(accountKeyHash, ip)
-      return NextResponse.json({ error: 'Invalid workspace or credentials.' }, { status: 401 })
+      return NextResponse.json({ error: 'Invalid username or password.' }, { status: 401 })
     }
 
-    const user = await prisma.user.findFirst({
-      where: {
-        tenantId: tenant.id,
-        isActive: true,
-        OR: [{ email: identifier }, { username: identifier }],
-      },
-    })
-
-    if (!user || !(await verifyPassword(password, user.password))) {
+    const tenant = await prisma.tenant.findUnique({ where: { id: user.tenantId } })
+    if (!tenant || !tenant.isActive) {
       await recordFailedLoginAttempt(accountKeyHash, ip)
-      return NextResponse.json({ error: 'Invalid workspace or credentials.' }, { status: 401 })
+      return NextResponse.json({ error: 'Invalid username or password.' }, { status: 401 })
     }
 
     const duration = rememberMe ? SESSION_DURATION.remembered : SESSION_DURATION.short

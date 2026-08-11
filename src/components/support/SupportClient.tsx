@@ -39,6 +39,7 @@ export default function SupportClient() {
   const [reply, setReply] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sentFlash, setSentFlash] = useState(false);
 
   const load = async (keepSelection = true) => {
     setLoading(true);
@@ -100,6 +101,8 @@ export default function SupportClient() {
       }
       setReply("");
       await load();
+      setSentFlash(true);
+      setTimeout(() => setSentFlash(false), 2000);
     } finally {
       setBusy(false);
     }
@@ -226,6 +229,7 @@ export default function SupportClient() {
                   </button>
                 </form>
               )}
+              {sentFlash && <p className="mt-2 text-sm font-medium text-emerald-600">Reply sent.</p>}
               {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
             </div>
           )}

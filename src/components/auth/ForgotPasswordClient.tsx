@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Leaf, Mail, Store } from "lucide-react";
+import { ArrowLeft, Leaf, User } from "lucide-react";
 
 export default function ForgotPasswordClient() {
-  const [form, setForm] = useState({ workspaceSlug: "", identifier: "" });
+  const [identifier, setIdentifier] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -16,7 +16,7 @@ export default function ForgotPasswordClient() {
       await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ identifier }),
       });
     } finally {
       // Always show the same confirmation, whether or not it succeeded server-side.
@@ -40,7 +40,7 @@ export default function ForgotPasswordClient() {
             <div className="text-center">
               <h1 className="text-xl font-semibold text-zinc-900">Check your email</h1>
               <p className="mt-2 text-sm text-zinc-500">
-                If an account matches that workspace and email/username, we&apos;ve sent a password reset link. It
+                If that username matches an account, we&apos;ve sent a password reset link to the email on file. It
                 expires in 30 minutes.
               </p>
               <Link href="/login" className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800">
@@ -51,31 +51,17 @@ export default function ForgotPasswordClient() {
           ) : (
             <>
               <h1 className="text-xl font-semibold text-zinc-900">Forgot your password?</h1>
-              <p className="mt-1 text-sm text-zinc-500">Enter your workspace and email/username and we&apos;ll send you a reset link.</p>
+              <p className="mt-1 text-sm text-zinc-500">Enter your username and we&apos;ll send you a reset link.</p>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-zinc-700">Pharmacy</label>
+                  <label className="mb-1.5 block text-sm font-medium text-zinc-700">Username</label>
                   <div className="relative">
-                    <Store className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                    <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                     <input
                       required
-                      value={form.workspaceSlug}
-                      onChange={(e) => setForm({ ...form, workspaceSlug: e.target.value })}
-                      placeholder="kendalls-pharmacy"
-                      autoComplete="organization"
-                      className="w-full rounded-lg border border-zinc-300 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-zinc-700">Email or username</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      required
-                      value={form.identifier}
-                      onChange={(e) => setForm({ ...form, identifier: e.target.value })}
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
                       autoComplete="username"
                       className="w-full rounded-lg border border-zinc-300 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     />

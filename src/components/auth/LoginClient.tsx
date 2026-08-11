@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, Eye, EyeOff, Leaf, Lock, Store, User } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Leaf, Lock, User } from "lucide-react";
 
 export default function LoginClient() {
   const router = useRouter();
-  const [form, setForm] = useState({ workspaceSlug: "", identifier: "", password: "" });
+  const [form, setForm] = useState({ identifier: "", password: "" });
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,26 +49,11 @@ export default function LoginClient() {
 
         <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-xl shadow-zinc-900/5">
           <h1 className="text-xl font-semibold text-zinc-900">Welcome back</h1>
-          <p className="mt-1 text-sm text-zinc-500">Log in to your workspace to continue.</p>
+          <p className="mt-1 text-sm text-zinc-500">Log in with your username to continue.</p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-zinc-700">Pharmacy</label>
-              <div className="relative">
-                <Store className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-                <input
-                  required
-                  value={form.workspaceSlug}
-                  onChange={(e) => setForm({ ...form, workspaceSlug: e.target.value })}
-                  placeholder="kendalls-pharmacy"
-                  autoComplete="organization"
-                  className="w-full rounded-lg border border-zinc-300 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-zinc-700">Email or username</label>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700">Username</label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                 <input

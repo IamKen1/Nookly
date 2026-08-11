@@ -133,6 +133,7 @@ function DailyClosingView() {
 
           <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
             <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">Shifts this day</div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase text-zinc-400">
@@ -173,6 +174,7 @@ function DailyClosingView() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       ) : null}

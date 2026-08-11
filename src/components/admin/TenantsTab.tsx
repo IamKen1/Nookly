@@ -101,6 +101,7 @@ export default function TenantsTab() {
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
@@ -174,6 +175,7 @@ export default function TenantsTab() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

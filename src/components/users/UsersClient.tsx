@@ -38,6 +38,13 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const flashSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(null), 2500);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,7 +75,8 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
       }
       setShowForm(false);
       setForm(emptyForm);
-      load();
+      await load();
+      flashSuccess("User added.");
     } catch {
       setError("Network error.");
     } finally {
@@ -77,20 +85,46 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
   };
 
   const toggleActive = async (user: UserRow) => {
-    await fetch(`/api/users/${user.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !user.isActive }),
-    });
-    load();
+    setBusyId(user.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !user.isActive }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Failed to update user.");
+        return;
+      }
+      await load();
+      flashSuccess(user.isActive ? "User deactivated." : "User activated.");
+    } catch {
+      setError("Network error.");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const remove = async (id: string) => {
     if (!confirm("Remove this user?")) return;
-    const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (data.deactivated) alert(data.message);
-    load();
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to remove user.");
+        return;
+      }
+      await load();
+      flashSuccess(data.deactivated ? data.message : "User removed.");
+    } catch {
+      setError("Network error.");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const atLimit = maxUsers !== -1 && users.filter((u) => u.isActive).length >= maxUsers;
@@ -112,6 +146,9 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
           <Plus className="h-4 w-4" /> Add user
         </button>
       </div>
+
+      {successMessage && <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{successMessage}</p>}
+      {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
         <table className="w-full text-sm">
@@ -145,14 +182,19 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                   <td className="px-4 py-3">
                     <button
                       onClick={() => toggleActive(u)}
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"}`}
+                      disabled={busyId === u.id}
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"}`}
                     >
-                      {u.isActive ? "Active" : "Inactive"}
+                      {busyId === u.id ? "..." : u.isActive ? "Active" : "Inactive"}
                     </button>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => remove(u.id)} className="text-xs font-semibold text-zinc-400 hover:text-red-600">
-                      Remove
+                    <button
+                      onClick={() => remove(u.id)}
+                      disabled={busyId === u.id}
+                      className="text-xs font-semibold text-zinc-400 hover:text-red-600 disabled:opacity-50"
+                    >
+                      {busyId === u.id ? "..." : "Remove"}
                     </button>
                   </td>
                 </tr>

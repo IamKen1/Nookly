@@ -68,6 +68,7 @@ export default function PlanRequestsTab() {
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
       {error && <p className="border-b border-red-900/50 bg-red-950/40 px-4 py-2 text-sm text-red-400">{error}</p>}
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-zinc-800 text-left text-xs font-medium uppercase text-zinc-500">
@@ -146,6 +147,7 @@ export default function PlanRequestsTab() {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

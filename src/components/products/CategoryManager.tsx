@@ -22,6 +22,13 @@ export default function CategoryManager({
   const [editingName, setEditingName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const flashSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(null), 2000);
+  };
 
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +47,7 @@ export default function CategoryManager({
         return;
       }
       setNewName("");
+      flashSuccess("Category added.");
       onChanged();
     } finally {
       setSaving(false);
@@ -48,29 +56,43 @@ export default function CategoryManager({
 
   const saveRename = async (id: string) => {
     if (!editingName.trim()) return;
-    const res = await fetch(`/api/categories/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: editingName.trim() }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error ?? "Failed to rename category.");
-      return;
+    setError(null);
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/categories/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editingName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to rename category.");
+        return;
+      }
+      setEditingId(null);
+      flashSuccess("Renamed.");
+      onChanged();
+    } finally {
+      setBusyId(null);
     }
-    setEditingId(null);
-    onChanged();
   };
 
   const deactivate = async (id: string) => {
     if (!confirm("Deactivate this category?")) return;
-    const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error ?? "Failed to deactivate category.");
-      return;
+    setError(null);
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to deactivate category.");
+        return;
+      }
+      flashSuccess("Category deactivated.");
+      onChanged();
+    } finally {
+      setBusyId(null);
     }
-    onChanged();
   };
 
   return (
@@ -100,6 +122,7 @@ export default function CategoryManager({
         </form>
 
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {successMessage && <p className="mt-2 text-sm text-emerald-600">{successMessage}</p>}
 
         <ul className="mt-4 max-h-72 space-y-1 overflow-y-auto">
           {categories.map((c) => (
@@ -112,10 +135,14 @@ export default function CategoryManager({
                     onChange={(e) => setEditingName(e.target.value)}
                     className="flex-1 rounded border border-zinc-300 px-2 py-1 text-sm"
                   />
-                  <button onClick={() => saveRename(c.id)} className="text-emerald-600 hover:text-emerald-700">
-                    <Check className="h-4 w-4" />
+                  <button
+                    onClick={() => saveRename(c.id)}
+                    disabled={busyId === c.id}
+                    className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40"
+                  >
+                    <Check className={`h-4 w-4 ${busyId === c.id ? "animate-pulse" : ""}`} />
                   </button>
-                  <button onClick={() => setEditingId(null)} className="text-zinc-400 hover:text-zinc-600">
+                  <button onClick={() => setEditingId(null)} disabled={busyId === c.id} className="text-zinc-400 hover:text-zinc-600 disabled:opacity-40">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
@@ -128,12 +155,17 @@ export default function CategoryManager({
                         setEditingId(c.id);
                         setEditingName(c.name);
                       }}
-                      className="text-zinc-400 hover:text-zinc-700"
+                      disabled={busyId === c.id}
+                      className="text-zinc-400 hover:text-zinc-700 disabled:opacity-40"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => deactivate(c.id)} className="text-zinc-400 hover:text-red-600">
-                      <Trash2 className="h-3.5 w-3.5" />
+                    <button
+                      onClick={() => deactivate(c.id)}
+                      disabled={busyId === c.id}
+                      className="text-zinc-400 hover:text-red-600 disabled:opacity-40"
+                    >
+                      <Trash2 className={`h-3.5 w-3.5 ${busyId === c.id ? "animate-pulse" : ""}`} />
                     </button>
                   </div>
                 </>

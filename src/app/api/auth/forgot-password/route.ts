@@ -3,27 +3,26 @@ import { prisma } from "@/lib/prisma";
 import { issuePasswordResetToken } from "@/lib/password-reset";
 import { sendAlertEmail } from "@/lib/email";
 
-// Always returns the same generic message regardless of whether the workspace,
-// account, or email actually exist — this endpoint must never be usable to
-// enumerate valid workspace slugs or user accounts.
+// Always returns the same generic message regardless of whether the account
+// actually exists — this endpoint must never be usable to enumerate accounts.
 const GENERIC_RESPONSE = {
   message: "If that account exists, we've sent a password reset link to the email on file.",
 };
 
 export async function POST(request: NextRequest) {
   try {
-    const { workspaceSlug, identifier } = await request.json();
-    if (!workspaceSlug || !identifier) {
-      return NextResponse.json({ error: "Workspace and email/username are required." }, { status: 400 });
+    const { identifier } = await request.json();
+    if (!identifier) {
+      return NextResponse.json({ error: "Username is required." }, { status: 400 });
     }
 
-    const tenant = await prisma.tenant.findUnique({ where: { slug: workspaceSlug } });
-    if (tenant?.isActive) {
-      const user = await prisma.user.findFirst({
-        where: { tenantId: tenant.id, isActive: true, OR: [{ email: identifier }, { username: identifier }] },
-      });
+    // Usernames are globally unique, so a single lookup identifies the account
+    // and its workspace — no need to ask for a workspace name here either.
+    const user = await prisma.user.findUnique({ where: { username: identifier } });
 
-      if (user) {
+    if (user?.isActive) {
+      const tenant = await prisma.tenant.findUnique({ where: { id: user.tenantId } });
+      if (tenant?.isActive) {
         const rawToken = await issuePasswordResetToken(user.id);
         if (rawToken) {
           const origin = new URL(request.url).origin;

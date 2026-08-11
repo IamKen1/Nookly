@@ -37,6 +37,12 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
   const [expanded, setExpanded] = useState<string | null>(null);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const flashSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
 
   const [returnTarget, setReturnTarget] = useState<Sale | null>(null);
   const [returnQtys, setReturnQtys] = useState<Record<string, string>>({});
@@ -60,6 +66,7 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
         return;
       }
       setSales((prev) => prev.map((s) => (s.id === saleId ? { ...s, status: "CANCELLED" } : s)));
+      flashSuccess("Sale voided — stock has been returned to inventory.");
     } catch {
       alert("Network error.");
     } finally {
@@ -101,6 +108,7 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
         return;
       }
       setReturnTarget(null);
+      flashSuccess("Return processed — stock has been returned to inventory.");
       router.refresh();
     } catch {
       setReturnError("Network error.");
@@ -140,6 +148,10 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
           <p className="text-lg font-bold text-emerald-700">{peso(todayTotal)}</p>
         </div>
       </div>
+
+      {successMessage && (
+        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{successMessage}</p>
+      )}
 
       <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white">
         <table className="w-full text-sm">

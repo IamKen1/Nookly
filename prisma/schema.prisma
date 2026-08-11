@@ -250,7 +250,7 @@ model User {
   tenantId       String
   storeId        String?
   email          String
-  username       String
+  username       String          @unique
   password       String
   firstName      String
   lastName       String
@@ -272,7 +272,6 @@ model User {
   passwordResetTokens PasswordResetToken[]
 
   @@unique([tenantId, email])
-  @@unique([tenantId, username])
   @@map("users")
 }
 

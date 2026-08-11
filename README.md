@@ -84,9 +84,10 @@ commit `.env` or any real credentials.
   (per-tenant status/cycle), `Invoice` (billing history), `PlanChangeRequest`
   (manual upgrade/downgrade workflow).
 - **Auth**: JWT session cookie carrying `{ userId, tenantId, storeId, role }`.
-  Login requires a workspace slug + email/username + password, since usernames
-  are only unique per-tenant, not globally. Sessions can be short-lived
-  (browser session) or "remembered" (30 days).
+  Usernames are globally unique across all tenants, so login is just
+  username + password — the username alone identifies both the user and their
+  workspace, no workspace name needed. Sessions can be short-lived (browser
+  session) or "remembered" (30 days).
 - **Every API route** re-derives the session from the request and scopes every
   Prisma query by `tenantId` (and `storeId` where applicable) — there is no
   implicit tenant context, it's explicit in every handler.

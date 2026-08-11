@@ -65,6 +65,13 @@ export default function ProductsClient({
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const flashSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(null), 2500);
+  };
 
   const loadCategories = useCallback(async () => {
     const res = await fetch("/api/categories");
@@ -109,7 +116,8 @@ export default function ProductsClient({
       }
       setShowForm(false);
       setForm(emptyForm);
-      loadProducts(search);
+      await loadProducts(search);
+      flashSuccess("Product saved.");
     } catch {
       setError("Network error.");
     } finally {
@@ -119,8 +127,21 @@ export default function ProductsClient({
 
   const handleDelete = async (id: string) => {
     if (!confirm("Remove this product?")) return;
-    await fetch(`/api/products/${id}`, { method: "DELETE" });
-    loadProducts(search);
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Failed to remove product.");
+        return;
+      }
+      await loadProducts(search);
+      flashSuccess("Product removed.");
+    } catch {
+      setError("Network error.");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const atLimit = maxProducts !== -1 && products.length >= maxProducts;
@@ -150,6 +171,11 @@ export default function ProductsClient({
           </button>
         </div>
       </div>
+
+      {successMessage && (
+        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{successMessage}</p>
+      )}
+      {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
       <div className="mt-6 flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
         <Search className="h-4 w-4 text-zinc-400" />
@@ -205,8 +231,12 @@ export default function ProductsClient({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => handleDelete(p.id)} className="text-zinc-400 hover:text-red-600">
-                      <Trash2 className="h-4 w-4" />
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      disabled={deletingId === p.id}
+                      className="text-zinc-400 hover:text-red-600 disabled:opacity-40"
+                    >
+                      <Trash2 className={`h-4 w-4 ${deletingId === p.id ? "animate-pulse" : ""}`} />
                     </button>
                   </td>
                 </tr>
