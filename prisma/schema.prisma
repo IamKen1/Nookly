@@ -137,6 +137,7 @@ model AdminAuditLog {
   metadata    Json?
   createdAt   DateTime @default(now())
 
+  @@index([createdAt])
   @@map("admin_audit_logs")
 }
 
@@ -155,6 +156,7 @@ model SupportTicket {
   createdByUser User               @relation(fields: [createdByUserId], references: [id])
   messages     SupportTicketMessage[]
 
+  @@index([tenantId])
   @@map("support_tickets")
 }
 
@@ -212,6 +214,7 @@ model PlanChangeRequest {
   requestedPlan     Plan                    @relation("RequestedPlanRequests", fields: [requestedPlanId], references: [id])
   requestedByUser   User                    @relation(fields: [requestedByUserId], references: [id])
 
+  @@index([tenantId, status])
   @@map("plan_change_requests")
 }
 
@@ -265,10 +268,41 @@ model User {
   supportTicketMessages SupportTicketMessage[]
   shifts         Shift[]
   cashTransactions CashTransaction[]
+  passwordResetTokens PasswordResetToken[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
   @@map("users")
+}
+
+// Single-use, time-limited password reset tokens. Only a SHA-256 hash of the
+// raw token is stored — the raw value only ever exists in the emailed link —
+// so a database leak alone can't be used to reset anyone's password.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// Records every FAILED login attempt so brute-force/credential-stuffing can be
+// throttled — keyed both by the specific account targeted and by source IP,
+// independent of whether that account (or even the workspace) actually exists.
+model LoginAttempt {
+  id             String   @id @default(cuid())
+  accountKeyHash String
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  @@index([accountKeyHash, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
 }
 
 model Customer {
@@ -297,6 +331,7 @@ model Customer {
   prescriptions    Prescription[]
   sales            Sale[]
 
+  @@index([tenantId])
   @@map("customers")
 }
 
@@ -467,7 +502,7 @@ model ProductBatch {
   costPrice      Decimal  @db.Decimal(10, 2)
   receivedDate   DateTime @default(now())
   productId      String
-  product        Product  @relation(fields: [productId], references: [id])
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, batchNumber])
   @@map("product_batches")
@@ -480,8 +515,8 @@ model ProductSupplier {
   minimumOrder Int?
   productId    String
   supplierId   String
-  product      Product  @relation(fields: [productId], references: [id])
-  supplier     Supplier @relation(fields: [supplierId], references: [id])
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier     Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 
   @@unique([productId, supplierId])
   @@map("product_suppliers")
@@ -501,9 +536,11 @@ model StockMovement {
   userId    String
   tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   store     Store             @relation(fields: [storeId], references: [id])
-  product   Product           @relation(fields: [productId], references: [id])
+  product   Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
   user      User              @relation(fields: [userId], references: [id])
 
+  @@index([tenantId, storeId, createdAt])
+  @@index([productId])
   @@map("stock_movements")
 }
 
@@ -564,8 +601,8 @@ model PrescriptionItem {
   substituted    Boolean      @default(false)
   prescriptionId String
   productId      String
-  prescription   Prescription @relation(fields: [prescriptionId], references: [id])
-  product        Product      @relation(fields: [productId], references: [id])
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("prescription_items")
 }
@@ -609,6 +646,8 @@ model Sale {
   shift           Shift?        @relation(fields: [shiftId], references: [id])
 
   @@unique([tenantId, saleNumber])
+  @@index([tenantId, storeId, saleDate])
+  @@index([shiftId])
   @@map("sales")
 }
 
@@ -633,6 +672,8 @@ model Shift {
   sales            Sale[]
   cashTransactions CashTransaction[]
 
+  @@index([tenantId, storeId, closedAt])
+  @@index([userId, closedAt])
   @@map("shifts")
 }
 
@@ -662,6 +703,8 @@ model CashTransaction {
   user            User                @relation(fields: [userId], references: [id])
   shift           Shift?              @relation(fields: [shiftId], references: [id])
 
+  @@index([tenantId, storeId, createdAt])
+  @@index([shiftId])
   @@map("cash_transactions")
 }
 
@@ -679,8 +722,8 @@ model SaleItem {
   returnedQuantity  Int     @default(0)
   saleId            String
   productId         String
-  product           Product @relation(fields: [productId], references: [id])
-  sale              Sale    @relation(fields: [saleId], references: [id])
+  product           Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sale              Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@map("sale_items")
 }

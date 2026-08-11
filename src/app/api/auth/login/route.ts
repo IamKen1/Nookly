@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyPassword, signSession, SESSION_COOKIE_NAME, SESSION_DURATION } from '@/lib/auth'
+import { accountKeyFor, checkLoginRateLimit, getClientIp, recordFailedLoginAttempt } from '@/lib/login-rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,8 +11,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
     }
 
+    const ip = getClientIp(request)
+    const accountKeyHash = accountKeyFor(workspaceSlug, identifier)
+    const rateLimit = await checkLoginRateLimit(accountKeyHash, ip)
+    if (rateLimit.limited) {
+      return NextResponse.json(
+        { error: `Too many failed attempts. Try again in ${rateLimit.retryAfterMinutes} minutes.` },
+        { status: 429 }
+      )
+    }
+
     const tenant = await prisma.tenant.findUnique({ where: { slug: workspaceSlug } })
     if (!tenant || !tenant.isActive) {
+      await recordFailedLoginAttempt(accountKeyHash, ip)
       return NextResponse.json({ error: 'Invalid workspace or credentials.' }, { status: 401 })
     }
 
@@ -24,6 +36,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!user || !(await verifyPassword(password, user.password))) {
+      await recordFailedLoginAttempt(accountKeyHash, ip)
       return NextResponse.json({ error: 'Invalid workspace or credentials.' }, { status: 401 })
     }
 

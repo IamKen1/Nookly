@@ -82,7 +82,12 @@ export default function LoginClient() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-zinc-700">Password</label>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="block text-sm font-medium text-zinc-700">Password</label>
+                <Link href="/forgot-password" className="text-xs font-medium text-emerald-700 hover:text-emerald-800">
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                 <input

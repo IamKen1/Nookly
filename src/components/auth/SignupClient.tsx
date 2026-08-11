@@ -18,12 +18,17 @@ function SignupForm() {
 
   const [form, setForm] = useState({
     businessName: "",
+    addressLine1: "",
+    city: "",
+    contactNumber: "",
     ownerFirstName: "",
     ownerLastName: "",
     ownerEmail: "",
     username: "",
     password: "",
+    confirmPassword: "",
     planCode: initialPlan.toUpperCase(),
+    agreedToTerms: false,
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,6 +36,16 @@ function SignupForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+    if (!form.agreedToTerms) {
+      setError("Please agree to the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch("/api/auth/signup", {
@@ -52,6 +67,8 @@ function SignupForm() {
     }
   };
 
+  const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((f) => ({ ...f, [key]: value }));
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-6 py-12">
       <div className="w-full max-w-md">
@@ -65,12 +82,12 @@ function SignupForm() {
           <h1 className="text-xl font-semibold text-zinc-900">Start your free trial</h1>
           <p className="mt-1 text-sm text-zinc-500">14 days, no credit card required.</p>
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <form onSubmit={handleSubmit} className="mt-6 space-y-5">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Plan</label>
               <select
                 value={form.planCode}
-                onChange={(e) => setForm({ ...form, planCode: e.target.value })}
+                onChange={(e) => set("planCode", e.target.value)}
                 className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
               >
                 {Object.entries(planLabels).map(([code, label]) => (
@@ -80,64 +97,139 @@ function SignupForm() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Pharmacy name</label>
-              <input
-                required
-                value={form.businessName}
-                onChange={(e) => setForm({ ...form, businessName: e.target.value })}
-                placeholder="Kendall's Pharmacy"
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+
+            <div className="space-y-3 border-t border-zinc-100 pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Pharmacy</p>
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">First name</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Pharmacy name</label>
                 <input
-                  value={form.ownerFirstName}
-                  onChange={(e) => setForm({ ...form, ownerFirstName: e.target.value })}
+                  required
+                  value={form.businessName}
+                  onChange={(e) => set("businessName", e.target.value)}
+                  placeholder="Kendall's Pharmacy"
                   className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Last name</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Address</label>
                 <input
-                  value={form.ownerLastName}
-                  onChange={(e) => setForm({ ...form, ownerLastName: e.target.value })}
+                  required
+                  value={form.addressLine1}
+                  onChange={(e) => set("addressLine1", e.target.value)}
+                  placeholder="123 Rizal St."
                   className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">City</label>
+                  <input
+                    required
+                    value={form.city}
+                    onChange={(e) => set("city", e.target.value)}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">Contact number</label>
+                  <input
+                    required
+                    type="tel"
+                    value={form.contactNumber}
+                    onChange={(e) => set("contactNumber", e.target.value)}
+                    placeholder="09XX XXX XXXX"
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Email</label>
+
+            <div className="space-y-3 border-t border-zinc-100 pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Your account</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">First name</label>
+                  <input
+                    required
+                    value={form.ownerFirstName}
+                    onChange={(e) => set("ownerFirstName", e.target.value)}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">Last name</label>
+                  <input
+                    required
+                    value={form.ownerLastName}
+                    onChange={(e) => set("ownerLastName", e.target.value)}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Email</label>
+                <input
+                  required
+                  type="email"
+                  value={form.ownerEmail}
+                  onChange={(e) => set("ownerEmail", e.target.value)}
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Username</label>
+                <input
+                  required
+                  value={form.username}
+                  onChange={(e) => set("username", e.target.value)}
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">Password</label>
+                  <input
+                    required
+                    type="password"
+                    minLength={8}
+                    value={form.password}
+                    onChange={(e) => set("password", e.target.value)}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">Confirm password</label>
+                  <input
+                    required
+                    type="password"
+                    minLength={8}
+                    value={form.confirmPassword}
+                    onChange={(e) => set("confirmPassword", e.target.value)}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <label className="flex items-start gap-2 text-sm text-zinc-600">
               <input
-                required
-                type="email"
-                value={form.ownerEmail}
-                onChange={(e) => setForm({ ...form, ownerEmail: e.target.value })}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                type="checkbox"
+                checked={form.agreedToTerms}
+                onChange={(e) => set("agreedToTerms", e.target.checked)}
+                className="mt-0.5"
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Username</label>
-              <input
-                required
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Password</label>
-              <input
-                required
-                type="password"
-                minLength={8}
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
+              <span>
+                I agree to Nookly&apos;s{" "}
+                <Link href="/terms" target="_blank" className="font-medium text-emerald-700 underline">
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link href="/privacy" target="_blank" className="font-medium text-emerald-700 underline">
+                  Privacy Policy
+                </Link>
+                .
+              </span>
+            </label>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 

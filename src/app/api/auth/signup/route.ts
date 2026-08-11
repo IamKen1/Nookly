@@ -9,16 +9,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       businessName,
+      addressLine1,
+      city,
+      contactNumber,
       ownerFirstName,
       ownerLastName,
       ownerEmail,
       username,
       password,
+      confirmPassword,
       planCode,
+      agreedToTerms,
     } = body ?? {}
 
-    if (!businessName || !ownerEmail || !username || !password) {
+    if (!businessName || !addressLine1 || !city || !contactNumber || !ownerFirstName || !ownerLastName || !ownerEmail || !username || !password) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
+    }
+    if (password !== confirmPassword) {
+      return NextResponse.json({ error: "Passwords don't match." }, { status: 400 })
+    }
+    if (!agreedToTerms) {
+      return NextResponse.json({ error: 'You must agree to the Terms of Service and Privacy Policy.' }, { status: 400 })
     }
 
     const requestedPlanCode = Object.values(PlanCode).includes(planCode) ? planCode : PlanCode.SPROUT
@@ -42,12 +53,15 @@ export async function POST(request: NextRequest) {
         name: businessName,
         slug,
         ownerEmail,
+        contactNumber,
         onboardingStep: 1,
         stores: {
           create: {
             name: `${businessName} - Main Branch`,
             code: 'MAIN',
             isMainBranch: true,
+            address: addressLine1,
+            city,
           },
         },
         subscription: {
@@ -61,6 +75,8 @@ export async function POST(request: NextRequest) {
         receiptSettings: {
           create: {
             storeName: businessName,
+            addressLine1,
+            contactNumber,
           },
         },
         notificationSettings: {
