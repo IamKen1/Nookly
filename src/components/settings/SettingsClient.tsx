@@ -40,11 +40,37 @@ export default function SettingsClient({
   usage: { stores: number; users: number; products: number };
 }) {
   const [tab, setTab] = useState<Tab>("plan");
+  const [restarting, setRestarting] = useState(false);
+
+  const restartTour = async () => {
+    setRestarting(true);
+    try {
+      await fetch("/api/onboarding/tour", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reset: true }),
+      });
+      window.location.href = "/dashboard";
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-zinc-900">Settings</h1>
-      <p className="mt-1 text-sm text-zinc-500">Manage your plan, receipts, and alert preferences.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900">Settings</h1>
+          <p className="mt-1 text-sm text-zinc-500">Manage your plan, receipts, and alert preferences.</p>
+        </div>
+        <button
+          onClick={restartTour}
+          disabled={restarting}
+          className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:border-zinc-400 disabled:opacity-50"
+        >
+          {restarting ? "Starting..." : "Replay guided tour"}
+        </button>
+      </div>
 
       <div className="mt-6 flex gap-2 border-b border-zinc-200">
         <button

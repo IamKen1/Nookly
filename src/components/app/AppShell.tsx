@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BarChart3, Boxes, ClipboardPlus, LayoutDashboard, Leaf, LifeBuoy, Package, Receipt, Settings, ShoppingCart, Users, Wallet } from "lucide-react";
 import LogoutButton from "./LogoutButton";
+import OnboardingTourLoader from "@/components/onboarding/OnboardingTourLoader";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -43,6 +44,7 @@ export default function AppShell({
             <Link
               key={href}
               href={href}
+              data-tour={`nav-${href.slice(1)}`}
               className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-emerald-50 hover:text-emerald-700"
             >
               <Icon className="h-4 w-4" />
@@ -62,6 +64,8 @@ export default function AppShell({
         </header>
         <main className="flex-1 p-6">{children}</main>
       </div>
+
+      <OnboardingTourLoader role={role} />
     </div>
   );
 }

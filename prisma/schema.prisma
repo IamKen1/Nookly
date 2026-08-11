@@ -255,6 +255,7 @@ model User {
   firstName      String
   lastName       String
   role           UserRole        @default(CASHIER)
+  hasSeenTour    Boolean         @default(false) // drives the first-time-user guided tour
   isActive       Boolean         @default(true)
   isPlatformAdmin Boolean        @default(false) // grants access to the platform ops console, independent of tenant role
   createdAt      DateTime        @default(now())
