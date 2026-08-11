@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Leaf } from "lucide-react";
+import UsernameField from "@/components/shared/UsernameField";
 
 const planLabels: Record<string, string> = {
   sprout: "Sprout — ₱899/mo",
@@ -176,15 +177,11 @@ function SignupForm() {
                   className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Username</label>
-                <input
-                  required
-                  value={form.username}
-                  onChange={(e) => set("username", e.target.value)}
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </div>
+              <UsernameField
+                value={form.username}
+                onChange={(v) => set("username", v)}
+                hint={{ businessSlug: form.businessName, firstName: form.ownerFirstName, lastName: form.ownerLastName }}
+              />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">Password</label>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
+import UsernameField from "@/components/shared/UsernameField";
 
 interface Store {
   id: string;
@@ -238,12 +239,12 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   className="col-span-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 />
-                <input
-                  required
+                <UsernameField
+                  label=""
                   placeholder="Username"
                   value={form.username}
-                  onChange={(e) => setForm({ ...form, username: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  onChange={(v) => setForm({ ...form, username: v })}
+                  hint={{ firstName: form.firstName, lastName: form.lastName }}
                 />
                 <input
                   required
