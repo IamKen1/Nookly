@@ -1,0 +1,250 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Plus, X } from "lucide-react";
+
+interface Store {
+  id: string;
+  name: string;
+}
+
+interface UserRow {
+  id: string;
+  email: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  storeId: string | null;
+  isActive: boolean;
+}
+
+const ROLES = ["OWNER", "ADMIN", "PHARMACIST", "PHARMACY_TECH", "CASHIER", "MANAGER"];
+
+const emptyForm = {
+  email: "",
+  username: "",
+  firstName: "",
+  lastName: "",
+  role: "CASHIER",
+  password: "",
+  storeId: "",
+};
+
+export default function UsersClient({ stores, planName, maxUsers }: { stores: Store[]; planName: string; maxUsers: number }) {
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch("/api/users");
+    const data = await res.json();
+    setUsers(Array.isArray(data) ? data : []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to create user.");
+        return;
+      }
+      setShowForm(false);
+      setForm(emptyForm);
+      load();
+    } catch {
+      setError("Network error.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleActive = async (user: UserRow) => {
+    await fetch(`/api/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !user.isActive }),
+    });
+    load();
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm("Remove this user?")) return;
+    const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+    const data = await res.json();
+    if (data.deactivated) alert(data.message);
+    load();
+  };
+
+  const atLimit = maxUsers !== -1 && users.filter((u) => u.isActive).length >= maxUsers;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900">Users</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            {maxUsers === -1 ? "Unlimited users" : `${users.filter((u) => u.isActive).length} / ${maxUsers} users (${planName} plan)`}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowForm(true)}
+          disabled={atLimit}
+          className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" /> Add user
+        </button>
+      </div>
+
+      <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
+              <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Username</th>
+              <th className="px-4 py-3">Role</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
+              </tr>
+            ) : users.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">No users yet.</td>
+              </tr>
+            ) : (
+              users.map((u) => (
+                <tr key={u.id} className="border-b border-zinc-50 last:border-0">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-zinc-900">{u.firstName} {u.lastName}</p>
+                    <p className="text-xs text-zinc-500">{u.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-600">{u.username}</td>
+                  <td className="px-4 py-3 text-zinc-600">{u.role}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => toggleActive(u)}
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"}`}
+                    >
+                      {u.isActive ? "Active" : "Inactive"}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => remove(u.id)} className="text-xs font-semibold text-zinc-400 hover:text-red-600">
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-zinc-900">Add user</h2>
+              <button onClick={() => setShowForm(false)}>
+                <X className="h-5 w-5 text-zinc-400" />
+              </button>
+            </div>
+
+            <form onSubmit={submit} className="mt-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  required
+                  placeholder="First name"
+                  value={form.firstName}
+                  onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+                <input
+                  required
+                  placeholder="Last name"
+                  value={form.lastName}
+                  onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+                <input
+                  required
+                  type="email"
+                  placeholder="Email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="col-span-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+                <input
+                  required
+                  placeholder="Username"
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+                <input
+                  required
+                  type="password"
+                  placeholder="Password"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+                <select
+                  value={form.role}
+                  onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                >
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <select
+                  value={form.storeId}
+                  onChange={(e) => setForm({ ...form, storeId: e.target.value })}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Default branch</option>
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {error && <p className="text-sm text-red-600">{error}</p>}
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Save user"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,10 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
+  "crons": [
+    { "path": "/api/cron/reports/end-of-day", "schedule": "30 16 * * *" },
+    { "path": "/api/cron/reports/monthly-summary", "schedule": "35 16 * * *" }
+  ]
+}

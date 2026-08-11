@@ -1,0 +1,81 @@
+"use client";
+
+import { useState } from "react";
+import ReceiptSettingsForm from "./ReceiptSettingsForm";
+import NotificationSettingsForm from "./NotificationSettingsForm";
+import PlanSettingsForm from "./PlanSettingsForm";
+
+type Tab = "plan" | "receipt" | "notifications";
+
+interface CurrentPlan {
+  code: string;
+  name: string;
+  status: string;
+  billingCycle: "MONTHLY" | "YEARLY";
+  currentPeriodEnd: string | null;
+  trialEndsAt: string | null;
+  maxStores: number;
+  maxUsers: number;
+  maxProducts: number;
+}
+
+interface PlanOption {
+  code: string;
+  name: string;
+  priceMonthly: number;
+  priceYearly: number;
+}
+
+export default function SettingsClient({
+  canManageAlerts,
+  canManagePlan,
+  currentPlan,
+  allPlans,
+  usage,
+}: {
+  canManageAlerts: boolean;
+  canManagePlan: boolean;
+  currentPlan: CurrentPlan | null;
+  allPlans: PlanOption[];
+  usage: { stores: number; users: number; products: number };
+}) {
+  const [tab, setTab] = useState<Tab>("plan");
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-zinc-900">Settings</h1>
+      <p className="mt-1 text-sm text-zinc-500">Manage your plan, receipts, and alert preferences.</p>
+
+      <div className="mt-6 flex gap-2 border-b border-zinc-200">
+        <button
+          onClick={() => setTab("plan")}
+          className={`px-4 py-2 text-sm font-semibold ${tab === "plan" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
+        >
+          Plan
+        </button>
+        <button
+          onClick={() => setTab("receipt")}
+          className={`px-4 py-2 text-sm font-semibold ${tab === "receipt" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
+        >
+          Receipt
+        </button>
+        {canManageAlerts && (
+          <button
+            onClick={() => setTab("notifications")}
+            className={`px-4 py-2 text-sm font-semibold ${tab === "notifications" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
+          >
+            Notifications
+          </button>
+        )}
+      </div>
+
+      <div className="mt-6">
+        {tab === "plan" && (
+          <PlanSettingsForm canManagePlan={canManagePlan} currentPlan={currentPlan} allPlans={allPlans} usage={usage} />
+        )}
+        {tab === "receipt" && <ReceiptSettingsForm />}
+        {tab === "notifications" && canManageAlerts && <NotificationSettingsForm />}
+      </div>
+    </div>
+  );
+}

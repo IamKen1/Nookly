@@ -1,0 +1,31 @@
+import { redirect } from "next/navigation";
+import { requireSession } from "@/lib/require-session";
+import { prisma } from "@/lib/prisma";
+import AppShell from "@/components/app/AppShell";
+import UsersClient from "@/components/users/UsersClient";
+
+export default async function UsersPage() {
+  const session = await requireSession();
+  if (!["OWNER", "ADMIN"].includes(session.role)) {
+    redirect("/dashboard");
+  }
+
+  const [tenant, stores] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { id: session.tenantId },
+      include: { subscription: { include: { plan: true } } },
+    }),
+    prisma.store.findMany({ where: { tenantId: session.tenantId, isActive: true }, orderBy: { name: "asc" } }),
+  ]);
+  if (!tenant) return null;
+
+  return (
+    <AppShell tenantName={tenant.name} planName={tenant.subscription?.plan.name} role={session.role}>
+      <UsersClient
+        stores={stores.map((s) => ({ id: s.id, name: s.name }))}
+        planName={tenant.subscription?.plan.name ?? ""}
+        maxUsers={tenant.subscription?.plan.maxUsers ?? -1}
+      />
+    </AppShell>
+  );
+}

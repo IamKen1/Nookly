@@ -1,0 +1,785 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// PLATFORM / BILLING
+// Every operational model below carries a tenantId — this is what makes
+// Nookly multi-tenant on a single shared database.
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id                   String              @id @default(cuid())
+  code                 PlanCode            @unique
+  name                 String
+  tagline              String?
+  priceMonthly         Decimal             @db.Decimal(10, 2)
+  priceYearly          Decimal             @db.Decimal(10, 2)
+  maxStores            Int // -1 = unlimited
+  maxUsers             Int // -1 = unlimited
+  maxProducts          Int // -1 = unlimited
+  features             Json // list of feature strings shown on pricing page
+  featureReports       Boolean             @default(false)
+  featurePrescriptions Boolean             @default(false)
+  featureAlerts        Boolean             @default(false)
+  featureMultiBranch   Boolean             @default(false)
+  isActive             Boolean             @default(true)
+  sortOrder            Int                 @default(0)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  subscriptions        Subscription[]
+  requestsFrom         PlanChangeRequest[] @relation("CurrentPlanRequests")
+  requestsTo           PlanChangeRequest[] @relation("RequestedPlanRequests")
+
+  @@map("plans")
+}
+
+model Tenant {
+  id                   String                    @id @default(cuid())
+  name                 String // Drugstore / business name shown on receipts
+  slug                 String                    @unique // used for subdomain / login routing e.g. mercury-drug
+  ownerEmail           String
+  contactNumber        String?
+  timezone             String                    @default("Asia/Manila")
+  currency             String                    @default("PHP")
+  isActive             Boolean                   @default(true)
+  onboardingStep       Int                       @default(0) // drives setup wizard progress
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  subscription         Subscription?
+  stores               Store[]
+  users                User[]
+  customers            Customer[]
+  categories           Category[]
+  suppliers            Supplier[]
+  products             Product[]
+  doctors              Doctor[]
+  prescriptions        Prescription[]
+  sales                Sale[]
+  stockMovements       StockMovement[]
+  receiptSettings      ReceiptSettings?
+  notificationSettings NotificationSettings?
+  scheduledReports     ScheduledReportDelivery[]
+  supportTickets       SupportTicket[]
+  shifts               Shift[]
+  cashTransactions     CashTransaction[]
+  invites              TenantInvite[]
+  planChangeRequests   PlanChangeRequest[]
+
+  @@map("tenants")
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  tenantId           String             @unique
+  planId             String
+  status             SubscriptionStatus @default(TRIALING)
+  billingCycle       BillingCycle       @default(MONTHLY)
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime           @default(now())
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  canceledAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan               Plan               @relation(fields: [planId], references: [id])
+  invoices           Invoice[]
+
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  subscriptionId String
+  amount         Decimal       @db.Decimal(10, 2)
+  currency       String        @default("PHP")
+  status         InvoiceStatus @default(PENDING)
+  periodStart    DateTime
+  periodEnd      DateTime
+  paidAt         DateTime?
+  externalRef    String? // gateway (PayMongo/Stripe) reference id
+  createdAt      DateTime      @default(now())
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+model TenantInvite {
+  id         String    @id @default(cuid())
+  tenantId   String
+  email      String
+  role       UserRole  @default(CASHIER)
+  token      String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@map("tenant_invites")
+}
+
+// Append-only trail of every sensitive action taken in the platform ops console.
+// Intentionally has no FK to User — must survive regardless of user lifecycle.
+model AdminAuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actorEmail  String
+  action      String
+  targetType  String?
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@map("admin_audit_logs")
+}
+
+// A tenant-reported issue/question, threaded like a mail conversation between
+// the tenant and platform admins (Outlook-style inbox on the admin side).
+model SupportTicket {
+  id           String              @id @default(cuid())
+  tenantId     String
+  subject      String
+  status       SupportTicketStatus @default(OPEN)
+  priority     SupportTicketPriority @default(NORMAL)
+  createdByUserId String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser User               @relation(fields: [createdByUserId], references: [id])
+  messages     SupportTicketMessage[]
+
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id             String        @id @default(cuid())
+  ticketId       String
+  authorType     SupportAuthorType
+  authorUserId   String?
+  authorEmail    String
+  body           String
+  createdAt      DateTime      @default(now())
+  ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorUser     User?         @relation(fields: [authorUserId], references: [id])
+
+  @@map("support_ticket_messages")
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SupportAuthorType {
+  TENANT
+  ADMIN
+}
+
+// A tenant-initiated request to switch plans. Nookly does not collect payment
+// automatically — the flow is: tenant requests -> we contact them -> they pay
+// out of band -> we confirm and activate the new plan (sets Subscription.planId).
+model PlanChangeRequest {
+  id                String                  @id @default(cuid())
+  tenantId          String
+  currentPlanId     String
+  requestedPlanId   String
+  billingCycle      BillingCycle            @default(MONTHLY)
+  note              String?
+  status            PlanChangeRequestStatus @default(PENDING)
+  requestedByUserId String
+  resolvedNote      String?
+  resolvedAt        DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  tenant            Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  currentPlan       Plan                    @relation("CurrentPlanRequests", fields: [currentPlanId], references: [id])
+  requestedPlan     Plan                    @relation("RequestedPlanRequests", fields: [requestedPlanId], references: [id])
+  requestedByUser   User                    @relation(fields: [requestedByUserId], references: [id])
+
+  @@map("plan_change_requests")
+}
+
+model Store {
+  id             String          @id @default(cuid())
+  tenantId       String
+  name           String
+  code           String
+  address        String?
+  city           String?
+  isActive       Boolean         @default(true)
+  isMainBranch   Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users          User[]
+  productStocks  ProductStock[]
+  sales          Sale[]
+  stockMovements StockMovement[]
+  shifts         Shift[]
+  cashTransactions CashTransaction[]
+
+  @@unique([tenantId, code])
+  @@map("stores")
+}
+
+// ---------------------------------------------------------------------------
+// STORE OPERATIONS (mirrors gfp-pos, scoped by tenantId / storeId)
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String          @id @default(cuid())
+  tenantId       String
+  storeId        String?
+  email          String
+  username       String
+  password       String
+  firstName      String
+  lastName       String
+  role           UserRole        @default(CASHIER)
+  isActive       Boolean         @default(true)
+  isPlatformAdmin Boolean        @default(false) // grants access to the platform ops console, independent of tenant role
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store          Store?              @relation(fields: [storeId], references: [id])
+  sales          Sale[]
+  stockMovements StockMovement[]
+  planChangeRequests PlanChangeRequest[]
+  supportTickets SupportTicket[]
+  supportTicketMessages SupportTicketMessage[]
+  shifts         Shift[]
+  cashTransactions CashTransaction[]
+
+  @@unique([tenantId, email])
+  @@unique([tenantId, username])
+  @@map("users")
+}
+
+model Customer {
+  id               String         @id @default(cuid())
+  tenantId         String
+  firstName        String
+  lastName         String
+  email            String?
+  phone            String?
+  address          String?
+  city             String?
+  state            String?
+  zipCode          String?
+  dateOfBirth      DateTime?
+  gender           Gender?
+  insuranceCarrier String?
+  insuranceId      String?
+  insuranceGroup   String?
+  allergies        String?
+  medicalNotes     String?
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  loyaltyPoints    Int            @default(0)
+  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  prescriptions    Prescription[]
+  sales            Sale[]
+
+  @@map("customers")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products    Product[]
+
+  @@unique([tenantId, name])
+  @@map("categories")
+}
+
+model Supplier {
+  id            String            @id @default(cuid())
+  tenantId      String
+  name          String
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products      ProductSupplier[]
+
+  @@unique([tenantId, name])
+  @@map("suppliers")
+}
+
+model ReceiptSettings {
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique
+  storeName           String   @default("My Drugstore")
+  receiptTitle        String   @default("Acknowledgement Receipt (AR)")
+  addressLine1        String   @default("Complete Address Here")
+  addressLine2        String?
+  contactNumber       String?
+  tin                 String?
+  permitNumber        String?
+  accreditationNumber String?
+  serialNumberLabel   String?
+  footerMessage       String   @default("Thank you for your purchase!")
+  showVatBreakdown    Boolean  @default(true)
+  showCashierName     Boolean  @default(true)
+  showCustomerName    Boolean  @default(true)
+  includeOrderRemarks Boolean  @default(true)
+  logoUrl             String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("receipt_settings")
+}
+
+model NotificationSettings {
+  id                             String   @id @default(cuid())
+  tenantId                       String   @unique
+  emailNotificationsEnabled      Boolean  @default(true)
+  saleNotificationsEnabled       Boolean  @default(true)
+  lowStockNotificationsEnabled   Boolean  @default(true)
+  outOfStockNotificationsEnabled Boolean  @default(true)
+  endOfDaySummaryEnabled         Boolean  @default(false)
+  monthlySummaryEnabled          Boolean  @default(false)
+  alertRecipientEmails           String? // comma separated
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+  tenant                         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+model ScheduledReportDelivery {
+  id         String              @id @default(cuid())
+  tenantId   String
+  reportType ScheduledReportType
+  periodKey  String
+  sentAt     DateTime            @default(now())
+  createdAt  DateTime            @default(now())
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, reportType, periodKey])
+  @@map("scheduled_report_deliveries")
+}
+
+model Product {
+  id                   String             @id @default(cuid())
+  tenantId             String
+  name                 String
+  genericName          String?
+  brandName            String?
+  barcode              String?
+  ndcNumber            String?
+  description          String?
+  strength             String?
+  dosageForm           String?
+  manufacturer         String?
+  classification       String?
+  therapeuticUse       String?
+  costPrice            Decimal            @db.Decimal(10, 2)
+  costPricePerBox      Decimal?           @db.Decimal(10, 2)
+  sellingPrice         Decimal            @db.Decimal(10, 2)
+  insurancePrice       Decimal?           @db.Decimal(10, 2)
+  minimumStock         Int                @default(0)
+  maximumStock         Int?
+  reorderPoint         Int                @default(0)
+  drugSchedule         DrugSchedule?
+  requiresPrescription Boolean            @default(false)
+  isOTC                Boolean            @default(true)
+  isVatable            Boolean            @default(true)
+  isActive             Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  categoryId           String
+  imageUrl             String?
+  productType          String? // 'pharmacy' | 'general'
+  sku                  String?
+  weight               Float?
+  dimensions           String?
+  color                String?
+  size                 String?
+  material             String?
+  expiryDate           DateTime?
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  prescriptionItems    PrescriptionItem[]
+  batches              ProductBatch[]
+  suppliers            ProductSupplier[]
+  category             Category           @relation(fields: [categoryId], references: [id])
+  saleItems            SaleItem[]
+  stockMovements       StockMovement[]
+  stocks               ProductStock[]
+
+  @@unique([tenantId, barcode])
+  @@unique([tenantId, ndcNumber])
+  @@unique([tenantId, sku])
+  @@map("products")
+}
+
+// Per-branch stock level. A single-branch (Sprout) tenant simply has one
+// ProductStock row per product tied to its one Store.
+model ProductStock {
+  id           String   @id @default(cuid())
+  productId    String
+  storeId      String
+  currentStock Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, storeId])
+  @@map("product_stocks")
+}
+
+model ProductBatch {
+  id             String   @id @default(cuid())
+  batchNumber    String
+  expirationDate DateTime
+  quantity       Int
+  costPrice      Decimal  @db.Decimal(10, 2)
+  receivedDate   DateTime @default(now())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id])
+
+  @@unique([productId, batchNumber])
+  @@map("product_batches")
+}
+
+model ProductSupplier {
+  id           String   @id @default(cuid())
+  supplierCode String?
+  leadTime     Int?
+  minimumOrder Int?
+  productId    String
+  supplierId   String
+  product      Product  @relation(fields: [productId], references: [id])
+  supplier     Supplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([productId, supplierId])
+  @@map("product_suppliers")
+}
+
+model StockMovement {
+  id        String            @id @default(cuid())
+  tenantId  String
+  storeId   String
+  type      StockMovementType
+  quantity  Int
+  reason    String?
+  reference String?
+  notes     String?
+  createdAt DateTime          @default(now())
+  productId String
+  userId    String
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store     Store             @relation(fields: [storeId], references: [id])
+  product   Product           @relation(fields: [productId], references: [id])
+  user      User              @relation(fields: [userId], references: [id])
+
+  @@map("stock_movements")
+}
+
+model Doctor {
+  id            String         @id @default(cuid())
+  tenantId      String
+  firstName     String
+  lastName      String
+  specialty     String?
+  licenseNumber String?
+  deaNumber     String?
+  npiNumber     String?
+  phone         String?
+  email         String?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  prescriptions Prescription[]
+
+  @@unique([tenantId, licenseNumber])
+  @@map("doctors")
+}
+
+model Prescription {
+  id                 String             @id @default(cuid())
+  tenantId           String
+  prescriptionNumber String
+  originalDate       DateTime
+  writtenDate        DateTime
+  instructions       String?
+  refillsAllowed     Int                @default(0)
+  refillsUsed        Int                @default(0)
+  daysSupply         Int?
+  status             PrescriptionStatus @default(PENDING)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  customerId         String
+  doctorId           String
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items              PrescriptionItem[]
+  customer           Customer           @relation(fields: [customerId], references: [id])
+  doctor             Doctor             @relation(fields: [doctorId], references: [id])
+  sales              Sale[]
+
+  @@unique([tenantId, prescriptionNumber])
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id             String       @id @default(cuid())
+  quantity       Int
+  instructions   String?
+  substituted    Boolean      @default(false)
+  prescriptionId String
+  productId      String
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id])
+  product        Product      @relation(fields: [productId], references: [id])
+
+  @@map("prescription_items")
+}
+
+model Sale {
+  id              String        @id @default(cuid())
+  tenantId        String
+  storeId         String
+  saleNumber      String
+  subtotal        Decimal       @db.Decimal(10, 2)
+  vatableSales    Decimal?      @db.Decimal(10, 2)
+  nonVatableSales Decimal?      @db.Decimal(10, 2)
+  taxAmount       Decimal       @db.Decimal(10, 2)
+  discountType    String?       @default("NONE")
+  discountAmount  Decimal       @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal       @db.Decimal(10, 2)
+  paymentMethod   PaymentMethod
+  cashReceived    Decimal?      @db.Decimal(10, 2)
+  changeGiven     Decimal?      @db.Decimal(10, 2)
+  insuranceClaim  Boolean       @default(false)
+  copayAmount     Decimal?      @db.Decimal(10, 2)
+  insurancePaid   Decimal?      @db.Decimal(10, 2)
+  orderRemarks    String?
+  status          SaleStatus    @default(COMPLETED)
+  saleDate        DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  customerId      String?
+  userId          String
+  prescriptionId  String?
+  originalSaleId  String?
+  shiftId         String?
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store           Store         @relation(fields: [storeId], references: [id])
+  items           SaleItem[]
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  prescription    Prescription? @relation(fields: [prescriptionId], references: [id])
+  user            User          @relation(fields: [userId], references: [id])
+  originalSale    Sale?         @relation("SaleReturns", fields: [originalSaleId], references: [id])
+  returns         Sale[]        @relation("SaleReturns")
+  shift           Shift?        @relation(fields: [shiftId], references: [id])
+
+  @@unique([tenantId, saleNumber])
+  @@map("sales")
+}
+
+// A cashier's till session: opened with a declared starting cash float, closed
+// with a counted ending cash amount. Optional — POS works without one, but
+// starting one lets a shift-scoped reading (X-reading) and cash handover
+// between cashiers, and closed shifts roll up into the daily closing report.
+model Shift {
+  id               String            @id @default(cuid())
+  tenantId         String
+  storeId          String
+  userId           String
+  startingCash     Decimal           @db.Decimal(10, 2)
+  endingCash       Decimal?          @db.Decimal(10, 2)
+  expectedCash     Decimal?          @db.Decimal(10, 2)
+  notes            String?
+  openedAt         DateTime          @default(now())
+  closedAt         DateTime?
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store            Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id])
+  sales            Sale[]
+  cashTransactions CashTransaction[]
+
+  @@map("shifts")
+}
+
+// GCash/Maya/etc "cash in / cash out" agent transactions — a pharmacy service
+// distinct from product sales. Cash-in: customer hands over physical cash,
+// pharmacy credits the customer's e-wallet from its own float (drawer cash
+// goes UP by the amount plus the service fee earned). Cash-out: customer's
+// e-wallet is debited to the pharmacy's float, pharmacy hands over physical
+// cash (drawer cash goes DOWN by the amount, net of the fee kept). Tracked
+// per-shift so it folds into the expected-cash reconciliation alongside sales.
+model CashTransaction {
+  id              String              @id @default(cuid())
+  tenantId        String
+  storeId         String
+  shiftId         String?
+  userId          String
+  type            CashTransactionType
+  provider        String // e.g. "GCash", "Maya", "PadalaXpress"
+  amount          Decimal             @db.Decimal(10, 2)
+  serviceFee      Decimal             @default(0) @db.Decimal(10, 2)
+  referenceNumber String?
+  customerName    String?
+  customerMobile  String?
+  createdAt       DateTime            @default(now())
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store           Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user            User                @relation(fields: [userId], references: [id])
+  shift           Shift?              @relation(fields: [shiftId], references: [id])
+
+  @@map("cash_transactions")
+}
+
+enum CashTransactionType {
+  CASH_IN
+  CASH_OUT
+}
+
+model SaleItem {
+  id                String  @id @default(cuid())
+  quantity          Int
+  unitPrice         Decimal @db.Decimal(10, 2)
+  totalPrice        Decimal @db.Decimal(10, 2)
+  discountAmount    Decimal @default(0) @db.Decimal(10, 2)
+  returnedQuantity  Int     @default(0)
+  saleId            String
+  productId         String
+  product           Product @relation(fields: [productId], references: [id])
+  sale              Sale    @relation(fields: [saleId], references: [id])
+
+  @@map("sale_items")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+
+enum PlanCode {
+  SPROUT
+  BLOOM
+  EMPIRE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  PHARMACIST
+  PHARMACY_TECH
+  CASHIER
+  MANAGER
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum DrugSchedule {
+  SCHEDULE_I
+  SCHEDULE_II
+  SCHEDULE_III
+  SCHEDULE_IV
+  SCHEDULE_V
+}
+
+enum StockMovementType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+  EXPIRED
+  DAMAGED
+  TRANSFER
+}
+
+enum PrescriptionStatus {
+  PENDING
+  FILLED
+  PARTIAL
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  INSURANCE
+  CHECK
+  SPLIT
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  RETURNED
+}
+
+enum ScheduledReportType {
+  END_OF_DAY
+  MONTHLY_SUMMARY
+}
+
+enum PlanChangeRequestStatus {
+  PENDING
+  CONTACTED
+  ACTIVATED
+  CANCELLED
+}
