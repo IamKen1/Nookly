@@ -27,9 +27,30 @@ export async function GET(request: NextRequest) {
           }
         : {}),
     },
-    include: {
-      category: true,
-      stocks: session.storeId ? { where: { storeId: session.storeId } } : true,
+    select: {
+      id: true,
+      name: true,
+      genericName: true,
+      brandName: true,
+      barcode: true,
+      description: true,
+      strength: true,
+      dosageForm: true,
+      costPrice: true,
+      sellingPrice: true,
+      minimumStock: true,
+      maximumStock: true,
+      reorderPoint: true,
+      requiresPrescription: true,
+      isVatable: true,
+      isOTC: true,
+      drugSchedule: true,
+      imageUrl: true,
+      category: { select: { id: true, name: true } },
+      stocks: {
+        where: session.storeId ? { storeId: session.storeId } : undefined,
+        select: { currentStock: true },
+      },
     },
     orderBy: { name: "asc" },
   });
