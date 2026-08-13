@@ -33,6 +33,13 @@ interface Product {
 
 const DRUG_SCHEDULES = ["SCHEDULE_I", "SCHEDULE_II", "SCHEDULE_III", "SCHEDULE_IV", "SCHEDULE_V"];
 
+const Field = ({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) => (
+  <div className={className}>
+    <label className="mb-1 block text-xs font-medium text-zinc-500">{label}</label>
+    {children}
+  </div>
+);
+
 const emptyForm = {
   name: "",
   genericName: "",
@@ -318,111 +325,130 @@ export default function ProductsClient({
             <form onSubmit={handleSubmit} className="mt-4 space-y-3">
               <ImageUpload currentImage={form.imageUrl} onImageChange={(url) => setForm({ ...form, imageUrl: url })} />
               <div className="grid grid-cols-2 gap-3">
-                <input
-                  required
-                  placeholder="Product name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="col-span-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  placeholder="Generic name"
-                  value={form.genericName}
-                  onChange={(e) => setForm({ ...form, genericName: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  placeholder="Brand name"
-                  value={form.brandName}
-                  onChange={(e) => setForm({ ...form, brandName: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  placeholder="Barcode"
-                  value={form.barcode}
-                  onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <select
-                  required
-                  value={form.categoryId}
-                  onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Category...</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  required
-                  type="number"
-                  step="0.01"
-                  placeholder="Cost price"
-                  value={form.costPrice}
-                  onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  required
-                  type="number"
-                  step="0.01"
-                  placeholder="Selling price"
-                  value={form.sellingPrice}
-                  onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  type="number"
-                  placeholder="Starting stock"
-                  value={form.currentStock}
-                  onChange={(e) => setForm({ ...form, currentStock: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  type="number"
-                  placeholder="Minimum stock"
-                  value={form.minimumStock}
-                  onChange={(e) => setForm({ ...form, minimumStock: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  type="number"
-                  placeholder="Maximum stock"
-                  value={form.maximumStock}
-                  onChange={(e) => setForm({ ...form, maximumStock: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  type="number"
-                  placeholder="Reorder point"
-                  value={form.reorderPoint}
-                  onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <select
-                  value={form.drugSchedule}
-                  onChange={(e) => setForm({ ...form, drugSchedule: e.target.value })}
-                  className="col-span-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Drug schedule: Unscheduled</option>
-                  {DRUG_SCHEDULES.map((s) => (
-                    <option key={s} value={s}>
-                      {s.replace("_", " ")}
-                    </option>
-                  ))}
-                </select>
+                <Field label="Product name" className="col-span-2">
+                  <input
+                    required
+                    placeholder="e.g., Biogesic 500mg Tablet"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Generic name">
+                  <input
+                    value={form.genericName}
+                    onChange={(e) => setForm({ ...form, genericName: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Brand name">
+                  <input
+                    value={form.brandName}
+                    onChange={(e) => setForm({ ...form, brandName: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Barcode">
+                  <input
+                    value={form.barcode}
+                    onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Category">
+                  <select
+                    required
+                    value={form.categoryId}
+                    onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Category...</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Cost Price (₱)">
+                  <input
+                    required
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.costPrice}
+                    onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Selling Price (₱)">
+                  <input
+                    required
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.sellingPrice}
+                    onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label={editingProduct ? "Current Stock" : "Starting Stock"}>
+                  <input
+                    type="number"
+                    value={form.currentStock}
+                    onChange={(e) => setForm({ ...form, currentStock: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Minimum Stock">
+                  <input
+                    type="number"
+                    value={form.minimumStock}
+                    onChange={(e) => setForm({ ...form, minimumStock: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Maximum Stock">
+                  <input
+                    type="number"
+                    value={form.maximumStock}
+                    onChange={(e) => setForm({ ...form, maximumStock: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Reorder Point">
+                  <input
+                    type="number"
+                    value={form.reorderPoint}
+                    onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Drug Schedule" className="col-span-2">
+                  <select
+                    value={form.drugSchedule}
+                    onChange={(e) => setForm({ ...form, drugSchedule: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Unscheduled</option>
+                    {DRUG_SCHEDULES.map((s) => (
+                      <option key={s} value={s}>
+                        {s.replace("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
               </div>
 
-              <textarea
-                placeholder="Description"
-                rows={2}
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
+              <Field label="Description">
+                <textarea
+                  placeholder="Enter product description..."
+                  rows={2}
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+              </Field>
 
               {!editingProduct && parseInt(form.currentStock || "0") > 0 && (
                 <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
@@ -430,19 +456,21 @@ export default function ProductsClient({
                     Track this starting stock as a batch (optional) so it&apos;s covered by expiry alerts.
                   </p>
                   <div className="grid grid-cols-2 gap-3">
-                    <input
-                      placeholder="Batch number"
-                      value={form.batchNumber}
-                      onChange={(e) => setForm({ ...form, batchNumber: e.target.value })}
-                      className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                    />
-                    <input
-                      type="date"
-                      placeholder="Expiration date"
-                      value={form.expirationDate}
-                      onChange={(e) => setForm({ ...form, expirationDate: e.target.value })}
-                      className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                    />
+                    <Field label="Batch number">
+                      <input
+                        value={form.batchNumber}
+                        onChange={(e) => setForm({ ...form, batchNumber: e.target.value })}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                      />
+                    </Field>
+                    <Field label="Expiration date">
+                      <input
+                        type="date"
+                        value={form.expirationDate}
+                        onChange={(e) => setForm({ ...form, expirationDate: e.target.value })}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                      />
+                    </Field>
                   </div>
                 </div>
               )}
