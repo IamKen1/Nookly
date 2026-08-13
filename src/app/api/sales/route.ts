@@ -119,11 +119,6 @@ export async function POST(request: NextRequest) {
       if (!prescriptionDraft.writtenDate) {
         return NextResponse.json({ error: "The prescription date is required." }, { status: 400 });
       }
-    } else {
-      return NextResponse.json(
-        { error: "This sale contains a prescription-only item. Fill in the prescription details to continue." },
-        { status: 400 }
-      );
     }
   }
 

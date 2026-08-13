@@ -87,11 +87,6 @@ export default function CheckoutModal({ isOpen, onClose, cart, needsPrescription
       setError("Insufficient cash amount.");
       return;
     }
-    if (needsPrescription && !prescriptionSelection) {
-      setError("This cart contains a prescription-only item. Fill in the prescription details to continue.");
-      return;
-    }
-
     setIsProcessing(true);
     try {
       const result = await onProcessSale({

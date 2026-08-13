@@ -209,7 +209,7 @@ export default function PrescriptionFields({
   return (
     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">Prescription required</h3>
+        <h3 className="text-sm font-semibold text-gray-900">Prescription (optional)</h3>
         {pendingPrescriptions.length > 0 && (
           <div className="flex gap-1 rounded-full bg-white p-0.5 text-xs">
             <button
