@@ -153,7 +153,13 @@ export default function CheckoutModal({ isOpen, onClose, cart, needsPrescription
                   <span>Amount Due:</span>
                   <span>{peso(finalTotal)}</span>
                 </div>
-                <div className="mt-1 flex justify-between text-xs text-gray-500">
+                {totals.vatExemptSales != null && (
+                  <div className="mt-1 flex justify-between text-xs text-gray-500">
+                    <span>VAT-Exempt Sales:</span>
+                    <span>{peso(totals.vatExemptSales)}</span>
+                  </div>
+                )}
+                <div className={totals.vatExemptSales != null ? "flex justify-between text-xs text-gray-500" : "mt-1 flex justify-between text-xs text-gray-500"}>
                   <span>VAT Sales:</span>
                   <span>{peso(totals.vatableSales)}</span>
                 </div>

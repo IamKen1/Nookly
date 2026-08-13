@@ -41,8 +41,8 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
 
   let vatExemptSales: number | undefined;
   if (sale.discountType === "SENIOR" || sale.discountType === "PWD") {
-    const vatableTotal = toNumber(sale.vatableSales) + toNumber(sale.discountAmount);
-    vatExemptSales = Number((vatableTotal / 1.12).toFixed(2));
+    // sale.vatableSales is already VAT-exclusive and net of the 20% discount for SENIOR/PWD sales.
+    vatExemptSales = Number((toNumber(sale.vatableSales) / 0.8).toFixed(2));
   }
 
   return {
