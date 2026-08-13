@@ -135,11 +135,14 @@ export default function PosClient({
     refreshShiftStatus();
   }, [refreshShiftStatus]);
 
+  const searchRequestIdRef = useRef(0);
   const loadProducts = useCallback(async (q: string) => {
+    const requestId = ++searchRequestIdRef.current;
     setLoading(true);
     const url = q ? `/api/products?search=${encodeURIComponent(q)}` : "/api/products";
     const res = await fetch(url);
     const data = await res.json();
+    if (requestId !== searchRequestIdRef.current) return;
     setProducts(Array.isArray(data) ? data : []);
     setLoading(false);
   }, []);
