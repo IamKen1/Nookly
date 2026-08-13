@@ -30,7 +30,7 @@ import { getImageUrl, getOptimizedImageUrl } from "@/lib/cloudinary";
 import { peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { usePrinterConnection } from "@/lib/printer/usePrinterConnection";
-import { generateThermalReceiptText } from "@/lib/receipt";
+import { generateThermalReceiptText, printReceipt } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 import type { DiscountType } from "@/lib/vat-calculations";
 import CartPanel, { type CartLine } from "./CartPanel";
@@ -248,17 +248,18 @@ export default function PosClient({
     clearCart();
     refreshProducts();
 
-    if (printer.connection) {
-      try {
-        const receiptRes = await fetch(`/api/sales/${data.id}/receipt`);
-        const receiptJson = await receiptRes.json();
-        if (receiptRes.ok) {
-          const receiptData: ReceiptData = { ...receiptJson, date: new Date(receiptJson.date) };
+    try {
+      const receiptRes = await fetch(`/api/sales/${data.id}/receipt`);
+      const receiptJson = await receiptRes.json();
+      if (receiptRes.ok) {
+        const receiptData: ReceiptData = { ...receiptJson, date: new Date(receiptJson.date) };
+        printReceipt(receiptData);
+        if (printer.connection) {
           await printer.printText(generateThermalReceiptText(receiptData));
         }
-      } catch {
-        showNotification("Receipt saved, but printing failed. Check the printer connection.", "error");
       }
+    } catch {
+      showNotification("Receipt saved, but printing failed. Check the printer connection.", "error");
     }
 
     return { ok: true, saleNumber: data.saleNumber, totalAmount: Number(data.totalAmount) };
