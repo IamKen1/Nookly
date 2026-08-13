@@ -29,9 +29,26 @@ export async function GET(request: NextRequest) {
 
   const sales = await prisma.sale.findMany({
     where: { tenantId: session.tenantId },
-    include: {
-      items: { include: { product: true } },
-      customer: true,
+    select: {
+      id: true,
+      saleNumber: true,
+      saleDate: true,
+      subtotal: true,
+      discountType: true,
+      discountAmount: true,
+      taxAmount: true,
+      totalAmount: true,
+      paymentMethod: true,
+      status: true,
+      items: {
+        select: {
+          quantity: true,
+          unitPrice: true,
+          totalPrice: true,
+          product: { select: { id: true, name: true } },
+        },
+      },
+      customer: { select: { id: true, firstName: true, lastName: true } },
       user: { select: { id: true, firstName: true, lastName: true, username: true, role: true } },
     },
     orderBy: { saleDate: "desc" },

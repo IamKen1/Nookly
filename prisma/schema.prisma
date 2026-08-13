@@ -477,6 +477,8 @@ model Product {
   @@unique([tenantId, barcode])
   @@unique([tenantId, ndcNumber])
   @@unique([tenantId, sku])
+  @@index([tenantId, isActive])
+  @@index([tenantId, categoryId])
   @@map("products")
 }
 
@@ -492,6 +494,7 @@ model ProductStock {
   store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([productId, storeId])
+  @@index([storeId])
   @@map("product_stocks")
 }
 
@@ -592,6 +595,7 @@ model Prescription {
   sales              Sale[]
 
   @@unique([tenantId, prescriptionNumber])
+  @@index([tenantId, status])
   @@map("prescriptions")
 }
 
