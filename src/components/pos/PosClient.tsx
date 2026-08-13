@@ -29,11 +29,15 @@ import { useBarcodeAudio } from "@/hooks/useBarcodeAudio";
 import { getImageUrl, getOptimizedImageUrl } from "@/lib/cloudinary";
 import { peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import { usePrinterConnection } from "@/lib/printer/usePrinterConnection";
+import { generateThermalReceiptText } from "@/lib/receipt";
+import type { ReceiptData } from "@/types/receipt";
 import type { DiscountType } from "@/lib/vat-calculations";
 import CartPanel, { type CartLine } from "./CartPanel";
 import CheckoutModal, { type PrescriptionDraft } from "./CheckoutModal";
 import ShiftModal from "./ShiftModal";
 import CashTransactionModal from "./CashTransactionModal";
+import PrinterConnectButton from "./PrinterConnectButton";
 
 interface Product {
   id: string;
@@ -120,6 +124,8 @@ export default function PosClient({
   );
   const hasOpenShift = shiftData ? Boolean(shiftData.openShift) : null;
   const openShiftId = shiftData?.openShift?.id ?? null;
+
+  const printer = usePrinterConnection();
 
   const debouncedSearch = useDebouncedValue(search, 250);
   const productsUrl = debouncedSearch ? `/api/products?search=${encodeURIComponent(debouncedSearch)}` : "/api/products";
@@ -241,6 +247,20 @@ export default function PosClient({
     if (!res.ok) return { ok: false, error: data.error ?? "Checkout failed." };
     clearCart();
     refreshProducts();
+
+    if (printer.connection) {
+      try {
+        const receiptRes = await fetch(`/api/sales/${data.id}/receipt`);
+        const receiptJson = await receiptRes.json();
+        if (receiptRes.ok) {
+          const receiptData: ReceiptData = { ...receiptJson, date: new Date(receiptJson.date) };
+          await printer.printText(generateThermalReceiptText(receiptData));
+        }
+      } catch {
+        showNotification("Receipt saved, but printing failed. Check the printer connection.", "error");
+      }
+    }
+
     return { ok: true, saleNumber: data.saleNumber, totalAmount: Number(data.totalAmount) };
   };
 
@@ -313,6 +333,7 @@ export default function PosClient({
             <Banknote className="h-4 w-4" />
             <span className="hidden sm:inline">Cash In/Out</span>
           </button>
+          <PrinterConnectButton printer={printer} />
           <Link
             href="/dashboard"
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-white/10"
