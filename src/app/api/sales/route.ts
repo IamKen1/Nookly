@@ -5,6 +5,7 @@ import { calculateVatInclusiveTotals, type DiscountType } from "@/lib/vat-calcul
 import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
 import { runInBackground } from "@/lib/background";
 import { notifySaleCreated, notifyStockThresholdReached } from "@/lib/notifications";
+import { getReceiptSettings } from "@/lib/receipt-settings";
 
 interface CheckoutItem {
   productId: string;
@@ -322,16 +323,43 @@ export async function POST(request: NextRequest) {
   });
 
   if (completeSale) {
-    runInBackground("sale notification", () =>
-      notifySaleCreated({
+    runInBackground("sale notification", async () => {
+      const store = await getReceiptSettings(session.tenantId);
+      let vatExemptSales: number | undefined;
+      if (completeSale.discountType === "SENIOR" || completeSale.discountType === "PWD") {
+        const vatableTotal = Number(completeSale.vatableSales) + Number(completeSale.discountAmount);
+        vatExemptSales = Number((vatableTotal / 1.12).toFixed(2));
+      }
+
+      await notifySaleCreated({
         tenantId: session.tenantId,
         saleNumber: completeSale.saleNumber,
-        totalAmount: Number(completeSale.totalAmount),
-        itemCount: completeSale.items.reduce((sum, item) => sum + item.quantity, 0),
-        createdBy: `${completeSale.user.firstName} ${completeSale.user.lastName}`.trim(),
         saleDate: completeSale.saleDate,
-      })
-    );
+        items: completeSale.items.map((item) => ({
+          name: item.product.name,
+          quantity: item.quantity,
+          unitPrice: Number(item.unitPrice),
+          totalPrice: Number(item.totalPrice),
+        })),
+        subtotal: Number(completeSale.subtotal),
+        discountType: completeSale.discountType ?? "NONE",
+        discountAmount: Number(completeSale.discountAmount),
+        taxAmount: Number(completeSale.taxAmount),
+        vatableSales: Number(completeSale.vatableSales),
+        nonVatableSales: Number(completeSale.nonVatableSales),
+        zeroRatedSales: 0,
+        vatExemptSales,
+        totalAmount: Number(completeSale.totalAmount),
+        paymentMethod: completeSale.paymentMethod,
+        cashReceived: completeSale.cashReceived != null ? Number(completeSale.cashReceived) : undefined,
+        changeGiven: completeSale.changeGiven != null ? Number(completeSale.changeGiven) : undefined,
+        customer: completeSale.customer ?? undefined,
+        cashier: { firstName: completeSale.user.firstName, lastName: completeSale.user.lastName },
+        orderRemarks: completeSale.orderRemarks,
+        createdBy: `${completeSale.user.firstName} ${completeSale.user.lastName}`.trim(),
+        store,
+      });
+    });
 
     for (const item of items) {
       const product = productMap.get(item.productId)!;

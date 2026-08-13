@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Plus, Send } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Plus, Send, Paperclip, X } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
+
+const MAX_ATTACHMENTS = 3;
 
 interface Message {
   id: string;
   authorType: "TENANT" | "ADMIN";
   authorEmail: string;
   body: string;
+  attachments: string[];
   createdAt: string;
 }
 
@@ -40,6 +43,40 @@ export default function SupportClient() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [sentFlash, setSentFlash] = useState(false);
+  const [newAttachments, setNewAttachments] = useState<string[]>([]);
+  const [replyAttachments, setReplyAttachments] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const newFileInputRef = useRef<HTMLInputElement>(null);
+  const replyFileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadScreenshot = async (file: File, onDone: (url: string) => void) => {
+    setError(null);
+    if (!file.type.startsWith("image/")) {
+      setError("Screenshots must be an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Screenshot must be less than 5MB.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", "support");
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to upload screenshot.");
+        return;
+      }
+      onDone(data.url);
+    } catch {
+      setError("Failed to upload screenshot.");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const load = async (keepSelection = true) => {
     setLoading(true);
@@ -67,7 +104,7 @@ export default function SupportClient() {
       const res = await fetch("/api/support-tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, attachments: newAttachments }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -75,6 +112,7 @@ export default function SupportClient() {
         return;
       }
       setMessage("");
+      setNewAttachments([]);
       setComposing(false);
       setSelectedId(data.id);
       await load();
@@ -92,7 +130,7 @@ export default function SupportClient() {
       const res = await fetch(`/api/support-tickets/${selected.id}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: reply }),
+        body: JSON.stringify({ message: reply, attachments: replyAttachments }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -100,6 +138,7 @@ export default function SupportClient() {
         return;
       }
       setReply("");
+      setReplyAttachments([]);
       await load();
       setSentFlash(true);
       setTimeout(() => setSentFlash(false), 2000);
@@ -138,18 +177,60 @@ export default function SupportClient() {
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-emerald-500"
             />
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-500">Screenshots (optional)</label>
+            <div className="flex flex-wrap items-center gap-2">
+              {newAttachments.map((url) => (
+                <div key={url} className="group relative">
+                  <img src={url} alt="Attached screenshot" className="h-14 w-14 rounded-lg border border-zinc-200 object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setNewAttachments((prev) => prev.filter((u) => u !== url))}
+                    className="absolute -right-1.5 -top-1.5 rounded-full bg-red-500 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {newAttachments.length < MAX_ATTACHMENTS && (
+                <button
+                  type="button"
+                  onClick={() => newFileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="flex h-14 w-14 items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-zinc-400 hover:border-zinc-400 disabled:opacity-50"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
+              )}
+              <input
+                ref={newFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadScreenshot(file, (url) => setNewAttachments((prev) => [...prev, url]));
+                  e.target.value = "";
+                }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-zinc-400">Up to {MAX_ATTACHMENTS} images, 5MB each.</p>
+          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || uploading}
               className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
             >
               Submit
             </button>
             <button
               type="button"
-              onClick={() => setComposing(false)}
+              onClick={() => {
+                setComposing(false);
+                setNewAttachments([]);
+              }}
               className="rounded-full border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-600 hover:border-zinc-300"
             >
               Cancel
@@ -207,26 +288,75 @@ export default function SupportClient() {
                       <span>{formatDateTime(m.createdAt)}</span>
                     </div>
                     <p className="whitespace-pre-wrap text-zinc-800">{m.body}</p>
+                    {m.attachments?.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {m.attachments.map((url) => (
+                          <a key={url} href={url} target="_blank" rel="noopener noreferrer">
+                            <img src={url} alt="Attached screenshot" className="h-16 w-16 rounded-lg border border-zinc-200 object-cover" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
 
               {selected.status !== "CLOSED" && (
-                <form onSubmit={submitReply} className="mt-4 flex gap-2">
-                  <input
-                    value={reply}
-                    onChange={(e) => setReply(e.target.value)}
-                    placeholder="Write a reply..."
-                    className="flex-1 rounded-full border border-zinc-200 px-4 py-2 text-sm outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    type="submit"
-                    disabled={busy || !reply.trim()}
-                    className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    Send
-                  </button>
+                <form onSubmit={submitReply} className="mt-4 space-y-2">
+                  {replyAttachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {replyAttachments.map((url) => (
+                        <div key={url} className="group relative">
+                          <img src={url} alt="Attached screenshot" className="h-14 w-14 rounded-lg border border-zinc-200 object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => setReplyAttachments((prev) => prev.filter((u) => u !== url))}
+                            className="absolute -right-1.5 -top-1.5 rounded-full bg-red-500 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                      placeholder="Write a reply..."
+                      className="flex-1 rounded-full border border-zinc-200 px-4 py-2 text-sm outline-none focus:border-emerald-500"
+                    />
+                    {replyAttachments.length < MAX_ATTACHMENTS && (
+                      <button
+                        type="button"
+                        onClick={() => replyFileInputRef.current?.click()}
+                        disabled={uploading}
+                        title="Attach a screenshot"
+                        className="flex items-center justify-center rounded-full border border-zinc-200 px-3 text-zinc-500 hover:border-zinc-300 disabled:opacity-50"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </button>
+                    )}
+                    <input
+                      ref={replyFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadScreenshot(file, (url) => setReplyAttachments((prev) => [...prev, url]));
+                        e.target.value = "";
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy || uploading || !reply.trim()}
+                      className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      Send
+                    </button>
+                  </div>
                 </form>
               )}
               {sentFlash && <p className="mt-2 text-sm font-medium text-emerald-600">Reply sent.</p>}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { sanitizeSupportAttachments } from "@/lib/support-attachments";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { message }: { message: string } = body;
+  const { message, attachments }: { message: string; attachments?: string[] } = body;
 
   if (!message?.trim()) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
           authorUserId: session.userId,
           authorEmail: user.email,
           body: message.trim(),
+          attachments: sanitizeSupportAttachments(attachments, session.tenantId),
         },
       },
     },

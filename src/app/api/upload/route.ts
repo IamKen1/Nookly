@@ -20,6 +20,8 @@ export async function POST(request: NextRequest) {
 
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
+  const requestedFolder = formData.get("folder");
+  const folder = requestedFolder === "support" ? "support" : "products";
 
   if (!file) return NextResponse.json({ error: "No file received." }, { status: 400 });
   if (!file.type.startsWith("image/")) return NextResponse.json({ error: "File must be an image." }, { status: 400 });
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
     const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
       cloudinary.uploader
         .upload_stream(
-          { folder: `nookly/${session.tenantId}/products`, resource_type: "image", quality: 90 },
+          { folder: `nookly/${session.tenantId}/${folder}`, resource_type: "image", quality: 90 },
           (error, uploaded) => {
             if (error || !uploaded) reject(error);
             else resolve(uploaded as { secure_url: string; public_id: string });

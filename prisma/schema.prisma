@@ -167,6 +167,7 @@ model SupportTicketMessage {
   authorUserId   String?
   authorEmail    String
   body           String
+  attachments    String[]      @default([])
   createdAt      DateTime      @default(now())
   ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   authorUser     User?         @relation(fields: [authorUserId], references: [id])

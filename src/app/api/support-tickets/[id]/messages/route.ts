@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { sanitizeSupportAttachments } from "@/lib/support-attachments";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "This ticket is closed." }, { status: 400 });
   }
 
-  const { message }: { message: string } = await request.json();
+  const { message, attachments }: { message: string; attachments?: string[] } = await request.json();
   if (!message?.trim()) return NextResponse.json({ error: "Message is required." }, { status: 400 });
 
   const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { email: true } });
@@ -21,7 +22,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const [reply] = await prisma.$transaction([
     prisma.supportTicketMessage.create({
-      data: { ticketId: id, authorType: "TENANT", authorUserId: session.userId, authorEmail: user.email, body: message.trim() },
+      data: {
+        ticketId: id,
+        authorType: "TENANT",
+        authorUserId: session.userId,
+        authorEmail: user.email,
+        body: message.trim(),
+        attachments: sanitizeSupportAttachments(attachments, session.tenantId),
+      },
     }),
     prisma.supportTicket.update({
       where: { id },
