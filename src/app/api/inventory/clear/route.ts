@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { invalidateCached } from "@/lib/route-cache";
 
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -51,5 +52,6 @@ export async function POST(request: NextRequest) {
     return { deletedProducts, archivedProducts };
   });
 
+  invalidateCached(`products:${session.tenantId}`);
   return NextResponse.json({ message: "Inventory clear completed", ...result });
 }

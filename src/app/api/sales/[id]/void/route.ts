@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { invalidateCached } from "@/lib/route-cache";
 
 const CAN_VOID_ROLES = ["OWNER", "ADMIN", "MANAGER"];
 
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     });
 
+    invalidateCached(`products:${session.tenantId}`);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Error voiding sale", error);

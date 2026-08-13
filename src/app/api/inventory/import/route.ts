@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import type { SessionPayload } from "@/lib/auth";
 import { DrugSchedule, Prisma } from "@prisma/client";
+import { invalidateCached } from "@/lib/route-cache";
 
 interface ImportIssue {
   row: number;
@@ -203,6 +204,7 @@ export async function POST(request: NextRequest) {
       ? `Successfully processed ${processed} rows: ${parts.join(", ") || "no changes"}`
       : `Processed ${processed} rows (${parts.join(", ") || "no changes"}) with ${errors.length} error(s)`;
 
+    invalidateCached(`products:${session.tenantId}`);
     return NextResponse.json({ success, message, processed, created, updated, skipped, errors, warnings });
   } catch (error) {
     console.error("Import error:", error);

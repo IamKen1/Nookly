@@ -1,64 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { getCached, invalidateCached } from "@/lib/route-cache";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const search = searchParams.get("search")?.trim();
-  const categoryId = searchParams.get("categoryId");
+  const search = searchParams.get("search")?.trim() ?? "";
+  const categoryId = searchParams.get("categoryId") ?? "";
 
-  const products = await prisma.product.findMany({
-    where: {
-      tenantId: session.tenantId,
-      isActive: true,
-      ...(categoryId ? { categoryId } : {}),
-      ...(search
-        ? {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { genericName: { contains: search, mode: "insensitive" } },
-              { brandName: { contains: search, mode: "insensitive" } },
-              { barcode: { contains: search } },
-              { sku: { contains: search } },
-            ],
-          }
-        : {}),
-    },
-    select: {
-      id: true,
-      name: true,
-      genericName: true,
-      brandName: true,
-      barcode: true,
-      description: true,
-      strength: true,
-      dosageForm: true,
-      costPrice: true,
-      sellingPrice: true,
-      minimumStock: true,
-      maximumStock: true,
-      reorderPoint: true,
-      requiresPrescription: true,
-      isVatable: true,
-      isOTC: true,
-      drugSchedule: true,
-      imageUrl: true,
-      category: { select: { id: true, name: true } },
-      stocks: {
-        where: session.storeId ? { storeId: session.storeId } : undefined,
-        select: { currentStock: true },
+  const cacheKey = `products:${session.tenantId}:${session.storeId ?? ""}:${search}:${categoryId}`;
+  const withStock = await getCached(cacheKey, 3000, async () => {
+    const products = await prisma.product.findMany({
+      where: {
+        tenantId: session.tenantId,
+        isActive: true,
+        ...(categoryId ? { categoryId } : {}),
+        ...(search
+          ? {
+              OR: [
+                { name: { contains: search, mode: "insensitive" } },
+                { genericName: { contains: search, mode: "insensitive" } },
+                { brandName: { contains: search, mode: "insensitive" } },
+                { barcode: { contains: search } },
+                { sku: { contains: search } },
+              ],
+            }
+          : {}),
       },
-    },
-    orderBy: { name: "asc" },
-  });
+      select: {
+        id: true,
+        name: true,
+        genericName: true,
+        brandName: true,
+        barcode: true,
+        description: true,
+        strength: true,
+        dosageForm: true,
+        costPrice: true,
+        sellingPrice: true,
+        minimumStock: true,
+        maximumStock: true,
+        reorderPoint: true,
+        requiresPrescription: true,
+        isVatable: true,
+        isOTC: true,
+        drugSchedule: true,
+        imageUrl: true,
+        category: { select: { id: true, name: true } },
+        stocks: {
+          where: session.storeId ? { storeId: session.storeId } : undefined,
+          select: { currentStock: true },
+        },
+      },
+      orderBy: { name: "asc" },
+    });
 
-  const withStock = products.map((product) => ({
-    ...product,
-    currentStock: product.stocks[0]?.currentStock ?? 0,
-  }));
+    return products.map((product) => ({
+      ...product,
+      currentStock: product.stocks[0]?.currentStock ?? 0,
+    }));
+  });
 
   return NextResponse.json(withStock);
 }
@@ -205,6 +209,7 @@ export async function POST(request: NextRequest) {
       include: { category: true, stocks: true },
     });
 
+    invalidateCached(`products:${session.tenantId}`);
     return NextResponse.json(product, { status: 201 });
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {

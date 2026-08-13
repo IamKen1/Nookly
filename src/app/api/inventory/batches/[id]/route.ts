@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { invalidateCached } from "@/lib/route-cache";
 
 async function loadOwnedBatch(id: string, tenantId: string) {
   const batch = await prisma.productBatch.findFirst({
@@ -58,6 +59,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return batch;
     });
 
+    invalidateCached(`products:${session.tenantId}`);
     return NextResponse.json(result);
   } catch (error) {
     console.error("Error updating batch", error);
@@ -106,6 +108,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       await tx.productBatch.delete({ where: { id } });
     });
 
+    invalidateCached(`products:${session.tenantId}`);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Error discarding batch", error);

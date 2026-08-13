@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { runInBackground } from "@/lib/background";
 import { notifyStockThresholdReached } from "@/lib/notifications";
+import { invalidateCached } from "@/lib/route-cache";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
       })
     );
 
+    invalidateCached(`products:${session.tenantId}`);
     return NextResponse.json(result.batch, { status: 201 });
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {

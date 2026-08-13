@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { invalidateCached } from "@/lib/route-cache";
 
 const CAN_RETURN_ROLES = ["OWNER", "ADMIN", "MANAGER"];
 
@@ -141,6 +142,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return created;
     });
 
+    invalidateCached(`products:${session.tenantId}`);
     return NextResponse.json(returnSale, { status: 201 });
   } catch (error) {
     console.error("Error processing return", error);

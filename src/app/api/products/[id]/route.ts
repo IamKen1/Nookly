@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { invalidateCached } from "@/lib/route-cache";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -70,6 +71,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       });
     }
 
+    invalidateCached(`products:${session.tenantId}`);
     return NextResponse.json(product);
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {
@@ -89,5 +91,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (!existing) return NextResponse.json({ error: "Product not found." }, { status: 404 });
 
   await prisma.product.update({ where: { id }, data: { isActive: false } });
+  invalidateCached(`products:${session.tenantId}`);
   return NextResponse.json({ ok: true });
 }

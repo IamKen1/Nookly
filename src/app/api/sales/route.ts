@@ -6,6 +6,7 @@ import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
 import { runInBackground } from "@/lib/background";
 import { notifySaleCreated, notifyStockThresholdReached } from "@/lib/notifications";
 import { getReceiptSettings } from "@/lib/receipt-settings";
+import { invalidateCached } from "@/lib/route-cache";
 
 interface CheckoutItem {
   productId: string;
@@ -196,6 +197,17 @@ export async function POST(request: NextRequest) {
     let resolvedPrescriptionId: string | null = null;
     let resolvedCustomerId = customerId || null;
 
+    const batchesByProduct = new Map<string, { id: string; quantity: number }[]>();
+    for (const batch of await tx.productBatch.findMany({
+      where: { productId: { in: productIds }, quantity: { gt: 0 } },
+      orderBy: [{ expirationDate: "asc" }, { receivedDate: "asc" }],
+      select: { id: true, productId: true, quantity: true },
+    })) {
+      const list = batchesByProduct.get(batch.productId) ?? [];
+      list.push(batch);
+      batchesByProduct.set(batch.productId, list);
+    }
+
     if (prescriptionsGated && prescriptionId) {
       resolvedPrescriptionId = prescriptionId;
       await tx.prescription.update({ where: { id: prescriptionId }, data: { status: "FILLED" } });
@@ -297,10 +309,7 @@ export async function POST(request: NextRequest) {
       // Products with no tracked batches (most of the catalog, unless stock was
       // received via "Receive batch") are unaffected — only the aggregate above applies.
       let remaining = item.quantity;
-      const batches = await tx.productBatch.findMany({
-        where: { productId: item.productId, quantity: { gt: 0 } },
-        orderBy: [{ expirationDate: "asc" }, { receivedDate: "asc" }],
-      });
+      const batches = batchesByProduct.get(item.productId) ?? [];
       for (const batch of batches) {
         if (remaining <= 0) break;
         const consume = Math.min(batch.quantity, remaining);
@@ -323,7 +332,9 @@ export async function POST(request: NextRequest) {
     });
 
     return created;
-  });
+  }, { timeout: 30000, maxWait: 10000 });
+
+  invalidateCached(`products:${session.tenantId}`);
 
   const completeSale = await prisma.sale.findUnique({
     where: { id: sale.id },

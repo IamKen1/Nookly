@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { runInBackground } from "@/lib/background";
 import { notifyStockThresholdReached } from "@/lib/notifications";
+import { invalidateCached } from "@/lib/route-cache";
 
 const CAN_ADJUST_ROLES = ["OWNER", "ADMIN", "PHARMACIST", "MANAGER"];
 
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
       return { previousStock, currentStock: updatedStock.currentStock, product };
     });
 
+    invalidateCached(`products:${session.tenantId}`);
     runInBackground(`stock notification for ${result.product.name}`, () =>
       notifyStockThresholdReached({
         tenantId: session.tenantId,
