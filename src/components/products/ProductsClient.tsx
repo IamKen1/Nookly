@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
+import useSWR from "swr";
 import { Plus, Search, Settings, Trash2, X, Pencil } from "lucide-react";
 import ImageUpload from "./ImageUpload";
 import CategoryManager from "./CategoryManager";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 
 interface Category {
   id: string;
@@ -71,9 +73,6 @@ export default function ProductsClient({
   planName: string;
   maxProducts: number;
 }) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>(initialCategories);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
@@ -84,30 +83,26 @@ export default function ProductsClient({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
+  const debouncedSearch = useDebouncedValue(search, 300);
+
+  const { data: categories = initialCategories, mutate: refreshCategories } = useSWR<Category[]>(
+    "/api/categories",
+    { fallbackData: initialCategories }
+  );
+
+  const productsUrl = debouncedSearch
+    ? `/api/products?search=${encodeURIComponent(debouncedSearch)}`
+    : "/api/products";
+  const {
+    data: products = [],
+    isLoading: loading,
+    mutate: refreshProducts,
+  } = useSWR<Product[]>(productsUrl, { keepPreviousData: true });
+
   const flashSuccess = (message: string) => {
     setSuccessMessage(message);
     setTimeout(() => setSuccessMessage(null), 2500);
   };
-
-  const loadCategories = useCallback(async () => {
-    const res = await fetch("/api/categories");
-    const data = await res.json();
-    setCategories(Array.isArray(data) ? data : []);
-  }, []);
-
-  const loadProducts = useCallback(async (q?: string) => {
-    setLoading(true);
-    const url = q ? `/api/products?search=${encodeURIComponent(q)}` : "/api/products";
-    const res = await fetch(url);
-    const data = await res.json();
-    setProducts(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => loadProducts(search), search ? 300 : 0);
-    return () => clearTimeout(t);
-  }, [search, loadProducts]);
 
   const closeForm = () => {
     setShowForm(false);
@@ -173,7 +168,7 @@ export default function ProductsClient({
         return;
       }
       closeForm();
-      await loadProducts(search);
+      await refreshProducts();
       flashSuccess(editingProduct ? "Product updated." : "Product saved.");
     } catch {
       setError("Network error.");
@@ -192,7 +187,7 @@ export default function ProductsClient({
         setError(data.error ?? "Failed to remove product.");
         return;
       }
-      await loadProducts(search);
+      await refreshProducts();
       flashSuccess("Product removed.");
     } catch {
       setError("Network error.");
@@ -260,7 +255,7 @@ export default function ProductsClient({
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {loading && products.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
               </tr>
@@ -515,7 +510,7 @@ export default function ProductsClient({
       )}
 
       {showCategoryManager && (
-        <CategoryManager categories={categories} onClose={() => setShowCategoryManager(false)} onChanged={loadCategories} />
+        <CategoryManager categories={categories} onClose={() => setShowCategoryManager(false)} onChanged={() => refreshCategories()} />
       )}
     </div>
   );

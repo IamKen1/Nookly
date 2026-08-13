@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -27,6 +28,7 @@ import { useBarcode } from "@/hooks/useBarcode";
 import { useBarcodeAudio } from "@/hooks/useBarcodeAudio";
 import { getImageUrl, getOptimizedImageUrl } from "@/lib/cloudinary";
 import { peso } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import type { DiscountType } from "@/lib/vat-calculations";
 import CartPanel, { type CartLine } from "./CartPanel";
 import CheckoutModal, { type PrescriptionDraft } from "./CheckoutModal";
@@ -87,8 +89,6 @@ export default function PosClient({
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -107,7 +107,6 @@ export default function PosClient({
   }, [menuOpen]);
 
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.roles || (role && item.roles.includes(role)));
-  const [pendingPrescriptions, setPendingPrescriptions] = useState<PendingPrescription[]>([]);
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error"; visible: boolean }>({
     message: "",
     type: "success",
@@ -115,42 +114,20 @@ export default function PosClient({
   });
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [cashTxnModalOpen, setCashTxnModalOpen] = useState(false);
-  const [hasOpenShift, setHasOpenShift] = useState<boolean | null>(null);
-  const [openShiftId, setOpenShiftId] = useState<string | null>(null);
 
-  const refreshShiftStatus = useCallback(() => {
-    fetch("/api/shifts?mine=true")
-      .then((r) => r.json())
-      .then((data) => {
-        setHasOpenShift(Boolean(data.openShift));
-        setOpenShiftId(data.openShift?.id ?? null);
-      })
-      .catch(() => {
-        setHasOpenShift(null);
-        setOpenShiftId(null);
-      });
-  }, []);
+  const { data: shiftData, mutate: refreshShiftStatus } = useSWR<{ openShift: { id: string } | null }>(
+    "/api/shifts?mine=true"
+  );
+  const hasOpenShift = shiftData ? Boolean(shiftData.openShift) : null;
+  const openShiftId = shiftData?.openShift?.id ?? null;
 
-  useEffect(() => {
-    refreshShiftStatus();
-  }, [refreshShiftStatus]);
-
-  const searchRequestIdRef = useRef(0);
-  const loadProducts = useCallback(async (q: string) => {
-    const requestId = ++searchRequestIdRef.current;
-    setLoading(true);
-    const url = q ? `/api/products?search=${encodeURIComponent(q)}` : "/api/products";
-    const res = await fetch(url);
-    const data = await res.json();
-    if (requestId !== searchRequestIdRef.current) return;
-    setProducts(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => loadProducts(search), search ? 250 : 0);
-    return () => clearTimeout(t);
-  }, [search, loadProducts]);
+  const debouncedSearch = useDebouncedValue(search, 250);
+  const productsUrl = debouncedSearch ? `/api/products?search=${encodeURIComponent(debouncedSearch)}` : "/api/products";
+  const {
+    data: products = [],
+    isLoading: loading,
+    mutate: refreshProducts,
+  } = useSWR<Product[]>(productsUrl, { keepPreviousData: true });
 
   const showNotification = (message: string, type: "success" | "error") => {
     setNotification({ message, type, visible: true });
@@ -240,16 +217,9 @@ export default function PosClient({
 
   const needsPrescription = cart.some((l) => l.requiresPrescription);
 
-  useEffect(() => {
-    if (!needsPrescription) {
-      setPendingPrescriptions([]);
-      return;
-    }
-    fetch("/api/prescriptions?status=PENDING")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setPendingPrescriptions(Array.isArray(data) ? data : []))
-      .catch(() => setPendingPrescriptions([]));
-  }, [needsPrescription]);
+  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>(
+    needsPrescription ? "/api/prescriptions?status=PENDING" : null
+  );
 
   const handleProcessSale = async (payload: {
     paymentMethod: string;
@@ -270,7 +240,7 @@ export default function PosClient({
     const data = await res.json();
     if (!res.ok) return { ok: false, error: data.error ?? "Checkout failed." };
     clearCart();
-    loadProducts(search);
+    refreshProducts();
     return { ok: true, saleNumber: data.saleNumber, totalAmount: Number(data.totalAmount) };
   };
 
@@ -410,7 +380,7 @@ export default function PosClient({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4">
-          {loading ? (
+          {loading && products.length === 0 ? (
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-3 lg:grid-cols-4 xl:grid-cols-5">
               {Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="animate-pulse rounded-xl border border-gray-100 bg-white p-2.5">

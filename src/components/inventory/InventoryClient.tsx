@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import useSWR from "swr";
 import { AlertTriangle, Download, PackagePlus, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 
 interface Product {
   id: string;
@@ -56,10 +58,6 @@ type Tab = "stock" | "movements" | "batches";
 
 export default function InventoryClient({ isOwner = false }: { isOwner?: boolean }) {
   const [tab, setTab] = useState<Tab>("stock");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [movements, setMovements] = useState<StockMovement[]>([]);
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [adjustTarget, setAdjustTarget] = useState<Product | null>(null);
   const [adjustQty, setAdjustQty] = useState("");
@@ -84,39 +82,23 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
   const [discardingId, setDiscardingId] = useState<string | null>(null);
   const [batchMessage, setBatchMessage] = useState<string | null>(null);
 
-  const loadProducts = useCallback(async (q?: string) => {
-    setLoading(true);
-    const url = q ? `/api/products?search=${encodeURIComponent(q)}` : "/api/products";
-    const res = await fetch(url);
-    const data = await res.json();
-    setProducts(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }, []);
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const productsUrl = debouncedSearch ? `/api/products?search=${encodeURIComponent(debouncedSearch)}` : "/api/products";
+  const {
+    data: products = [],
+    isLoading: productsLoading,
+    mutate: refreshProducts,
+  } = useSWR<Product[]>(tab === "stock" ? productsUrl : null, { keepPreviousData: true });
 
-  const loadMovements = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/inventory/stock-movements");
-    const data = await res.json();
-    setMovements(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }, []);
+  const { data: movements = [], isLoading: movementsLoading } = useSWR<StockMovement[]>(
+    tab === "movements" ? "/api/inventory/stock-movements" : null
+  );
 
-  const loadBatches = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/inventory/batches?nearExpiry=true&days=90");
-    const data = await res.json();
-    setBatches(Array.isArray(data) ? data : []);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (tab === "stock") {
-      const t = setTimeout(() => loadProducts(search), search ? 300 : 0);
-      return () => clearTimeout(t);
-    }
-    if (tab === "movements") loadMovements();
-    if (tab === "batches") loadBatches();
-  }, [tab, search, loadProducts, loadMovements, loadBatches]);
+  const {
+    data: batches = [],
+    isLoading: batchesLoading,
+    mutate: refreshBatches,
+  } = useSWR<Batch[]>(tab === "batches" ? "/api/inventory/batches?nearExpiry=true&days=90" : null);
 
   useEffect(() => {
     if (!showReceiveBatch || !batchForm.productName.trim()) {
@@ -158,7 +140,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
       }
       setShowReceiveBatch(false);
       setBatchForm({ productId: "", productName: "", batchNumber: "", expirationDate: "", quantity: "", costPrice: "" });
-      loadBatches();
+      refreshBatches();
     } catch {
       setBatchError("Network error.");
     } finally {
@@ -177,7 +159,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
         setBatchMessage(data.error ?? "Failed to discard batch.");
         return;
       }
-      await loadBatches();
+      await refreshBatches();
       setBatchMessage(`Batch ${batch.batchNumber} discarded as ${movementReason}.`);
       setTimeout(() => setBatchMessage(null), 3000);
     } catch {
@@ -204,7 +186,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
       }
       setClearMessage(`Cleared: ${data.deletedProducts} deleted, ${data.archivedProducts} archived.`);
       setClearConfirm("");
-      loadProducts(search);
+      refreshProducts();
     } catch {
       setClearMessage("Network error.");
     } finally {
@@ -241,7 +223,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
         return;
       }
       setAdjustTarget(null);
-      loadProducts(search);
+      refreshProducts();
     } catch {
       setAdjustError("Network error.");
     } finally {
@@ -259,7 +241,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
       const res = await fetch("/api/inventory/import", { method: "POST", body: formData });
       const data = await res.json();
       setImportResult(data);
-      if (data.created || data.updated) loadProducts(search);
+      if (data.created || data.updated) refreshProducts();
     } catch {
       setImportResult({
         success: false,
@@ -401,7 +383,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
+                {productsLoading && products.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
                   </tr>
@@ -473,7 +455,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
+                {batchesLoading && batches.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
                   </tr>
@@ -533,7 +515,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {movementsLoading && movements.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
                 </tr>
