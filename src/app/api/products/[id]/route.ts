@@ -24,6 +24,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     sellingPrice,
     insurancePrice,
     minimumStock,
+    maximumStock,
     reorderPoint,
     requiresPrescription,
     isOTC,
@@ -34,40 +35,49 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     imageUrl,
   } = body;
 
-  const product = await prisma.product.update({
-    where: { id },
-    data: {
-      ...(name !== undefined ? { name } : {}),
-      ...(genericName !== undefined ? { genericName } : {}),
-      ...(brandName !== undefined ? { brandName } : {}),
-      ...(barcode !== undefined ? { barcode: barcode || null } : {}),
-      ...(description !== undefined ? { description } : {}),
-      ...(strength !== undefined ? { strength } : {}),
-      ...(dosageForm !== undefined ? { dosageForm } : {}),
-      ...(manufacturer !== undefined ? { manufacturer } : {}),
-      ...(costPrice !== undefined ? { costPrice } : {}),
-      ...(sellingPrice !== undefined ? { sellingPrice } : {}),
-      ...(insurancePrice !== undefined ? { insurancePrice } : {}),
-      ...(minimumStock !== undefined ? { minimumStock } : {}),
-      ...(reorderPoint !== undefined ? { reorderPoint } : {}),
-      ...(requiresPrescription !== undefined ? { requiresPrescription } : {}),
-      ...(isOTC !== undefined ? { isOTC } : {}),
-      ...(isVatable !== undefined ? { isVatable } : {}),
-      ...(categoryId !== undefined ? { categoryId } : {}),
-      ...(drugSchedule !== undefined ? { drugSchedule: drugSchedule || null } : {}),
-      ...(imageUrl !== undefined ? { imageUrl: imageUrl || null } : {}),
-    },
-  });
-
-  if (currentStock !== undefined && session.storeId) {
-    await prisma.productStock.upsert({
-      where: { productId_storeId: { productId: id, storeId: session.storeId } },
-      update: { currentStock },
-      create: { productId: id, storeId: session.storeId, currentStock },
+  try {
+    const product = await prisma.product.update({
+      where: { id },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(genericName !== undefined ? { genericName } : {}),
+        ...(brandName !== undefined ? { brandName } : {}),
+        ...(barcode !== undefined ? { barcode: barcode || null } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(strength !== undefined ? { strength } : {}),
+        ...(dosageForm !== undefined ? { dosageForm } : {}),
+        ...(manufacturer !== undefined ? { manufacturer } : {}),
+        ...(costPrice !== undefined ? { costPrice } : {}),
+        ...(sellingPrice !== undefined ? { sellingPrice } : {}),
+        ...(insurancePrice !== undefined ? { insurancePrice } : {}),
+        ...(minimumStock !== undefined ? { minimumStock } : {}),
+        ...(maximumStock !== undefined ? { maximumStock: maximumStock || null } : {}),
+        ...(reorderPoint !== undefined ? { reorderPoint } : {}),
+        ...(requiresPrescription !== undefined ? { requiresPrescription } : {}),
+        ...(isOTC !== undefined ? { isOTC } : {}),
+        ...(isVatable !== undefined ? { isVatable } : {}),
+        ...(categoryId !== undefined ? { categoryId } : {}),
+        ...(drugSchedule !== undefined ? { drugSchedule: drugSchedule || null } : {}),
+        ...(imageUrl !== undefined ? { imageUrl: imageUrl || null } : {}),
+      },
     });
-  }
 
-  return NextResponse.json(product);
+    if (currentStock !== undefined && session.storeId) {
+      await prisma.productStock.upsert({
+        where: { productId_storeId: { productId: id, storeId: session.storeId } },
+        update: { currentStock },
+        create: { productId: id, storeId: session.storeId, currentStock },
+      });
+    }
+
+    return NextResponse.json(product);
+  } catch (error: unknown) {
+    if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {
+      return NextResponse.json({ error: "A product with this barcode already exists." }, { status: 409 });
+    }
+    console.error("Error updating product", error);
+    return NextResponse.json({ error: "Failed to update product." }, { status: 500 });
+  }
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

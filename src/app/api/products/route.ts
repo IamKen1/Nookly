@@ -62,6 +62,7 @@ export async function POST(request: NextRequest) {
     insurancePrice,
     currentStock,
     minimumStock,
+    maximumStock,
     reorderPoint,
     requiresPrescription,
     isOTC,
@@ -69,6 +70,32 @@ export async function POST(request: NextRequest) {
     categoryId,
     drugSchedule,
     imageUrl,
+    batchNumber,
+    expirationDate,
+  }: {
+    name: string;
+    genericName?: string;
+    brandName?: string;
+    barcode?: string;
+    description?: string;
+    strength?: string;
+    dosageForm?: string;
+    manufacturer?: string;
+    costPrice: number;
+    sellingPrice: number;
+    insurancePrice?: number;
+    currentStock?: number;
+    minimumStock?: number;
+    maximumStock?: number;
+    reorderPoint?: number;
+    requiresPrescription?: boolean;
+    isOTC?: boolean;
+    isVatable?: boolean;
+    categoryId: string;
+    drugSchedule?: string;
+    imageUrl?: string;
+    batchNumber?: string;
+    expirationDate?: string;
   } = body;
 
   if (!name || !categoryId || costPrice == null || sellingPrice == null) {
@@ -76,6 +103,17 @@ export async function POST(request: NextRequest) {
       { error: "name, categoryId, costPrice and sellingPrice are required." },
       { status: 400 }
     );
+  }
+
+  const trimmedBatchNumber = typeof batchNumber === "string" ? batchNumber.trim() : "";
+  if (Boolean(trimmedBatchNumber) !== Boolean(expirationDate)) {
+    return NextResponse.json(
+      { error: "Provide both a batch number and an expiration date, or leave both blank." },
+      { status: 400 }
+    );
+  }
+  if (trimmedBatchNumber && (!currentStock || currentStock <= 0)) {
+    return NextResponse.json({ error: "A batch requires starting stock greater than zero." }, { status: 400 });
   }
 
   const [plan, productCount] = await Promise.all([
@@ -119,16 +157,29 @@ export async function POST(request: NextRequest) {
         sellingPrice,
         insurancePrice: insurancePrice || null,
         minimumStock: minimumStock ?? 0,
+        maximumStock: maximumStock ?? null,
         reorderPoint: reorderPoint ?? 0,
         requiresPrescription: Boolean(requiresPrescription),
         isOTC: isOTC ?? true,
         isVatable: isVatable ?? true,
         categoryId,
-        drugSchedule: drugSchedule || null,
+        drugSchedule: (drugSchedule || null) as never,
         imageUrl: imageUrl || null,
         stocks: {
           create: { storeId: session.storeId, currentStock: currentStock ?? 0 },
         },
+        ...(trimmedBatchNumber
+          ? {
+              batches: {
+                create: {
+                  batchNumber: trimmedBatchNumber,
+                  expirationDate: new Date(expirationDate!),
+                  quantity: currentStock!,
+                  costPrice,
+                },
+              },
+            }
+          : {}),
       },
       include: { category: true, stocks: true },
     });

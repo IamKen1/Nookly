@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Settings, Trash2, X } from "lucide-react";
+import { Plus, Search, Settings, Trash2, X, Pencil } from "lucide-react";
 import ImageUpload from "./ImageUpload";
 import CategoryManager from "./CategoryManager";
 
@@ -16,10 +16,13 @@ interface Product {
   genericName: string | null;
   brandName: string | null;
   barcode: string | null;
+  description: string | null;
   costPrice: string;
   sellingPrice: string;
   currentStock: number;
   minimumStock: number;
+  maximumStock: number | null;
+  reorderPoint: number;
   requiresPrescription: boolean;
   isVatable: boolean;
   isOTC: boolean;
@@ -40,11 +43,16 @@ const emptyForm = {
   sellingPrice: "",
   currentStock: "0",
   minimumStock: "0",
+  maximumStock: "",
+  reorderPoint: "0",
+  description: "",
   requiresPrescription: false,
   isVatable: true,
   isOTC: true,
   drugSchedule: "",
   imageUrl: null as string | null,
+  batchNumber: "",
+  expirationDate: "",
 };
 
 export default function ProductsClient({
@@ -67,6 +75,7 @@ export default function ProductsClient({
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const flashSuccess = (message: string) => {
     setSuccessMessage(message);
@@ -93,13 +102,53 @@ export default function ProductsClient({
     return () => clearTimeout(t);
   }, [search, loadProducts]);
 
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingProduct(null);
+    setForm(emptyForm);
+    setError(null);
+  };
+
+  const handleEditClick = (product: Product) => {
+    setEditingProduct(product);
+    setForm({
+      name: product.name,
+      genericName: product.genericName ?? "",
+      brandName: product.brandName ?? "",
+      barcode: product.barcode ?? "",
+      categoryId: product.category.id,
+      costPrice: product.costPrice,
+      sellingPrice: product.sellingPrice,
+      currentStock: String(product.currentStock),
+      minimumStock: String(product.minimumStock),
+      maximumStock: product.maximumStock != null ? String(product.maximumStock) : "",
+      reorderPoint: String(product.reorderPoint),
+      description: product.description ?? "",
+      requiresPrescription: product.requiresPrescription,
+      isVatable: product.isVatable,
+      isOTC: product.isOTC,
+      drugSchedule: product.drugSchedule ?? "",
+      imageUrl: product.imageUrl,
+      batchNumber: "",
+      expirationDate: "",
+    });
+    setError(null);
+    setShowForm(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!editingProduct && Boolean(form.batchNumber.trim()) !== Boolean(form.expirationDate)) {
+      setError("Provide both a batch number and an expiration date, or leave both blank.");
+      return;
+    }
+
     setSaving(true);
     try {
-      const res = await fetch("/api/products", {
-        method: "POST",
+      const res = await fetch(editingProduct ? `/api/products/${editingProduct.id}` : "/api/products", {
+        method: editingProduct ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
@@ -107,6 +156,8 @@ export default function ProductsClient({
           sellingPrice: parseFloat(form.sellingPrice) || 0,
           currentStock: parseInt(form.currentStock) || 0,
           minimumStock: parseInt(form.minimumStock) || 0,
+          maximumStock: form.maximumStock ? parseInt(form.maximumStock) : null,
+          reorderPoint: parseInt(form.reorderPoint) || 0,
         }),
       });
       const data = await res.json();
@@ -114,10 +165,9 @@ export default function ProductsClient({
         setError(data.error ?? "Failed to save product.");
         return;
       }
-      setShowForm(false);
-      setForm(emptyForm);
+      closeForm();
       await loadProducts(search);
-      flashSuccess("Product saved.");
+      flashSuccess(editingProduct ? "Product updated." : "Product saved.");
     } catch {
       setError("Network error.");
     } finally {
@@ -163,7 +213,11 @@ export default function ProductsClient({
             <Settings className="h-4 w-4" /> Categories
           </button>
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => {
+              setEditingProduct(null);
+              setForm(emptyForm);
+              setShowForm(true);
+            }}
             disabled={atLimit}
             className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
           >
@@ -231,13 +285,18 @@ export default function ProductsClient({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => handleDelete(p.id)}
-                      disabled={deletingId === p.id}
-                      className="text-zinc-400 hover:text-red-600 disabled:opacity-40"
-                    >
-                      <Trash2 className={`h-4 w-4 ${deletingId === p.id ? "animate-pulse" : ""}`} />
-                    </button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => handleEditClick(p)} className="text-zinc-400 hover:text-emerald-600">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(p.id)}
+                        disabled={deletingId === p.id}
+                        className="text-zinc-400 hover:text-red-600 disabled:opacity-40"
+                      >
+                        <Trash2 className={`h-4 w-4 ${deletingId === p.id ? "animate-pulse" : ""}`} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -250,8 +309,8 @@ export default function ProductsClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-zinc-900">Add product</h2>
-              <button onClick={() => setShowForm(false)}>
+              <h2 className="text-lg font-semibold text-zinc-900">{editingProduct ? "Edit product" : "Add product"}</h2>
+              <button onClick={closeForm}>
                 <X className="h-5 w-5 text-zinc-400" />
               </button>
             </div>
@@ -329,6 +388,20 @@ export default function ProductsClient({
                   onChange={(e) => setForm({ ...form, minimumStock: e.target.value })}
                   className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 />
+                <input
+                  type="number"
+                  placeholder="Maximum stock"
+                  value={form.maximumStock}
+                  onChange={(e) => setForm({ ...form, maximumStock: e.target.value })}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
+                <input
+                  type="number"
+                  placeholder="Reorder point"
+                  value={form.reorderPoint}
+                  onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                />
                 <select
                   value={form.drugSchedule}
                   onChange={(e) => setForm({ ...form, drugSchedule: e.target.value })}
@@ -342,6 +415,38 @@ export default function ProductsClient({
                   ))}
                 </select>
               </div>
+
+              <textarea
+                placeholder="Description"
+                rows={2}
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              />
+
+              {!editingProduct && parseInt(form.currentStock || "0") > 0 && (
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                  <p className="mb-2 text-xs font-medium text-zinc-500">
+                    Track this starting stock as a batch (optional) so it&apos;s covered by expiry alerts.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      placeholder="Batch number"
+                      value={form.batchNumber}
+                      onChange={(e) => setForm({ ...form, batchNumber: e.target.value })}
+                      className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="date"
+                      placeholder="Expiration date"
+                      value={form.expirationDate}
+                      onChange={(e) => setForm({ ...form, expirationDate: e.target.value })}
+                      className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
               <label className="flex items-center gap-2 text-sm text-zinc-600">
                 <input
                   type="checkbox"
@@ -374,7 +479,7 @@ export default function ProductsClient({
                 disabled={saving}
                 className="w-full rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
               >
-                {saving ? "Saving..." : "Save product"}
+                {saving ? "Saving..." : editingProduct ? "Save changes" : "Save product"}
               </button>
             </form>
           </div>
