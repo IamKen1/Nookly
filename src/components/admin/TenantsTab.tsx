@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatDate } from "@/lib/format";
+import { formatDate, peso } from "@/lib/format";
 
 interface Tenant {
   id: string;
@@ -16,6 +16,14 @@ interface Tenant {
   counts: { users: number; products: number; sales: number; stores: number };
 }
 
+interface PlanOption {
+  id: string;
+  code: string;
+  name: string;
+  priceMonthly: number;
+  priceYearly: number;
+}
+
 export default function TenantsTab() {
   const router = useRouter();
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -23,6 +31,12 @@ export default function TenantsTab() {
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
+  const [activateTarget, setActivateTarget] = useState<Tenant | null>(null);
+  const [activatePlanId, setActivatePlanId] = useState("");
+  const [activateBillingCycle, setActivateBillingCycle] = useState<"MONTHLY" | "YEARLY">("MONTHLY");
+  const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState<string | null>(null);
 
   const load = async (q?: string) => {
     setLoading(true);
@@ -34,7 +48,42 @@ export default function TenantsTab() {
 
   useEffect(() => {
     load();
+    fetch("/api/nk-ops-72fq9/plans")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setPlans(Array.isArray(data) ? data.filter((p: PlanOption & { isActive: boolean }) => p.isActive) : []))
+      .catch(() => setPlans([]));
   }, []);
+
+  const openActivate = (t: Tenant) => {
+    setActivateTarget(t);
+    setActivatePlanId(plans.find((p) => p.code === t.plan?.code)?.id ?? plans[0]?.id ?? "");
+    setActivateBillingCycle("MONTHLY");
+    setActivateError(null);
+  };
+
+  const submitActivate = async () => {
+    if (!activateTarget || !activatePlanId) return;
+    setActivating(true);
+    setActivateError(null);
+    try {
+      const res = await fetch(`/api/nk-ops-72fq9/tenants/${activateTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "activate_plan", planId: activatePlanId, billingCycle: activateBillingCycle }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActivateError(data.error ?? "Failed to activate plan.");
+        return;
+      }
+      setActivateTarget(null);
+      load(search);
+    } catch {
+      setActivateError("Network error.");
+    } finally {
+      setActivating(false);
+    }
+  };
 
   const toggleActive = async (t: Tenant) => {
     const action = t.isActive ? "suspend" : "reactivate";
@@ -151,6 +200,13 @@ export default function TenantsTab() {
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       <button
+                        onClick={() => openActivate(t)}
+                        disabled={busyId === t.id}
+                        className="rounded-full border border-emerald-700 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:border-emerald-500 disabled:opacity-50"
+                      >
+                        Activate plan
+                      </button>
+                      <button
                         onClick={() => impersonate(t)}
                         disabled={busyId === t.id}
                         className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-500 disabled:opacity-50"
@@ -177,6 +233,68 @@ export default function TenantsTab() {
         </table>
         </div>
       </div>
+
+      {activateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+            <h3 className="text-sm font-semibold text-white">Activate plan for {activateTarget.name}</h3>
+            <p className="mt-1 text-xs text-zinc-500">
+              For when the tenant already paid off-band (no in-app plan request needed). This immediately switches
+              their subscription to ACTIVE and logs the payment.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-400">Plan</label>
+                <select
+                  value={activatePlanId}
+                  onChange={(e) => setActivatePlanId(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+                >
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-400">Billing cycle</label>
+                <select
+                  value={activateBillingCycle}
+                  onChange={(e) => setActivateBillingCycle(e.target.value as "MONTHLY" | "YEARLY")}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+                >
+                  <option value="MONTHLY">
+                    Monthly — {peso(plans.find((p) => p.id === activatePlanId)?.priceMonthly ?? 0)}
+                  </option>
+                  <option value="YEARLY">
+                    Yearly — {peso(plans.find((p) => p.id === activatePlanId)?.priceYearly ?? 0)}
+                  </option>
+                </select>
+              </div>
+
+              {activateError && <p className="text-sm text-red-400">{activateError}</p>}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setActivateTarget(null)}
+                  className="rounded-full border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 hover:border-zinc-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitActivate}
+                  disabled={activating || !activatePlanId}
+                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {activating ? "Activating..." : "Activate"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

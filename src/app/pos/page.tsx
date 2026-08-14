@@ -1,9 +1,9 @@
-import { requireSession } from "@/lib/require-session";
+import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import PosClient from "@/components/pos/PosClient";
 
 export default async function PosPage() {
-  const session = await requireSession();
+  const session = await requireActiveSession();
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },

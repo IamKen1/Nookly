@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LayoutDashboard, LogOut, ShieldCheck } from "lucide-react";
 import OverviewTab from "./OverviewTab";
 import AnalyticsTab from "./AnalyticsTab";
+import RevenueTab from "./RevenueTab";
 import TenantsTab from "./TenantsTab";
 import PlansTab from "./PlansTab";
 import PlanRequestsTab from "./PlanRequestsTab";
@@ -16,6 +17,7 @@ import GfpMigrationTab from "./GfpMigrationTab";
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "analytics", label: "Analytics" },
+  { key: "revenue", label: "Revenue" },
   { key: "tenants", label: "Tenants" },
   { key: "support", label: "Support" },
   { key: "plans", label: "Plans" },
@@ -93,6 +95,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
 
         {tab === "overview" && <OverviewTab />}
         {tab === "analytics" && <AnalyticsTab />}
+        {tab === "revenue" && <RevenueTab />}
         {tab === "tenants" && <TenantsTab />}
         {tab === "support" && <SupportTab adminEmail={adminEmail} />}
         {tab === "plans" && <PlansTab />}

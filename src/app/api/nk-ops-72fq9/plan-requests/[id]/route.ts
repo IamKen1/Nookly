@@ -18,7 +18,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const planRequest = await prisma.planChangeRequest.findUnique({
     where: { id },
-    include: { tenant: true, currentPlan: true, requestedPlan: true },
+    include: { tenant: { include: { subscription: true } }, currentPlan: true, requestedPlan: true },
   });
   if (!planRequest) return NextResponse.json({ error: "Request not found." }, { status: 404 });
   if (planRequest.status === "ACTIVATED" || planRequest.status === "CANCELLED") {
@@ -58,10 +58,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   if (action === "activate") {
+    if (!planRequest.tenant.subscription) {
+      return NextResponse.json({ error: "This tenant has no subscription record." }, { status: 400 });
+    }
+
     const now = new Date();
     const periodEnd = new Date(now);
     if (planRequest.billingCycle === "YEARLY") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
     else periodEnd.setMonth(periodEnd.getMonth() + 1);
+    const amount = planRequest.billingCycle === "YEARLY" ? planRequest.requestedPlan.priceYearly : planRequest.requestedPlan.priceMonthly;
 
     const [, updatedRequest] = await prisma.$transaction([
       prisma.subscription.update({
@@ -78,6 +83,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       prisma.planChangeRequest.update({
         where: { id },
         data: { status: "ACTIVATED", resolvedAt: now, resolvedNote: resolvedNote || null },
+      }),
+      prisma.invoice.create({
+        data: {
+          subscriptionId: planRequest.tenant.subscription.id,
+          amount,
+          status: "PAID",
+          periodStart: now,
+          periodEnd,
+          paidAt: now,
+        },
       }),
     ]);
 

@@ -1,11 +1,11 @@
-import { requireSession } from "@/lib/require-session";
+import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { hasFeature, upgradeMessage, type PlanCode } from "@/lib/plan-gating";
 import AppShell from "@/components/app/AppShell";
 import ReportsClient from "@/components/reports/ReportsClient";
 
 export default async function ReportsPage() {
-  const session = await requireSession();
+  const session = await requireActiveSession();
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },

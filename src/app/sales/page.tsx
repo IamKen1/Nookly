@@ -1,10 +1,10 @@
-import { requireSession } from "@/lib/require-session";
+import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/components/app/AppShell";
 import SalesClient from "@/components/sales/SalesClient";
 
 export default async function SalesPage() {
-  const session = await requireSession();
+  const session = await requireActiveSession();
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },

@@ -1,10 +1,10 @@
-import { requireSession } from "@/lib/require-session";
+import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/components/app/AppShell";
 import ProductsClient from "@/components/products/ProductsClient";
 
 export default async function ProductsPage() {
-  const session = await requireSession();
+  const session = await requireActiveSession();
 
   const [tenant, categories] = await Promise.all([
     prisma.tenant.findUnique({

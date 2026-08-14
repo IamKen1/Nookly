@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { requireSession } from "@/lib/require-session";
+import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { daysUntil } from "@/lib/plans";
 import AppShell from "@/components/app/AppShell";
 
 export default async function DashboardPage() {
-  const session = await requireSession();
+  const session = await requireActiveSession();
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },

@@ -139,15 +139,29 @@ export default function PlanSettingsForm({
           </div>
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              currentPlan.status === "TRIALING" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+              currentPlan.status === "TRIALING"
+                ? "bg-amber-100 text-amber-700"
+                : currentPlan.status === "EXPIRED" || currentPlan.status === "PAST_DUE" || currentPlan.status === "CANCELED"
+                ? "bg-red-100 text-red-700"
+                : "bg-emerald-100 text-emerald-700"
             }`}
           >
-            {currentPlan.status === "TRIALING" ? "Free trial" : currentPlan.status}
+            {currentPlan.status === "TRIALING"
+              ? "Free trial"
+              : currentPlan.status === "EXPIRED"
+              ? "Trial expired"
+              : currentPlan.status === "PAST_DUE"
+              ? "Renewal overdue"
+              : currentPlan.status === "CANCELED"
+              ? "Canceled"
+              : currentPlan.status}
           </span>
         </div>
         <p className="mt-1 text-xs text-zinc-500">
           {currentPlan.status === "TRIALING" && currentPlan.trialEndsAt
             ? `Trial ends ${formatDate(currentPlan.trialEndsAt)}`
+            : currentPlan.status === "EXPIRED" || currentPlan.status === "PAST_DUE"
+            ? `Access paused — pick a plan below to reactivate`
             : currentPlan.currentPeriodEnd
             ? `Renews ${formatDate(currentPlan.currentPeriodEnd)}`
             : null}

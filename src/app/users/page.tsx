@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/require-session";
+import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/components/app/AppShell";
 import UsersClient from "@/components/users/UsersClient";
 
 export default async function UsersPage() {
-  const session = await requireSession();
+  const session = await requireActiveSession();
   if (!["OWNER", "ADMIN"].includes(session.role)) {
     redirect("/dashboard");
   }

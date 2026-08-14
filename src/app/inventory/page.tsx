@@ -1,10 +1,10 @@
-import { requireSession } from "@/lib/require-session";
+import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/components/app/AppShell";
 import InventoryClient from "@/components/inventory/InventoryClient";
 
 export default async function InventoryPage() {
-  const session = await requireSession();
+  const session = await requireActiveSession();
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },
