@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     customerName,
     customerMobile,
   }: {
-    type: "CASH_IN" | "CASH_OUT";
+    type: "CASH_IN" | "CASH_OUT" | "LOAD";
     provider: string;
     amount: number;
     serviceFee?: number;
@@ -88,14 +88,20 @@ export async function POST(request: NextRequest) {
     customerMobile?: string;
   } = body;
 
-  if (type !== "CASH_IN" && type !== "CASH_OUT") {
-    return NextResponse.json({ error: "type must be CASH_IN or CASH_OUT." }, { status: 400 });
+  if (type !== "CASH_IN" && type !== "CASH_OUT" && type !== "LOAD") {
+    return NextResponse.json({ error: "type must be CASH_IN, CASH_OUT, or LOAD." }, { status: 400 });
   }
   if (!provider?.trim()) {
-    return NextResponse.json({ error: "Provider (e.g. GCash, Maya) is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: type === "LOAD" ? "Network (e.g. Globe, Smart) is required." : "Provider (e.g. GCash, Maya) is required." },
+      { status: 400 }
+    );
   }
   if (!amount || amount <= 0) {
     return NextResponse.json({ error: "A valid amount is required." }, { status: 400 });
+  }
+  if (type === "LOAD" && !customerMobile?.trim()) {
+    return NextResponse.json({ error: "The mobile number to load is required." }, { status: 400 });
   }
 
   const openShift = await prisma.shift.findFirst({

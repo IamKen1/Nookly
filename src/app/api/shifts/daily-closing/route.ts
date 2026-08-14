@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
 
   const cashIns = cashTransactions.filter((t) => t.type === "CASH_IN");
   const cashOuts = cashTransactions.filter((t) => t.type === "CASH_OUT");
+  const loads = cashTransactions.filter((t) => t.type === "LOAD");
 
   return NextResponse.json({
     date: start.toISOString().slice(0, 10),
@@ -85,7 +86,12 @@ export async function GET(request: NextRequest) {
       cashInTotal: cashIns.reduce((sum, t) => sum + Number(t.amount), 0),
       cashOutCount: cashOuts.length,
       cashOutTotal: cashOuts.reduce((sum, t) => sum + Number(t.amount), 0),
-      feesEarned: cashTransactions.reduce((sum, t) => sum + Number(t.serviceFee), 0),
+      feesEarned: [...cashIns, ...cashOuts].reduce((sum, t) => sum + Number(t.serviceFee), 0),
+    },
+    load: {
+      count: loads.length,
+      total: loads.reduce((sum, t) => sum + Number(t.amount), 0),
+      feesEarned: loads.reduce((sum, t) => sum + Number(t.serviceFee), 0),
     },
     shifts: shiftSummaries,
   });

@@ -28,6 +28,11 @@ export interface ShiftReading {
     feesEarned: number;
     netCashImpact: number;
   };
+  load: {
+    count: number;
+    total: number;
+    feesEarned: number;
+  };
   computedExpectedCash: number;
 }
 
@@ -64,12 +69,17 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
 
   const cashIns = cashTransactions.filter((t) => t.type === "CASH_IN");
   const cashOuts = cashTransactions.filter((t) => t.type === "CASH_OUT");
+  const loads = cashTransactions.filter((t) => t.type === "LOAD");
   const cashInTotal = cashIns.reduce((sum, t) => sum + Number(t.amount), 0);
   const cashOutTotal = cashOuts.reduce((sum, t) => sum + Number(t.amount), 0);
-  const feesEarned = cashTransactions.reduce((sum, t) => sum + Number(t.serviceFee), 0);
+  const loadTotal = loads.reduce((sum, t) => sum + Number(t.amount), 0);
+  const eWalletFeesEarned = [...cashIns, ...cashOuts].reduce((sum, t) => sum + Number(t.serviceFee), 0);
+  const loadFeesEarned = loads.reduce((sum, t) => sum + Number(t.serviceFee), 0);
   // Cash-in: customer's physical cash comes into the drawer, plus the fee earned.
   // Cash-out: physical cash leaves the drawer for the amount, net of the fee kept.
-  const netCashImpact = cashInTotal - cashOutTotal + feesEarned;
+  // Load: customer pays cash for prepaid load — same direction as cash-in, no
+  // physical cash leaves the drawer (its fee is included below too).
+  const netCashImpact = cashInTotal - cashOutTotal + loadTotal + eWalletFeesEarned + loadFeesEarned;
 
   return {
     id: shift.id,
@@ -96,8 +106,13 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
       cashInTotal,
       cashOutCount: cashOuts.length,
       cashOutTotal,
-      feesEarned,
+      feesEarned: eWalletFeesEarned,
       netCashImpact,
+    },
+    load: {
+      count: loads.length,
+      total: loadTotal,
+      feesEarned: loadFeesEarned,
     },
     computedExpectedCash: Number(shift.startingCash) + cashSalesTotal + netCashImpact,
   };

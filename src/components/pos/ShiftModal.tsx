@@ -27,6 +27,11 @@ interface ShiftReading {
     feesEarned: number;
     netCashImpact: number;
   };
+  load: {
+    count: number;
+    total: number;
+    feesEarned: number;
+  };
   computedExpectedCash: number;
 }
 
@@ -247,6 +252,13 @@ export default function ShiftModal({
                         <div className="flex justify-between"><span>Cash out ({reading?.eWallet.cashOutCount})</span><span>-{peso(reading?.eWallet.cashOutTotal ?? 0)}</span></div>
                       )}
                       <div className="flex justify-between"><span>Fees earned</span><span>{peso(reading?.eWallet.feesEarned ?? 0)}</span></div>
+                    </div>
+                  )}
+                  {(reading?.load.count ?? 0) > 0 && (
+                    <div className="mt-2 space-y-0.5 border-t pt-2 text-xs text-gray-500">
+                      <p className="font-medium text-gray-700">Prepaid load</p>
+                      <div className="flex justify-between"><span>Load sold ({reading?.load.count})</span><span>+{peso(reading?.load.total ?? 0)}</span></div>
+                      <div className="flex justify-between"><span>Fees earned</span><span>{peso(reading?.load.feesEarned ?? 0)}</span></div>
                     </div>
                   )}
                   <div className="flex justify-between border-t pt-1 font-semibold text-emerald-700"><span>Expected cash in drawer</span><span>{peso(reading?.computedExpectedCash ?? 0)}</span></div>

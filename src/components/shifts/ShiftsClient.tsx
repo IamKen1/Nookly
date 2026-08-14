@@ -23,6 +23,11 @@ interface DailyClosing {
     cashOutTotal: number;
     feesEarned: number;
   };
+  load: {
+    count: number;
+    total: number;
+    feesEarned: number;
+  };
   shifts: {
     id: string;
     cashierName: string;
@@ -127,6 +132,14 @@ function DailyClosingView() {
                 <div className="flex justify-between"><span>Cash in ({data.eWallet.cashInCount})</span><span>{peso(data.eWallet.cashInTotal)}</span></div>
                 <div className="flex justify-between"><span>Cash out ({data.eWallet.cashOutCount})</span><span>{peso(data.eWallet.cashOutTotal)}</span></div>
                 <div className="flex justify-between font-medium text-emerald-600"><span>Fees earned</span><span>{peso(data.eWallet.feesEarned)}</span></div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+              <h3 className="text-sm font-semibold text-zinc-900">Prepaid load</h3>
+              <div className="mt-3 space-y-2 text-sm text-zinc-600">
+                <div className="flex justify-between"><span>Load sold ({data.load.count})</span><span>{peso(data.load.total)}</span></div>
+                <div className="flex justify-between font-medium text-emerald-600"><span>Fees earned</span><span>{peso(data.load.feesEarned)}</span></div>
               </div>
             </div>
           </div>

@@ -682,13 +682,17 @@ model Shift {
   @@map("shifts")
 }
 
-// GCash/Maya/etc "cash in / cash out" agent transactions — a pharmacy service
-// distinct from product sales. Cash-in: customer hands over physical cash,
-// pharmacy credits the customer's e-wallet from its own float (drawer cash
-// goes UP by the amount plus the service fee earned). Cash-out: customer's
-// e-wallet is debited to the pharmacy's float, pharmacy hands over physical
-// cash (drawer cash goes DOWN by the amount, net of the fee kept). Tracked
-// per-shift so it folds into the expected-cash reconciliation alongside sales.
+// GCash/Maya/etc "cash in / cash out" agent transactions, plus prepaid mobile
+// load reselling — pharmacy services distinct from product sales. Cash-in:
+// customer hands over physical cash, pharmacy credits the customer's e-wallet
+// from its own float (drawer cash goes UP by the amount plus the service fee
+// earned). Cash-out: customer's e-wallet is debited to the pharmacy's float,
+// pharmacy hands over physical cash (drawer cash goes DOWN by the amount, net
+// of the fee kept). Load: customer pays cash for prepaid mobile load sent to
+// customerMobile (via GCash "Buy Load" or similar) — same direction as
+// cash-in (drawer cash goes UP), provider holds the network name instead of
+// an e-wallet brand. Tracked per-shift so it folds into the expected-cash
+// reconciliation alongside sales.
 model CashTransaction {
   id              String              @id @default(cuid())
   tenantId        String
@@ -716,6 +720,7 @@ model CashTransaction {
 enum CashTransactionType {
   CASH_IN
   CASH_OUT
+  LOAD
 }
 
 model SaleItem {

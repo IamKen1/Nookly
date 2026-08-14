@@ -6,7 +6,7 @@ import { peso, formatDateTime } from "@/lib/format";
 
 interface CashTxn {
   id: string;
-  type: "CASH_IN" | "CASH_OUT";
+  type: "CASH_IN" | "CASH_OUT" | "LOAD";
   provider: string;
   amount: number;
   serviceFee: number;
@@ -14,7 +14,14 @@ interface CashTxn {
   createdAt: string;
 }
 
-const PROVIDERS = ["GCash", "Maya", "PadalaXpress", "Other"];
+const WALLET_PROVIDERS = ["GCash", "Maya", "PadalaXpress", "Other"];
+const LOAD_NETWORKS = ["Globe", "Smart", "TNT", "TM", "DITO", "Other"];
+
+const TYPE_LABELS: Record<CashTxn["type"], string> = {
+  CASH_IN: "Cash In",
+  CASH_OUT: "Cash Out",
+  LOAD: "Load",
+};
 
 export default function CashTransactionModal({
   isOpen,
@@ -27,15 +34,23 @@ export default function CashTransactionModal({
   shiftId: string | null;
   onLogged: () => void;
 }) {
-  const [type, setType] = useState<"CASH_IN" | "CASH_OUT">("CASH_IN");
+  const [type, setType] = useState<CashTxn["type"]>("CASH_IN");
   const [provider, setProvider] = useState("GCash");
   const [amount, setAmount] = useState("");
   const [serviceFee, setServiceFee] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
+  const [customerMobile, setCustomerMobile] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState<CashTxn[]>([]);
+
+  const providerOptions = type === "LOAD" ? LOAD_NETWORKS : WALLET_PROVIDERS;
+
+  const handleTypeChange = (nextType: CashTxn["type"]) => {
+    setType(nextType);
+    setProvider(nextType === "LOAD" ? LOAD_NETWORKS[0] : WALLET_PROVIDERS[0]);
+  };
 
   const loadRecent = () => {
     if (!shiftId) return;
@@ -53,6 +68,7 @@ export default function CashTransactionModal({
       setServiceFee("");
       setReferenceNumber("");
       setCustomerName("");
+      setCustomerMobile("");
       setError(null);
       loadRecent();
     }
@@ -64,6 +80,10 @@ export default function CashTransactionModal({
     const amt = parseFloat(amount);
     if (!Number.isFinite(amt) || amt <= 0) {
       setError("Enter a valid amount.");
+      return;
+    }
+    if (type === "LOAD" && !customerMobile.trim()) {
+      setError("Enter the mobile number to load.");
       return;
     }
     const fee = parseFloat(serviceFee) || 0;
@@ -79,6 +99,7 @@ export default function CashTransactionModal({
           serviceFee: fee,
           referenceNumber: referenceNumber.trim() || undefined,
           customerName: customerName.trim() || undefined,
+          customerMobile: customerMobile.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -90,6 +111,7 @@ export default function CashTransactionModal({
       setServiceFee("");
       setReferenceNumber("");
       setCustomerName("");
+      setCustomerMobile("");
       onLogged();
       loadRecent();
     } finally {
@@ -105,7 +127,7 @@ export default function CashTransactionModal({
         <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <Banknote className="h-4 w-4 text-emerald-600" />
-            <h2 className="text-base font-semibold">E-wallet cash in / cash out</h2>
+            <h2 className="text-base font-semibold">E-wallet & load services</h2>
           </div>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
             <X className="h-4 w-4" />
@@ -119,32 +141,48 @@ export default function CashTransactionModal({
             </p>
           )}
 
-          <div className="mb-3 grid grid-cols-2 gap-2">
+          <div className="mb-3 grid grid-cols-3 gap-2">
             <button
-              onClick={() => setType("CASH_IN")}
+              onClick={() => handleTypeChange("CASH_IN")}
               className={`rounded-lg border p-2 text-sm font-medium ${type === "CASH_IN" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-gray-300"}`}
             >
               Cash In
               <div className="text-xs text-gray-500">Customer loads e-wallet</div>
             </button>
             <button
-              onClick={() => setType("CASH_OUT")}
+              onClick={() => handleTypeChange("CASH_OUT")}
               className={`rounded-lg border p-2 text-sm font-medium ${type === "CASH_OUT" ? "border-red-500 bg-red-50 text-red-700" : "border-gray-300"}`}
             >
               Cash Out
               <div className="text-xs text-gray-500">Customer withdraws cash</div>
             </button>
+            <button
+              onClick={() => handleTypeChange("LOAD")}
+              className={`rounded-lg border p-2 text-sm font-medium ${type === "LOAD" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-300"}`}
+            >
+              Load
+              <div className="text-xs text-gray-500">Prepaid mobile load</div>
+            </button>
           </div>
 
           <div className="space-y-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Provider</label>
+              <label className="mb-1 block text-xs font-medium text-gray-700">{type === "LOAD" ? "Network" : "Provider"}</label>
               <select value={provider} onChange={(e) => setProvider(e.target.value)} className="w-full rounded-lg border border-gray-300 p-2 text-sm">
-                {PROVIDERS.map((p) => (
+                {providerOptions.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
             </div>
+            {type === "LOAD" && (
+              <input
+                value={customerMobile}
+                onChange={(e) => setCustomerMobile(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="Mobile number to load (e.g. 09171234567)"
+                inputMode="numeric"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500"
+              />
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">Amount</label>
@@ -193,7 +231,7 @@ export default function CashTransactionModal({
               disabled={busy}
               className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
             >
-              {busy ? "Logging..." : `Log ${type === "CASH_IN" ? "cash in" : "cash out"}`}
+              {busy ? "Logging..." : `Log ${TYPE_LABELS[type].toLowerCase()}`}
             </button>
           </div>
 
@@ -204,8 +242,12 @@ export default function CashTransactionModal({
                 {recent.map((t) => (
                   <div key={t.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs">
                     <div>
-                      <span className={`font-semibold ${t.type === "CASH_IN" ? "text-emerald-700" : "text-red-700"}`}>
-                        {t.type === "CASH_IN" ? "Cash In" : "Cash Out"}
+                      <span
+                        className={`font-semibold ${
+                          t.type === "CASH_IN" ? "text-emerald-700" : t.type === "CASH_OUT" ? "text-red-700" : "text-blue-700"
+                        }`}
+                      >
+                        {TYPE_LABELS[t.type]}
                       </span>
                       <span className="ml-1.5 text-gray-500">{t.provider}</span>
                     </div>

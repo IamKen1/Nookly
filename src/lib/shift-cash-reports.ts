@@ -17,6 +17,8 @@ export interface CashPeriodBucket {
   cashInTotal: number;
   cashOutCount: number;
   cashOutTotal: number;
+  loadCount: number;
+  loadTotal: number;
   feesEarned: number;
 }
 
@@ -148,6 +150,8 @@ export async function computeShiftCashReport(
     cashInTotal: 0,
     cashOutCount: 0,
     cashOutTotal: 0,
+    loadCount: 0,
+    loadTotal: 0,
     feesEarned: 0,
   }));
 
@@ -176,9 +180,12 @@ export async function computeShiftCashReport(
     if (t.type === "CASH_IN") {
       buckets[idx].cashInCount += 1;
       buckets[idx].cashInTotal += Number(t.amount);
-    } else {
+    } else if (t.type === "CASH_OUT") {
       buckets[idx].cashOutCount += 1;
       buckets[idx].cashOutTotal += Number(t.amount);
+    } else {
+      buckets[idx].loadCount += 1;
+      buckets[idx].loadTotal += Number(t.amount);
     }
     buckets[idx].feesEarned += Number(t.serviceFee);
   }
