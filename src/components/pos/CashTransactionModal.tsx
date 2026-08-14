@@ -11,8 +11,15 @@ interface CashTxn {
   amount: number;
   serviceFee: number;
   referenceNumber: string | null;
+  customerMobile: string | null;
   createdAt: string;
 }
+
+const MOBILE_LABEL: Record<CashTxn["type"], string> = {
+  CASH_IN: "Customer's mobile number (optional — recommended in case of disputes)",
+  CASH_OUT: "Customer's mobile number (optional — recommended in case of disputes)",
+  LOAD: "Mobile number to load",
+};
 
 const WALLET_PROVIDERS = ["GCash", "Maya", "PadalaXpress", "Other"];
 const LOAD_NETWORKS = ["Globe", "Smart", "TNT", "TM", "DITO", "Other"];
@@ -174,15 +181,17 @@ export default function CashTransactionModal({
                 ))}
               </select>
             </div>
-            {type === "LOAD" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">{MOBILE_LABEL[type]}</label>
               <input
+                required={type === "LOAD"}
                 value={customerMobile}
                 onChange={(e) => setCustomerMobile(e.target.value.replace(/[^\d]/g, ""))}
-                placeholder="Mobile number to load (e.g. 09171234567)"
+                placeholder="09171234567"
                 inputMode="numeric"
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500"
               />
-            )}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">Amount</label>
@@ -250,6 +259,7 @@ export default function CashTransactionModal({
                         {TYPE_LABELS[t.type]}
                       </span>
                       <span className="ml-1.5 text-gray-500">{t.provider}</span>
+                      {t.customerMobile && <span className="ml-1.5 text-gray-400">· {t.customerMobile}</span>}
                     </div>
                     <div className="text-right">
                       <p className="font-medium text-gray-900">{peso(t.amount)}</p>
