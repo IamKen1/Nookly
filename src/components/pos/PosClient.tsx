@@ -253,9 +253,13 @@ export default function PosClient({
       const receiptJson = await receiptRes.json();
       if (receiptRes.ok) {
         const receiptData: ReceiptData = { ...receiptJson, date: new Date(receiptJson.date) };
-        printReceipt(receiptData);
         if (printer.connection) {
+          // A paired thermal printer prints instantly with no dialog — showing the
+          // browser print preview on top of that would just force an extra manual
+          // close/back before the cashier can move on.
           await printer.printText(generateThermalReceiptText(receiptData));
+        } else {
+          printReceipt(receiptData);
         }
       }
     } catch {
