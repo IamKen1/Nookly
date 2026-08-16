@@ -23,19 +23,20 @@ interface RateLimitResult {
 // throttled identically to a real one — the response never reveals which.
 export async function checkLoginRateLimit(accountKeyHash: string, ip: string | null): Promise<RateLimitResult> {
   const accountSince = new Date(Date.now() - ACCOUNT_WINDOW_MS);
-  const accountCount = await prisma.loginAttempt.count({
-    where: { accountKeyHash, createdAt: { gte: accountSince } },
-  });
+  const ipSince = new Date(Date.now() - IP_WINDOW_MS);
+
+  // Both counts are independent of each other, so run them concurrently
+  // instead of waiting on two sequential round trips to the DB.
+  const [accountCount, ipCount] = await Promise.all([
+    prisma.loginAttempt.count({ where: { accountKeyHash, createdAt: { gte: accountSince } } }),
+    ip ? prisma.loginAttempt.count({ where: { ip, createdAt: { gte: ipSince } } }) : Promise.resolve(0),
+  ]);
+
   if (accountCount >= ACCOUNT_MAX_ATTEMPTS) {
     return { limited: true, retryAfterMinutes: Math.ceil(ACCOUNT_WINDOW_MS / 60000) };
   }
-
-  if (ip) {
-    const ipSince = new Date(Date.now() - IP_WINDOW_MS);
-    const ipCount = await prisma.loginAttempt.count({ where: { ip, createdAt: { gte: ipSince } } });
-    if (ipCount >= IP_MAX_ATTEMPTS) {
-      return { limited: true, retryAfterMinutes: Math.ceil(IP_WINDOW_MS / 60000) };
-    }
+  if (ip && ipCount >= IP_MAX_ATTEMPTS) {
+    return { limited: true, retryAfterMinutes: Math.ceil(IP_WINDOW_MS / 60000) };
   }
 
   return { limited: false };

@@ -15,6 +15,7 @@ export default function LoginClient() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // guards against a double-fire slipping in before the disabled state repaints
     setError(null);
     setLoading(true);
     try {
@@ -51,7 +52,10 @@ export default function LoginClient() {
           <h1 className="text-xl font-semibold text-zinc-900">Welcome back</h1>
           <p className="mt-1 text-sm text-zinc-500">Log in with your username to continue.</p>
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          {/* method="post" is a defense-in-depth fallback: if a click ever lands before React
+              finishes hydrating and attaching onSubmit, the browser's native submit still won't
+              put the password in the URL/history/server logs the way a default GET would. */}
+          <form onSubmit={handleSubmit} method="post" className="mt-6 space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-zinc-700">Username</label>
               <div className="relative">
@@ -115,7 +119,10 @@ export default function LoginClient() {
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60"
+              /* active: is a pure-CSS pseudo-class the browser applies on press, before any JS
+                 runs — so the button visibly reacts the instant it's clicked even if React
+                 hasn't hydrated yet, instead of the screen appearing to do nothing. */
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition active:scale-[0.97] active:bg-emerald-700 hover:bg-emerald-500 disabled:opacity-60"
             >
               {loading && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
               {loading ? "Logging in..." : "Log in"}

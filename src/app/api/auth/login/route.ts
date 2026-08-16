@@ -23,14 +23,15 @@ export async function POST(request: NextRequest) {
 
     // Usernames are globally unique, so a single lookup identifies both the
     // user and their workspace — no need to ask for a workspace name at login.
-    const user = await prisma.user.findUnique({ where: { username: identifier } })
+    // Fetched together (one round trip) rather than as two sequential queries.
+    const user = await prisma.user.findUnique({ where: { username: identifier }, include: { tenant: true } })
 
     if (!user || !user.isActive || !(await verifyPassword(password, user.password))) {
       await recordFailedLoginAttempt(accountKeyHash, ip)
       return NextResponse.json({ error: 'Invalid username or password.' }, { status: 401 })
     }
 
-    const tenant = await prisma.tenant.findUnique({ where: { id: user.tenantId } })
+    const tenant = user.tenant
     if (!tenant || !tenant.isActive) {
       await recordFailedLoginAttempt(accountKeyHash, ip)
       return NextResponse.json({ error: 'Invalid username or password.' }, { status: 401 })
