@@ -194,16 +194,21 @@ export default function PlansTab() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
-    setLoading(true);
+  // showLoading only applies to the initial fetch. A card's own save() already
+  // reflects the just-saved values in its draft state, so the post-save
+  // refresh (which only exists to pick up server-computed fields like
+  // tenantCount) must not unmount the whole grid — every other card's
+  // in-progress edits and scroll position would be discarded for no reason.
+  const load = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     const res = await fetch("/api/nk-ops-72fq9/plans");
     const data = await res.json();
     setPlans(Array.isArray(data) ? data : []);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
-    load();
+    load(true);
   }, []);
 
   if (loading) return <p className="text-sm text-zinc-500">Loading...</p>;
@@ -216,7 +221,7 @@ export default function PlansTab() {
       </p>
       <div className="grid gap-4 lg:grid-cols-3">
         {plans.map((p) => (
-          <PlanCard key={p.id} plan={p} onSaved={load} />
+          <PlanCard key={p.id} plan={p} onSaved={() => load()} />
         ))}
       </div>
     </div>

@@ -66,8 +66,12 @@ export default function ShiftModal({
   const [error, setError] = useState<string | null>(null);
   const [closedSummary, setClosedSummary] = useState<{ endingCash: number; expectedCash: number; variance: number } | null>(null);
 
-  const load = async () => {
-    setLoading(true);
+  // showLoading is true when the modal first opens (expected, brief flash is
+  // fine), but must be false after handleStart() succeeds — the user just
+  // filled in a starting-cash amount and clicked "Start shift"; they should
+  // see the shift reading appear, not the whole panel flash to "Loading...".
+  const load = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     setError(null);
     const res = await fetch("/api/shifts?mine=true");
     const data = await res.json();
@@ -82,7 +86,7 @@ export default function ShiftModal({
       setStartingCashInput(String(data.suggestedStartingCash ?? ""));
       setLastClosedAt(data.lastClosedAt ?? null);
     }
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
@@ -114,7 +118,7 @@ export default function ShiftModal({
         return;
       }
       onShiftChanged();
-      await load();
+      await load(false);
     } finally {
       setBusy(false);
     }

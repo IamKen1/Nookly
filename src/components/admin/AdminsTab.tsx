@@ -20,16 +20,18 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
   const [identifier, setIdentifier] = useState("");
   const [granting, setGranting] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  // showLoading only applies to the initial fetch — refreshing after a
+  // grant/revoke must not flash the whole table back to "Loading...".
+  const load = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     const res = await fetch("/api/nk-ops-72fq9/admins");
     const data = await res.json();
     setAdmins(Array.isArray(data) ? data : []);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
-    load();
+    load(true);
   }, []);
 
   const grant = async (e: React.FormEvent) => {

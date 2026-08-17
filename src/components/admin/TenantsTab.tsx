@@ -38,12 +38,15 @@ export default function TenantsTab() {
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
 
-  const load = async (q?: string) => {
-    setLoading(true);
+  // showLoading defaults to true for mount/explicit-search calls; refreshing
+  // after activate/suspend/reactivate passes false so the table doesn't flash
+  // back to "Loading..." over data that's still perfectly valid to show.
+  const load = async (q?: string, showLoading = true) => {
+    if (showLoading) setLoading(true);
     const res = await fetch(`/api/nk-ops-72fq9/tenants${q ? `?search=${encodeURIComponent(q)}` : ""}`);
     const data = await res.json();
     setTenants(Array.isArray(data) ? data : []);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
@@ -77,7 +80,7 @@ export default function TenantsTab() {
         return;
       }
       setActivateTarget(null);
-      load(search);
+      load(search, false);
     } catch {
       setActivateError("Network error.");
     } finally {
@@ -101,7 +104,7 @@ export default function TenantsTab() {
         setError(data.error ?? "Action failed.");
         return;
       }
-      load(search);
+      load(search, false);
     } finally {
       setBusyId(null);
     }

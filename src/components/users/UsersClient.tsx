@@ -47,16 +47,19 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
     setTimeout(() => setSuccessMessage(null), 2500);
   };
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // showLoading is only passed on the initial mount — refreshing after a
+  // create/deactivate/remove must not flash the whole table back to
+  // "Loading...", it should just swap in the updated rows in place.
+  const load = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     const res = await fetch("/api/users");
     const data = await res.json();
     setUsers(Array.isArray(data) ? data : []);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   }, []);
 
   useEffect(() => {
-    load();
+    load(true);
   }, [load]);
 
   const submit = async (e: React.FormEvent) => {

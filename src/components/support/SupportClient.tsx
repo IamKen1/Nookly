@@ -78,8 +78,12 @@ export default function SupportClient() {
     }
   };
 
-  const load = async (keepSelection = true) => {
-    setLoading(true);
+  // showLoading is only true for the very first fetch — refreshing after a
+  // submit/reply must NOT flash the ticket list and conversation back to a
+  // "Loading..." placeholder; the existing data should just stay in place
+  // until the fresh data is ready to swap in.
+  const load = async (keepSelection = true, showLoading = false) => {
+    if (showLoading) setLoading(true);
     const res = await fetch("/api/support-tickets");
     const data = await res.json();
     const list = Array.isArray(data) ? data : [];
@@ -87,11 +91,11 @@ export default function SupportClient() {
     if (!keepSelection || (selectedId && !list.some((t: Ticket) => t.id === selectedId))) {
       setSelectedId(list[0]?.id ?? null);
     }
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
-    load(false);
+    load(false, true);
   }, []);
 
   const selected = tickets.find((t) => t.id === selectedId) ?? null;

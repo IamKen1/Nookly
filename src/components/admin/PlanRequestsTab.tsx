@@ -29,16 +29,18 @@ export default function PlanRequestsTab() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
-    setLoading(true);
+  // showLoading only applies to the initial fetch — refreshing after
+  // contacted/activate/cancel must not flash the table back to "Loading...".
+  const load = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     const res = await fetch("/api/nk-ops-72fq9/plan-requests");
     const data = await res.json();
     setRequests(Array.isArray(data) ? data : []);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
-    load();
+    load(true);
   }, []);
 
   const act = async (id: string, action: "contacted" | "activate" | "cancel") => {

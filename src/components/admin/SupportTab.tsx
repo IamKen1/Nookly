@@ -88,16 +88,18 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
     }
   };
 
-  const load = async () => {
-    setLoading(true);
+  // showLoading only applies to the very first fetch — refreshing after a
+  // reply/status change must not flash the ticket list back to "Loading...".
+  const load = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     const res = await fetch("/api/nk-ops-72fq9/support-tickets");
     const data = await res.json();
     setTickets(Array.isArray(data) ? data : []);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
-    load();
+    load(true);
   }, []);
 
   const filtered = useMemo(() => {
@@ -114,12 +116,17 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
     }
   }, [tickets, folder]);
 
-  const loadDetail = async (id: string) => {
-    setSelectedId(id);
-    setDetail(null);
-    setReply("");
-    setReplyAttachments([]);
-    setMobileView("thread");
+  // silent=true is used when re-fetching the ALREADY-open ticket after a
+  // reply/status change — it must not clear the thread or reset the reply
+  // box, just quietly swap in the fresh detail once it arrives.
+  const loadDetail = async (id: string, opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) {
+      setSelectedId(id);
+      setDetail(null);
+      setReply("");
+      setReplyAttachments([]);
+      setMobileView("thread");
+    }
     const res = await fetch(`/api/nk-ops-72fq9/support-tickets/${id}`);
     if (res.ok) setDetail(await res.json());
   };
@@ -147,7 +154,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
       }
       setReply("");
       setReplyAttachments([]);
-      await Promise.all([load(), loadDetail(selectedId)]);
+      await Promise.all([load(), loadDetail(selectedId, { silent: true })]);
     } finally {
       setBusy(false);
     }
@@ -162,7 +169,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-      await Promise.all([load(), loadDetail(selectedId)]);
+      await Promise.all([load(), loadDetail(selectedId, { silent: true })]);
     } finally {
       setBusy(false);
     }
