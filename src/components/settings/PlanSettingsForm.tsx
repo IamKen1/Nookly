@@ -82,12 +82,15 @@ export default function PlanSettingsForm({
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  // showLoading only applies to the initial fetch — refreshing after
+  // submitting a new plan-change request must not flash the request-history
+  // table back to "Loading...", it should just add the new row in place.
+  const load = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const res = await fetch("/api/plan-requests");
     const data = await res.json();
     setRequests(Array.isArray(data) ? data : []);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
@@ -119,7 +122,7 @@ export default function PlanSettingsForm({
       setSuccess("Request sent! We'll reach out to arrange payment, then activate your new plan.");
       setSelectedCode("");
       setNote("");
-      load();
+      load(false);
     } catch {
       setError("Network error.");
     } finally {
