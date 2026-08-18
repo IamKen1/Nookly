@@ -246,9 +246,19 @@ export default function PosClient({
     if (!res.ok) return { ok: false, error: data.error ?? "Checkout failed." };
     clearCart();
     refreshProducts();
+    showNotification(`Sale ${data.saleNumber} completed — total ${peso(Number(data.totalAmount))}`, "success");
 
+    // Printing is a side effect, not part of "did the sale succeed" — it must
+    // never delay the success confirmation the cashier is waiting to see.
+    // Fire it off and let it resolve in the background.
+    printReceiptForSale(data.id);
+
+    return { ok: true, saleNumber: data.saleNumber, totalAmount: Number(data.totalAmount) };
+  };
+
+  const printReceiptForSale = async (saleId: string) => {
     try {
-      const receiptRes = await fetch(`/api/sales/${data.id}/receipt`);
+      const receiptRes = await fetch(`/api/sales/${saleId}/receipt`);
       const receiptJson = await receiptRes.json();
       if (receiptRes.ok) {
         const receiptData: ReceiptData = { ...receiptJson, date: new Date(receiptJson.date) };
@@ -264,8 +274,6 @@ export default function PosClient({
     } catch {
       showNotification("Receipt saved, but printing failed. Check the printer connection.", "error");
     }
-
-    return { ok: true, saleNumber: data.saleNumber, totalAmount: Number(data.totalAmount) };
   };
 
   return (
