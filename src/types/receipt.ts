@@ -31,6 +31,7 @@ export interface ReceiptData {
   subtotal: number;
   discountType?: string;
   discountAmount?: number;
+  discountIdNumber?: string;
   taxAmount: number;
   vatableSales?: number;
   nonVatableSales?: number;

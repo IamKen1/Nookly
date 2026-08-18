@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
     paymentMethod,
     cashReceived,
     discountType,
+    discountIdNumber,
     customerId,
     orderRemarks,
     prescriptionId,
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
     paymentMethod: string;
     cashReceived?: number;
     discountType?: DiscountType;
+    discountIdNumber?: string;
     customerId?: string;
     orderRemarks?: string;
     prescriptionId?: string;
@@ -276,6 +278,7 @@ export async function POST(request: NextRequest) {
         taxAmount: vatTotals.vatAmount,
         discountType: normalizedDiscountType,
         discountAmount: vatTotals.discountAmount,
+        discountIdNumber: normalizedDiscountType !== "NONE" ? discountIdNumber?.trim() || null : null,
         totalAmount,
         paymentMethod: paymentMethod as never,
         cashReceived: cashReceived ?? null,

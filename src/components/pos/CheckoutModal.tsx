@@ -19,12 +19,12 @@ interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cart: CartLine[];
-  needsPrescription: boolean;
   pendingPrescriptions: PendingPrescription[];
   onProcessSale: (payload: {
     paymentMethod: string;
     cashReceived?: number;
     discountType?: DiscountType;
+    discountIdNumber?: string;
     orderRemarks?: string;
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;
@@ -41,10 +41,11 @@ const DISCOUNTS: { value: DiscountType; label: string; percent: number }[] = [
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
-export default function CheckoutModal({ isOpen, onClose, cart, needsPrescription, pendingPrescriptions, onProcessSale }: CheckoutModalProps) {
+export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescriptions, onProcessSale }: CheckoutModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CREDIT_CARD" | "DEBIT_CARD">("CASH");
   const [cashReceived, setCashReceived] = useState("");
   const [discountType, setDiscountType] = useState<DiscountType>("NONE");
+  const [discountIdNumber, setDiscountIdNumber] = useState("");
   const [remarks, setRemarks] = useState("");
   const [prescriptionSelection, setPrescriptionSelection] = useState<PrescriptionSelection | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -56,6 +57,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, needsPrescription
       setPaymentMethod("CASH");
       setCashReceived("");
       setDiscountType("NONE");
+      setDiscountIdNumber("");
       setRemarks("");
       setPrescriptionSelection(null);
       setIsProcessing(false);
@@ -93,8 +95,9 @@ export default function CheckoutModal({ isOpen, onClose, cart, needsPrescription
         paymentMethod,
         cashReceived: paymentMethod === "CASH" ? cashAmount : undefined,
         discountType: discountType !== "NONE" ? discountType : undefined,
+        discountIdNumber: discountType !== "NONE" ? discountIdNumber.trim() || undefined : undefined,
         orderRemarks: remarks.trim() || undefined,
-        ...(needsPrescription ? prescriptionSelection ?? {} : {}),
+        ...(prescriptionSelection ?? {}),
       });
       if (!result.ok) {
         setError(result.error ?? "Payment processing failed.");
@@ -138,20 +141,26 @@ export default function CheckoutModal({ isOpen, onClose, cart, needsPrescription
               ))}
               <div className="mt-3 space-y-1 border-t border-gray-200 pt-2">
                 <div className="flex justify-between text-sm">
-                  <span>Subtotal:</span>
+                  <span>Total Sales:</span>
                   <span>{peso(totals.subtotal)}</span>
                 </div>
-                {discountType !== "NONE" && (
-                  <div className="flex justify-between text-sm font-medium text-green-600">
-                    <span>
-                      {discountType} ({discountPercent}%):
-                    </span>
-                    <span>-{peso(totals.discountAmount)}</span>
+                <div className="flex justify-between text-sm font-medium text-green-600">
+                  <span>Less: Discount (SC/PWD/NAAC/MOV/SP):</span>
+                  <span>-{peso(totals.discountAmount)}</span>
+                </div>
+                {discountType !== "NONE" && discountIdNumber.trim() && (
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>ID No.:</span>
+                    <span>{discountIdNumber.trim()}</span>
                   </div>
                 )}
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Less: Withholding Tax:</span>
+                  <span>-{peso(0)}</span>
+                </div>
                 <div className="flex justify-between text-sm">
-                  <span>Amount Due:</span>
-                  <span>{peso(finalTotal)}</span>
+                  <span className="font-semibold">Total Amount Due:</span>
+                  <span className="font-semibold text-emerald-600">{peso(finalTotal)}</span>
                 </div>
                 {totals.vatExemptSales != null && (
                   <div className="mt-1 flex justify-between text-xs text-gray-500">
@@ -171,17 +180,11 @@ export default function CheckoutModal({ isOpen, onClose, cart, needsPrescription
                   <span>Non-VAT Sales:</span>
                   <span>{peso(totals.nonVatableSales)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="font-semibold">Total:</span>
-                  <span className="text-emerald-600">{peso(finalTotal)}</span>
-                </div>
               </div>
             </div>
           </div>
 
-          {needsPrescription && (
-            <PrescriptionFields pendingPrescriptions={pendingPrescriptions} onChange={setPrescriptionSelection} />
-          )}
+          <PrescriptionFields pendingPrescriptions={pendingPrescriptions} onChange={setPrescriptionSelection} />
 
           <div>
             <h3 className="mb-2 text-sm font-semibold text-gray-900">Order Notes</h3>
@@ -211,10 +214,16 @@ export default function CheckoutModal({ isOpen, onClose, cart, needsPrescription
               ))}
             </div>
             {discountType !== "NONE" && (
-              <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3">
+              <div className="mt-3 space-y-2 rounded-lg border border-green-200 bg-green-50 p-3">
                 <div className="text-sm font-medium text-green-800">
                   {discountType} Discount: {discountPercent}% (Save {peso(totals.discountAmount)})
                 </div>
+                <input
+                  value={discountIdNumber}
+                  onChange={(e) => setDiscountIdNumber(e.target.value)}
+                  placeholder="ID Number (e.g. SC ID) — optional"
+                  className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm focus:border-emerald-500"
+                />
               </div>
             )}
           </div>

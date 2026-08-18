@@ -1,7 +1,7 @@
 import type { ReceiptData } from "@/types/receipt";
 import { formatPaymentMethodLabel, getReceiptFooterLines, getReceiptHeaderLines } from "@/types/receipt";
 
-const peso = (value: number) => `₱${value.toFixed(2)}`;
+const peso = (value: number) => (value < 0 ? `-₱${(-value).toFixed(2)}` : `₱${value.toFixed(2)}`);
 
 export const generateReceiptHTML = (receiptData: ReceiptData): string => {
   const {
@@ -9,8 +9,8 @@ export const generateReceiptHTML = (receiptData: ReceiptData): string => {
     date,
     items,
     subtotal,
-    discountType,
     discountAmount,
+    discountIdNumber,
     taxAmount,
     vatableSales,
     nonVatableSales,
@@ -96,13 +96,15 @@ export const generateReceiptHTML = (receiptData: ReceiptData): string => {
       </div>
 
       <div class="totals">
-        <div class="total-line"><span>Subtotal:</span><span>${peso(subtotal)}</span></div>
+        <div class="total-line"><span>Total Sales:</span><span>${peso(subtotal)}</span></div>
+        <div class="total-line"><span>Less: Discount (SC/PWD/NAAC/MOV/SP):</span><span>-${peso(discountAmount ?? 0)}</span></div>
         ${
-          discountAmount && discountAmount > 0
-            ? `<div class="total-line"><span>${discountType && discountType !== "NONE" ? `${discountType} Discount` : "Discount"}:</span><span>-${peso(discountAmount)}</span></div>`
+          discountIdNumber?.trim()
+            ? `<div class="total-line"><span>ID No.:</span><span>${discountIdNumber.trim()}</span></div>`
             : ""
         }
-        <div class="total-line grand-total"><span>TOTAL:</span><span>${peso(totalAmount)}</span></div>
+        <div class="total-line"><span>Less: Withholding Tax:</span><span>-${peso(0)}</span></div>
+        <div class="total-line grand-total"><span>Total Amount Due:</span><span>${peso(totalAmount)}</span></div>
       </div>
 
       ${
@@ -173,8 +175,8 @@ export const generateThermalReceiptText = (receiptData: ReceiptData): string => 
     date,
     items,
     subtotal,
-    discountType,
     discountAmount,
+    discountIdNumber,
     taxAmount,
     vatableSales,
     nonVatableSales,
@@ -230,17 +232,34 @@ export const generateThermalReceiptText = (receiptData: ReceiptData): string => 
   });
   receipt += SEPARATOR + NEWLINE;
 
+  // Labels that don't fit alongside their amount on one 32-char line wrap the
+  // amount onto its own right-aligned line instead of overflowing/truncating.
   const addTotalLine = (label: string, amount: number, isBold = false) => {
     const amountStr = peso(amount);
     const spaces = 32 - label.length - amountStr.length;
-    receipt += (isBold ? BOLD_ON : "") + label + " ".repeat(Math.max(0, spaces)) + amountStr + (isBold ? BOLD_OFF : "") + NEWLINE;
+    const on = isBold ? BOLD_ON : "";
+    const off = isBold ? BOLD_OFF : "";
+    if (spaces < 1) {
+      receipt += on + label + off + NEWLINE;
+      receipt += on + " ".repeat(Math.max(0, 32 - amountStr.length)) + amountStr + off + NEWLINE;
+    } else {
+      receipt += on + label + " ".repeat(spaces) + amountStr + off + NEWLINE;
+    }
+  };
+  const addTextLine = (label: string, value: string) => {
+    const spaces = 32 - label.length - value.length;
+    if (spaces < 1) {
+      receipt += label + NEWLINE + " ".repeat(Math.max(0, 32 - value.length)) + value + NEWLINE;
+    } else {
+      receipt += label + " ".repeat(spaces) + value + NEWLINE;
+    }
   };
 
-  addTotalLine("Subtotal:", subtotal);
-  if (discountAmount && discountAmount > 0) {
-    addTotalLine(discountType && discountType !== "NONE" ? `${discountType} Discount:` : "Discount:", -discountAmount);
-  }
-  addTotalLine("TOTAL:", totalAmount, true);
+  addTotalLine("Total Sales:", subtotal);
+  addTotalLine("Less: Discount (SC/PWD/NAAC/MOV/SP):", -(discountAmount ?? 0));
+  if (discountIdNumber?.trim()) addTextLine("ID No.:", discountIdNumber.trim());
+  addTotalLine("Less: Withholding Tax:", 0);
+  addTotalLine("Total Amount Due:", totalAmount, true);
 
   if (store.showVatBreakdown && (vatableSales || nonVatableSales || taxAmount > 0 || vatExemptSales)) {
     receipt += SEPARATOR + NEWLINE;

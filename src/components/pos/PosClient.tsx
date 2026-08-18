@@ -221,16 +221,15 @@ export default function PosClient({
   const vatableSales = vatableTotal - vatAmount;
   const subtotal = vatableTotal + nonVatableTotal;
 
-  const needsPrescription = cart.some((l) => l.requiresPrescription);
-
-  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>(
-    needsPrescription ? "/api/prescriptions?status=PENDING" : null
-  );
+  // Prescription attachment is always available at checkout (optional, cashier's
+  // choice) rather than only when the cart happens to contain a flagged item.
+  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>("/api/prescriptions?status=PENDING");
 
   const handleProcessSale = async (payload: {
     paymentMethod: string;
     cashReceived?: number;
     discountType?: DiscountType;
+    discountIdNumber?: string;
     orderRemarks?: string;
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;
@@ -515,7 +514,6 @@ export default function PosClient({
         isOpen={showCheckout}
         onClose={() => setShowCheckout(false)}
         cart={cart}
-        needsPrescription={needsPrescription}
         pendingPrescriptions={pendingPrescriptions}
         onProcessSale={handleProcessSale}
       />

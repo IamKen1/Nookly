@@ -144,33 +144,33 @@ model AdminAuditLog {
 // A tenant-reported issue/question, threaded like a mail conversation between
 // the tenant and platform admins (Outlook-style inbox on the admin side).
 model SupportTicket {
-  id           String              @id @default(cuid())
-  tenantId     String
-  subject      String
-  status       SupportTicketStatus @default(OPEN)
-  priority     SupportTicketPriority @default(NORMAL)
+  id              String                 @id @default(cuid())
+  tenantId        String
+  subject         String
+  status          SupportTicketStatus    @default(OPEN)
+  priority        SupportTicketPriority  @default(NORMAL)
   createdByUserId String
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdByUser User               @relation(fields: [createdByUserId], references: [id])
-  messages     SupportTicketMessage[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser   User                   @relation(fields: [createdByUserId], references: [id])
+  messages        SupportTicketMessage[]
 
   @@index([tenantId])
   @@map("support_tickets")
 }
 
 model SupportTicketMessage {
-  id             String        @id @default(cuid())
-  ticketId       String
-  authorType     SupportAuthorType
-  authorUserId   String?
-  authorEmail    String
-  body           String
-  attachments    String[]      @default([])
-  createdAt      DateTime      @default(now())
-  ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  authorUser     User?         @relation(fields: [authorUserId], references: [id])
+  id           String            @id @default(cuid())
+  ticketId     String
+  authorType   SupportAuthorType
+  authorUserId String?
+  authorEmail  String
+  body         String
+  attachments  String[]          @default([])
+  createdAt    DateTime          @default(now())
+  ticket       SupportTicket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorUser   User?             @relation(fields: [authorUserId], references: [id])
 
   @@map("support_ticket_messages")
 }
@@ -220,22 +220,22 @@ model PlanChangeRequest {
 }
 
 model Store {
-  id             String          @id @default(cuid())
-  tenantId       String
-  name           String
-  code           String
-  address        String?
-  city           String?
-  isActive       Boolean         @default(true)
-  isMainBranch   Boolean         @default(false)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  users          User[]
-  productStocks  ProductStock[]
-  sales          Sale[]
-  stockMovements StockMovement[]
-  shifts         Shift[]
+  id               String            @id @default(cuid())
+  tenantId         String
+  name             String
+  code             String
+  address          String?
+  city             String?
+  isActive         Boolean           @default(true)
+  isMainBranch     Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users            User[]
+  productStocks    ProductStock[]
+  sales            Sale[]
+  stockMovements   StockMovement[]
+  shifts           Shift[]
   cashTransactions CashTransaction[]
 
   @@unique([tenantId, code])
@@ -247,30 +247,30 @@ model Store {
 // ---------------------------------------------------------------------------
 
 model User {
-  id             String          @id @default(cuid())
-  tenantId       String
-  storeId        String?
-  email          String
-  username       String          @unique
-  password       String
-  firstName      String
-  lastName       String
-  role           UserRole        @default(CASHIER)
-  hasSeenTour    Boolean         @default(false) // drives the first-time-user guided tour
-  isActive       Boolean         @default(true)
-  isPlatformAdmin Boolean        @default(false) // grants access to the platform ops console, independent of tenant role
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  store          Store?              @relation(fields: [storeId], references: [id])
-  sales          Sale[]
-  stockMovements StockMovement[]
-  planChangeRequests PlanChangeRequest[]
-  supportTickets SupportTicket[]
+  id                    String                 @id @default(cuid())
+  tenantId              String
+  storeId               String?
+  email                 String
+  username              String                 @unique
+  password              String
+  firstName             String
+  lastName              String
+  role                  UserRole               @default(CASHIER)
+  hasSeenTour           Boolean                @default(false) // drives the first-time-user guided tour
+  isActive              Boolean                @default(true)
+  isPlatformAdmin       Boolean                @default(false) // grants access to the platform ops console, independent of tenant role
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store                 Store?                 @relation(fields: [storeId], references: [id])
+  sales                 Sale[]
+  stockMovements        StockMovement[]
+  planChangeRequests    PlanChangeRequest[]
+  supportTickets        SupportTicket[]
   supportTicketMessages SupportTicketMessage[]
-  shifts         Shift[]
-  cashTransactions CashTransaction[]
-  passwordResetTokens PasswordResetToken[]
+  shifts                Shift[]
+  cashTransactions      CashTransaction[]
+  passwordResetTokens   PasswordResetToken[]
 
   @@unique([tenantId, email])
   @@map("users")
@@ -613,42 +613,43 @@ model PrescriptionItem {
 }
 
 model Sale {
-  id              String        @id @default(cuid())
-  tenantId        String
-  storeId         String
-  saleNumber      String
-  subtotal        Decimal       @db.Decimal(10, 2)
-  vatableSales    Decimal?      @db.Decimal(10, 2)
-  nonVatableSales Decimal?      @db.Decimal(10, 2)
-  taxAmount       Decimal       @db.Decimal(10, 2)
-  discountType    String?       @default("NONE")
-  discountAmount  Decimal       @default(0) @db.Decimal(10, 2)
-  totalAmount     Decimal       @db.Decimal(10, 2)
-  paymentMethod   PaymentMethod
-  cashReceived    Decimal?      @db.Decimal(10, 2)
-  changeGiven     Decimal?      @db.Decimal(10, 2)
-  insuranceClaim  Boolean       @default(false)
-  copayAmount     Decimal?      @db.Decimal(10, 2)
-  insurancePaid   Decimal?      @db.Decimal(10, 2)
-  orderRemarks    String?
-  status          SaleStatus    @default(COMPLETED)
-  saleDate        DateTime      @default(now())
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  customerId      String?
-  userId          String
-  prescriptionId  String?
-  originalSaleId  String?
-  shiftId         String?
-  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  store           Store         @relation(fields: [storeId], references: [id])
-  items           SaleItem[]
-  customer        Customer?     @relation(fields: [customerId], references: [id])
-  prescription    Prescription? @relation(fields: [prescriptionId], references: [id])
-  user            User          @relation(fields: [userId], references: [id])
-  originalSale    Sale?         @relation("SaleReturns", fields: [originalSaleId], references: [id])
-  returns         Sale[]        @relation("SaleReturns")
-  shift           Shift?        @relation(fields: [shiftId], references: [id])
+  id               String        @id @default(cuid())
+  tenantId         String
+  storeId          String
+  saleNumber       String
+  subtotal         Decimal       @db.Decimal(10, 2)
+  vatableSales     Decimal?      @db.Decimal(10, 2)
+  nonVatableSales  Decimal?      @db.Decimal(10, 2)
+  taxAmount        Decimal       @db.Decimal(10, 2)
+  discountType     String?       @default("NONE")
+  discountAmount   Decimal       @default(0) @db.Decimal(10, 2)
+  discountIdNumber String? // SC/PWD/etc ID number — optional, captured for audit if the cashier has it
+  totalAmount      Decimal       @db.Decimal(10, 2)
+  paymentMethod    PaymentMethod
+  cashReceived     Decimal?      @db.Decimal(10, 2)
+  changeGiven      Decimal?      @db.Decimal(10, 2)
+  insuranceClaim   Boolean       @default(false)
+  copayAmount      Decimal?      @db.Decimal(10, 2)
+  insurancePaid    Decimal?      @db.Decimal(10, 2)
+  orderRemarks     String?
+  status           SaleStatus    @default(COMPLETED)
+  saleDate         DateTime      @default(now())
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  customerId       String?
+  userId           String
+  prescriptionId   String?
+  originalSaleId   String?
+  shiftId          String?
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store            Store         @relation(fields: [storeId], references: [id])
+  items            SaleItem[]
+  customer         Customer?     @relation(fields: [customerId], references: [id])
+  prescription     Prescription? @relation(fields: [prescriptionId], references: [id])
+  user             User          @relation(fields: [userId], references: [id])
+  originalSale     Sale?         @relation("SaleReturns", fields: [originalSaleId], references: [id])
+  returns          Sale[]        @relation("SaleReturns")
+  shift            Shift?        @relation(fields: [shiftId], references: [id])
 
   @@unique([tenantId, saleNumber])
   @@index([tenantId, storeId, saleDate])
@@ -724,16 +725,16 @@ enum CashTransactionType {
 }
 
 model SaleItem {
-  id                String  @id @default(cuid())
-  quantity          Int
-  unitPrice         Decimal @db.Decimal(10, 2)
-  totalPrice        Decimal @db.Decimal(10, 2)
-  discountAmount    Decimal @default(0) @db.Decimal(10, 2)
-  returnedQuantity  Int     @default(0)
-  saleId            String
-  productId         String
-  product           Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sale              Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  id               String  @id @default(cuid())
+  quantity         Int
+  unitPrice        Decimal @db.Decimal(10, 2)
+  totalPrice       Decimal @db.Decimal(10, 2)
+  discountAmount   Decimal @default(0) @db.Decimal(10, 2)
+  returnedQuantity Int     @default(0)
+  saleId           String
+  productId        String
+  product          Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sale             Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@map("sale_items")
 }
