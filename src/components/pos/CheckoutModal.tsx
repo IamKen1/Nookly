@@ -149,6 +149,12 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                   <span>Total Sales:</span>
                   <span>{peso(totals.subtotal)}</span>
                 </div>
+                {totals.vatRemovedFromVatable > 0 && (
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>Less: 12% VAT (SC/PWD exemption):</span>
+                    <span>-{peso(totals.vatRemovedFromVatable)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm font-medium text-green-600">
                   <span>Less: Discount (SC/PWD/NAAC/MOV/SP):</span>
                   <span>-{peso(totals.discountAmount)}</span>
