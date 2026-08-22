@@ -138,6 +138,10 @@ export const getComputationLines = (
     }
   }
 
+  if (result.discountAmount > 0) {
+    lines.push({ label: 'Total Discount', amount: -result.discountAmount, kind: 'subtract' })
+  }
+
   lines.push({ label: 'Total Amount Due', amount: result.finalTotal, kind: 'total' })
   return lines
 }
