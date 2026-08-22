@@ -32,11 +32,19 @@ export interface ReceiptData {
   discountType?: string;
   discountAmount?: number;
   discountIdNumber?: string;
+  discountHolderName?: string;
   taxAmount: number;
   vatableSales?: number;
   nonVatableSales?: number;
   zeroRatedSales?: number;
   vatExemptSales?: number;
+  // Split-out computation breakdown (persisted on the Sale) — lets the receipt
+  // show its own +/- derivation instead of just the rolled-up endpoints.
+  vatableGross?: number;
+  nonVatableGross?: number;
+  vatableDiscountAmount?: number;
+  nonVatableDiscountAmount?: number;
+  vatRemovedFromVatable?: number;
   totalAmount: number;
   paymentMethod: string;
   cashReceived?: number;

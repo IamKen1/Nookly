@@ -15,9 +15,15 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
       discountType: true,
       discountAmount: true,
       discountIdNumber: true,
+      discountHolderName: true,
       taxAmount: true,
       vatableSales: true,
       nonVatableSales: true,
+      vatableGross: true,
+      nonVatableGross: true,
+      vatableDiscountAmount: true,
+      nonVatableDiscountAmount: true,
+      vatRemovedFromVatable: true,
       totalAmount: true,
       paymentMethod: true,
       cashReceived: true,
@@ -40,11 +46,12 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
 
   const store = await getReceiptSettings(tenantId);
 
-  let vatExemptSales: number | undefined;
-  if (sale.discountType === "SENIOR" || sale.discountType === "PWD") {
-    // sale.vatableSales is already VAT-exclusive and net of the 20% discount for SENIOR/PWD sales.
-    vatExemptSales = Number((toNumber(sale.vatableSales) / 0.8).toFixed(2));
-  }
+  // VAT-exclusive base BEFORE discount, computed exactly from the persisted
+  // breakdown rather than reverse-engineered from the post-discount figure.
+  const vatExemptSales =
+    sale.discountType === "SENIOR" || sale.discountType === "PWD"
+      ? Number((toNumber(sale.vatableGross) - toNumber(sale.vatRemovedFromVatable)).toFixed(2))
+      : undefined;
 
   return {
     saleId: sale.id,
@@ -61,9 +68,15 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
     discountType: sale.discountType ?? "NONE",
     discountAmount: toNumber(sale.discountAmount),
     discountIdNumber: sale.discountIdNumber ?? undefined,
+    discountHolderName: sale.discountHolderName ?? undefined,
     taxAmount: toNumber(sale.taxAmount),
     vatableSales: toNumber(sale.vatableSales),
     nonVatableSales: toNumber(sale.nonVatableSales),
+    vatableGross: toNumber(sale.vatableGross),
+    nonVatableGross: toNumber(sale.nonVatableGross),
+    vatableDiscountAmount: toNumber(sale.vatableDiscountAmount),
+    nonVatableDiscountAmount: toNumber(sale.nonVatableDiscountAmount),
+    vatRemovedFromVatable: toNumber(sale.vatRemovedFromVatable),
     zeroRatedSales: 0,
     totalAmount: toNumber(sale.totalAmount),
     paymentMethod: sale.paymentMethod,

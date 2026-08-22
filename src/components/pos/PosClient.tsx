@@ -230,6 +230,7 @@ export default function PosClient({
     cashReceived?: number;
     discountType?: DiscountType;
     discountIdNumber?: string;
+    discountHolderName?: string;
     orderRemarks?: string;
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;

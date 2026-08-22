@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     cashReceived,
     discountType,
     discountIdNumber,
+    discountHolderName,
     customerId,
     orderRemarks,
     prescriptionId,
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
     cashReceived?: number;
     discountType?: DiscountType;
     discountIdNumber?: string;
+    discountHolderName?: string;
     customerId?: string;
     orderRemarks?: string;
     prescriptionId?: string;
@@ -188,7 +190,9 @@ export async function POST(request: NextRequest) {
   const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
     now.getDate()
   ).padStart(2, "0")}`;
-  const saleNumber = `OR-${dateKey}-${String(todayCount + 1).padStart(4, "0")}`;
+  // "AR" (Acknowledgment Receipt), not "OR" (Official Receipt) — Nookly isn't
+  // BIR-accredited, so the receipt can't claim to be an official tax document.
+  const saleNumber = `AR-${dateKey}-${String(todayCount + 1).padStart(4, "0")}`;
 
   const openShift = await prisma.shift.findFirst({
     where: { tenantId: session.tenantId, storeId: session.storeId, userId: session.userId, closedAt: null },
@@ -279,6 +283,12 @@ export async function POST(request: NextRequest) {
         discountType: normalizedDiscountType,
         discountAmount: vatTotals.discountAmount,
         discountIdNumber: normalizedDiscountType !== "NONE" ? discountIdNumber?.trim() || null : null,
+        discountHolderName: normalizedDiscountType !== "NONE" ? discountHolderName?.trim() || null : null,
+        vatableGross: vatTotals.vatableGross,
+        nonVatableGross: vatTotals.nonVatableGross,
+        vatableDiscountAmount: vatTotals.vatableDiscountAmount,
+        nonVatableDiscountAmount: vatTotals.nonVatableDiscountAmount,
+        vatRemovedFromVatable: vatTotals.vatRemovedFromVatable,
         totalAmount,
         paymentMethod: paymentMethod as never,
         cashReceived: cashReceived ?? null,

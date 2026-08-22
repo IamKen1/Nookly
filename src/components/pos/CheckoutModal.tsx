@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, CreditCard, Calculator } from "lucide-react";
-import { calculateVatInclusiveTotals, type DiscountType } from "@/lib/vat-calculations";
+import { calculateVatInclusiveTotals, getComputationLines, type DiscountType } from "@/lib/vat-calculations";
 import { peso } from "@/lib/format";
 import type { CartLine } from "./CartPanel";
 import PrescriptionFields, { type PrescriptionDraft, type PrescriptionSelection } from "./PrescriptionFields";
@@ -25,6 +25,7 @@ interface CheckoutModalProps {
     cashReceived?: number;
     discountType?: DiscountType;
     discountIdNumber?: string;
+    discountHolderName?: string;
     orderRemarks?: string;
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;
@@ -46,6 +47,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
   const [cashReceived, setCashReceived] = useState("");
   const [discountType, setDiscountType] = useState<DiscountType>("NONE");
   const [discountIdNumber, setDiscountIdNumber] = useState("");
+  const [discountHolderName, setDiscountHolderName] = useState("");
   const [remarks, setRemarks] = useState("");
   const [prescriptionSelection, setPrescriptionSelection] = useState<PrescriptionSelection | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -58,6 +60,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
       setCashReceived("");
       setDiscountType("NONE");
       setDiscountIdNumber("");
+      setDiscountHolderName("");
       setRemarks("");
       setPrescriptionSelection(null);
       setIsProcessing(false);
@@ -72,6 +75,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
 
   const totals = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, discountType, discountPercent });
   const finalTotal = totals.finalTotal;
+  const computationLines = getComputationLines(totals, discountType, discountPercent);
 
   const cashAmount = parseFloat(cashReceived) || 0;
   const changeAmount = cashAmount - finalTotal;
@@ -96,6 +100,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
         cashReceived: paymentMethod === "CASH" ? cashAmount : undefined,
         discountType: discountType !== "NONE" ? discountType : undefined,
         discountIdNumber: discountType !== "NONE" ? discountIdNumber.trim() || undefined : undefined,
+        discountHolderName: discountType !== "NONE" ? discountHolderName.trim() || undefined : undefined,
         orderRemarks: remarks.trim() || undefined,
         ...(prescriptionSelection ?? {}),
       });
@@ -148,6 +153,12 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                   <span>Less: Discount (SC/PWD/NAAC/MOV/SP):</span>
                   <span>-{peso(totals.discountAmount)}</span>
                 </div>
+                {discountType !== "NONE" && discountHolderName.trim() && (
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Name:</span>
+                    <span>{discountHolderName.trim()}</span>
+                  </div>
+                )}
                 {discountType !== "NONE" && discountIdNumber.trim() && (
                   <div className="flex justify-between text-xs text-gray-500">
                     <span>ID No.:</span>
@@ -162,24 +173,30 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                   <span className="font-semibold">Total Amount Due:</span>
                   <span className="font-semibold text-emerald-600">{peso(finalTotal)}</span>
                 </div>
-                {totals.vatExemptSales != null && (
-                  <div className="mt-1 flex justify-between text-xs text-gray-500">
-                    <span>VAT-Exempt Sales:</span>
-                    <span>{peso(totals.vatExemptSales)}</span>
-                  </div>
-                )}
-                <div className={totals.vatExemptSales != null ? "flex justify-between text-xs text-gray-500" : "mt-1 flex justify-between text-xs text-gray-500"}>
-                  <span>VAT Sales:</span>
-                  <span>{peso(totals.vatableSales)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>12% VAT Sales:</span>
-                  <span>{peso(totals.vatAmount)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>Non-VAT Sales:</span>
-                  <span>{peso(totals.nonVatableSales)}</span>
-                </div>
+              </div>
+
+              <div className="mt-3 space-y-1 border-t border-dashed border-gray-300 pt-2">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">How this total was computed</p>
+                {computationLines
+                  .filter((line) => line.kind !== "total")
+                  .map((line, i) => (
+                    <div
+                      key={i}
+                      className={`flex justify-between text-xs ${
+                        line.kind === "base"
+                          ? "font-medium text-gray-700"
+                          : line.kind === "subtract"
+                          ? "text-red-600"
+                          : "text-gray-500"
+                      }`}
+                    >
+                      <span>{line.label}:</span>
+                      <span>
+                        {line.amount < 0 ? "-" : line.kind === "subtotal" ? "= " : ""}
+                        {peso(Math.abs(line.amount))}
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
           </div>
@@ -219,9 +236,15 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                   {discountType} Discount: {discountPercent}% (Save {peso(totals.discountAmount)})
                 </div>
                 <input
+                  value={discountHolderName}
+                  onChange={(e) => setDiscountHolderName(e.target.value)}
+                  placeholder="Name of SC/PWD ID holder — optional"
+                  className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm focus:border-emerald-500"
+                />
+                <input
                   value={discountIdNumber}
                   onChange={(e) => setDiscountIdNumber(e.target.value)}
-                  placeholder="ID Number (e.g. SC ID) — optional"
+                  placeholder="ID Number (e.g. SC/OSCA ID) — optional"
                   className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm focus:border-emerald-500"
                 />
               </div>

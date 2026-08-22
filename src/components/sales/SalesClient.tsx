@@ -157,7 +157,7 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-              <th className="px-4 py-3">OR #</th>
+              <th className="px-4 py-3">AR #</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Cashier</th>
               <th className="px-4 py-3">Items</th>
