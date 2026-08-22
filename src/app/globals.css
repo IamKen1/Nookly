@@ -24,3 +24,14 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Instant visual press feedback via :active — a pure-CSS pseudo-class the
+   browser applies on press before any JS runs, so a click never looks like
+   nothing happened even on a slow/cold-start request. Opt-in per button
+   (not a blanket rule) so icon-only buttons aren't affected unexpectedly. */
+.btn-press {
+  transition: transform 120ms ease;
+}
+.btn-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
