@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
-
-const SUPERVISOR_ROLES = ["OWNER", "ADMIN", "MANAGER"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
-  if (!SUPERVISOR_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "shifts"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { invalidateCached } from "@/lib/route-cache";
-
-const CAN_VOID_ROLES = ["OWNER", "ADMIN", "MANAGER"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!CAN_VOID_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "sales_void"))) {
     return NextResponse.json({ error: "You don't have permission to void sales." }, { status: 403 });
   }
 

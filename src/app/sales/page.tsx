@@ -1,6 +1,7 @@
 import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { startOfTodayPH } from "@/lib/timezone";
+import { hasPermission } from "@/lib/permissions";
 import AppShell from "@/components/app/AppShell";
 import SalesClient from "@/components/sales/SalesClient";
 
@@ -13,6 +14,8 @@ export default async function SalesPage() {
   });
 
   if (!tenant) return null;
+
+  const canVoid = await hasPermission(session.tenantId, session.role, "sales_void");
 
   const [sales, todayAgg] = await Promise.all([
     prisma.sale.findMany({
@@ -32,9 +35,9 @@ export default async function SalesPage() {
   const todayTotal = Number(todayAgg._sum.totalAmount ?? 0);
 
   return (
-    <AppShell tenantName={tenant.name} planName={tenant.subscription?.plan.name} role={session.role}>
+    <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
       <SalesClient
-        canVoid={["OWNER", "ADMIN", "MANAGER"].includes(session.role)}
+        canVoid={canVoid}
         todayTotal={todayTotal}
         sales={sales.map((s) => ({
           id: s.id,

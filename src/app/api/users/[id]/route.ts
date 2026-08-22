@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { hashPassword } from "@/lib/auth";
-
-const CAN_MANAGE_ROLES = ["OWNER", "ADMIN"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!CAN_MANAGE_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "users"))) {
     return NextResponse.json({ error: "You don't have permission to manage users." }, { status: 403 });
   }
 
@@ -57,7 +56,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!CAN_MANAGE_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "users"))) {
     return NextResponse.json({ error: "You don't have permission to manage users." }, { status: 403 });
   }
 

@@ -24,6 +24,7 @@ import {
   Wallet,
   Banknote,
   Loader2,
+  LifeBuoy,
 } from "lucide-react";
 import { useBarcode } from "@/hooks/useBarcode";
 import { useBarcodeAudio } from "@/hooks/useBarcodeAudio";
@@ -34,6 +35,7 @@ import { usePrinterConnection } from "@/lib/printer/usePrinterConnection";
 import { generateThermalReceiptText, printReceipt } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 import type { DiscountType } from "@/lib/vat-calculations";
+import type { PermissionModuleKey } from "@/lib/permissions-shared";
 import CartPanel, { type CartLine } from "./CartPanel";
 import CheckoutModal, { type PrescriptionDraft } from "./CheckoutModal";
 import ShiftModal from "./ShiftModal";
@@ -70,27 +72,29 @@ interface PendingPrescription {
 
 type ViewMode = "grid" | "list";
 
-const NAV_ITEMS = [
+const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; module?: PermissionModuleKey }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/products", label: "Products", icon: Package },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus },
   { href: "/sales", label: "Sales", icon: Receipt },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/users", label: "Users", icon: Users, roles: ["OWNER", "ADMIN"] },
+  { href: "/reports", label: "Reports", icon: BarChart3, module: "reports" },
+  { href: "/users", label: "Users", icon: Users, module: "users" },
+  { href: "/shifts", label: "Shifts", icon: Wallet, module: "shifts" },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/support", label: "Support", icon: LifeBuoy },
 ];
 
 export default function PosClient({
   categories,
   tenantName,
   planName,
-  role,
+  permissions,
 }: {
   categories: Category[];
   tenantName: string;
   planName?: string;
-  role?: string;
+  permissions: Record<PermissionModuleKey, boolean>;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -112,7 +116,7 @@ export default function PosClient({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [menuOpen]);
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => !item.roles || (role && item.roles.includes(role)));
+  const visibleNavItems = NAV_ITEMS.filter((item) => !item.module || permissions[item.module]);
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error"; visible: boolean }>({
     message: "",
     type: "success",

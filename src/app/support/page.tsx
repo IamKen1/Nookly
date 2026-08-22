@@ -13,7 +13,7 @@ export default async function SupportPage() {
   if (!tenant) return null;
 
   return (
-    <AppShell tenantName={tenant.name} planName={tenant.subscription?.plan.name} role={session.role}>
+    <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
       <SupportClient />
     </AppShell>
   );

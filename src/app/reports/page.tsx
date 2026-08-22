@@ -17,7 +17,7 @@ export default async function ReportsPage() {
   const canViewReports = await hasFeature(planCode, "reports");
 
   return (
-    <AppShell tenantName={tenant.name} planName={tenant.subscription?.plan.name} role={session.role}>
+    <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
       {canViewReports ? (
         <ReportsClient />
       ) : (

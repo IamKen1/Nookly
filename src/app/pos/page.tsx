@@ -1,5 +1,6 @@
 import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
+import { getRolePermissions } from "@/lib/permissions";
 import PosClient from "@/components/pos/PosClient";
 
 export default async function PosPage() {
@@ -12,16 +13,19 @@ export default async function PosPage() {
 
   if (!tenant) return null;
 
-  const categories = await prisma.category.findMany({
-    where: { tenantId: session.tenantId, isActive: true },
-    orderBy: { name: "asc" },
-  });
+  const [categories, permissions] = await Promise.all([
+    prisma.category.findMany({
+      where: { tenantId: session.tenantId, isActive: true },
+      orderBy: { name: "asc" },
+    }),
+    getRolePermissions(session.tenantId, session.role),
+  ]);
 
   return (
     <PosClient
       tenantName={tenant.name}
       planName={tenant.subscription?.plan.name}
-      role={session.role}
+      permissions={permissions}
       categories={categories.map((c) => ({ id: c.id, name: c.name }))}
     />
   );

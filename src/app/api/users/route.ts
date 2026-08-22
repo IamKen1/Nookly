@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { hashPassword } from "@/lib/auth";
-
-const CAN_MANAGE_ROLES = ["OWNER", "ADMIN"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -31,7 +30,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!CAN_MANAGE_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "users"))) {
     return NextResponse.json({ error: "You don't have permission to manage users." }, { status: 403 });
   }
 

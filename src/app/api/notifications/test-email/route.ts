@@ -3,13 +3,12 @@ import { getSessionFromRequest } from "@/lib/session";
 import { requireFeature } from "@/lib/plan-gating";
 import { getAlertRecipients } from "@/lib/notification-settings";
 import { isEmailNotificationConfigured, sendAlertEmail } from "@/lib/email";
-
-const CAN_MANAGE_ROLES = ["OWNER", "ADMIN"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!CAN_MANAGE_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "settings"))) {
     return NextResponse.json({ error: "You don't have permission to send test emails." }, { status: 403 });
   }
 

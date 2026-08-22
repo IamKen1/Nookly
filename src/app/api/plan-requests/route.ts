@@ -5,8 +5,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { sendAlertEmail } from "@/lib/email";
 import { platformAdminRecipients } from "@/lib/platform-admin";
 import { ADMIN_BASE_PATH } from "@/lib/admin-path";
-
-const CAN_REQUEST_ROLES = ["OWNER", "ADMIN"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -24,7 +23,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!CAN_REQUEST_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "settings"))) {
     return NextResponse.json({ error: "Only the workspace owner or admin can request a plan change." }, { status: 403 });
   }
 

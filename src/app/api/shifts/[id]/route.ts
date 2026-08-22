@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { computeShiftReading } from "@/lib/shift-reading";
-
-const SUPERVISOR_ROLES = ["OWNER", "ADMIN", "MANAGER"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -12,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const shift = await prisma.shift.findFirst({ where: { id, tenantId: session.tenantId } });
   if (!shift) return NextResponse.json({ error: "Shift not found." }, { status: 404 });
-  if (shift.userId !== session.userId && !SUPERVISOR_ROLES.includes(session.role)) {
+  if (shift.userId !== session.userId && !(await hasPermission(session.tenantId, session.role, "shifts"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -27,7 +26,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const shift = await prisma.shift.findFirst({ where: { id, tenantId: session.tenantId } });
   if (!shift) return NextResponse.json({ error: "Shift not found." }, { status: 404 });
-  if (shift.userId !== session.userId && !SUPERVISOR_ROLES.includes(session.role)) {
+  if (shift.userId !== session.userId && !(await hasPermission(session.tenantId, session.role, "shifts"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (shift.closedAt) {

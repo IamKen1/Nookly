@@ -2,33 +2,37 @@ import Link from "next/link";
 import { BarChart3, Boxes, ClipboardPlus, LayoutDashboard, Leaf, LifeBuoy, Package, Receipt, Settings, ShoppingCart, Users, Wallet } from "lucide-react";
 import LogoutButton from "./LogoutButton";
 import OnboardingTourLoader from "@/components/onboarding/OnboardingTourLoader";
+import { getRolePermissions, type PermissionModuleKey } from "@/lib/permissions";
 
-const navItems = [
+const navItems: { href: string; label: string; icon: typeof LayoutDashboard; module?: PermissionModuleKey }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pos", label: "POS", icon: ShoppingCart },
   { href: "/products", label: "Products", icon: Package },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus },
   { href: "/sales", label: "Sales", icon: Receipt },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/users", label: "Users", icon: Users, roles: ["OWNER", "ADMIN"] },
-  { href: "/shifts", label: "Shifts", icon: Wallet, roles: ["OWNER", "ADMIN", "MANAGER"] },
+  { href: "/reports", label: "Reports", icon: BarChart3, module: "reports" },
+  { href: "/users", label: "Users", icon: Users, module: "users" },
+  { href: "/shifts", label: "Shifts", icon: Wallet, module: "shifts" },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/support", label: "Support", icon: LifeBuoy },
 ];
 
-export default function AppShell({
+export default async function AppShell({
   tenantName,
+  tenantId,
   planName,
   role,
   children,
 }: {
   tenantName: string;
+  tenantId: string;
   planName?: string;
   role?: string;
   children: React.ReactNode;
 }) {
-  const visibleItems = navItems.filter((item) => !item.roles || (role && item.roles.includes(role)));
+  const permissions = role ? await getRolePermissions(tenantId, role) : null;
+  const visibleItems = navItems.filter((item) => !item.module || (permissions && permissions[item.module]));
 
   return (
     <div className="flex min-h-screen bg-zinc-50">

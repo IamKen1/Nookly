@@ -20,7 +20,7 @@ export default async function ProductsPage() {
   if (!tenant) return null;
 
   return (
-    <AppShell tenantName={tenant.name} planName={tenant.subscription?.plan.name} role={session.role}>
+    <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
       <ProductsClient
         categories={categories.map((c) => ({ id: c.id, name: c.name }))}
         planName={tenant.subscription?.plan.name ?? ""}

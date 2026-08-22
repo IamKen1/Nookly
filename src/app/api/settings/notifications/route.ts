@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireFeature } from "@/lib/plan-gating";
 import { getNotificationSettings, updateNotificationSettings } from "@/lib/notification-settings";
-
-const CAN_MANAGE_ROLES = ["OWNER", "ADMIN"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -19,7 +18,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!CAN_MANAGE_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "settings"))) {
     return NextResponse.json({ error: "You don't have permission to update notification settings." }, { status: 403 });
   }
 

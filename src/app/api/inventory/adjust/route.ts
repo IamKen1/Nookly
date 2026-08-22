@@ -4,14 +4,13 @@ import { getSessionFromRequest } from "@/lib/session";
 import { runInBackground } from "@/lib/background";
 import { notifyStockThresholdReached } from "@/lib/notifications";
 import { invalidateCached } from "@/lib/route-cache";
-
-const CAN_ADJUST_ROLES = ["OWNER", "ADMIN", "PHARMACIST", "MANAGER"];
+import { hasPermission } from "@/lib/permissions";
 
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
-  if (!CAN_ADJUST_ROLES.includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "inventory_adjust"))) {
     return NextResponse.json({ error: "You don't have permission to adjust stock." }, { status: 403 });
   }
 

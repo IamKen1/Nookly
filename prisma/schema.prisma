@@ -70,6 +70,7 @@ model Tenant {
   cashTransactions     CashTransaction[]
   invites              TenantInvite[]
   planChangeRequests   PlanChangeRequest[]
+  rolePermissions      RolePermission[]
 
   @@map("tenants")
 }
@@ -123,6 +124,26 @@ model TenantInvite {
 
   @@unique([tenantId, email])
   @@map("tenant_invites")
+}
+
+// Per-tenant override of what each staff role can access, set by the owner
+// from Settings > User Access. A missing row for a given (tenantId, role,
+// module) means "use the built-in default" (see src/lib/permissions.ts), so
+// every tenant behaves exactly like the old hardcoded role checks until the
+// owner actually customizes something.
+model RolePermission {
+  id        String   @id @default(cuid())
+  tenantId  String
+  role      UserRole
+  module    String
+  allowed   Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, role, module])
+  @@index([tenantId])
+  @@map("role_permissions")
 }
 
 // Append-only trail of every sensitive action taken in the platform ops console.

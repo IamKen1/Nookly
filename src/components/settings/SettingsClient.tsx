@@ -5,8 +5,9 @@ import { Loader2 } from "lucide-react";
 import ReceiptSettingsForm from "./ReceiptSettingsForm";
 import NotificationSettingsForm from "./NotificationSettingsForm";
 import PlanSettingsForm from "./PlanSettingsForm";
+import UserAccessForm from "./UserAccessForm";
 
-type Tab = "plan" | "receipt" | "notifications";
+type Tab = "plan" | "receipt" | "notifications" | "userAccess";
 
 interface CurrentPlan {
   code: string;
@@ -30,12 +31,14 @@ interface PlanOption {
 export default function SettingsClient({
   canManageAlerts,
   canManagePlan,
+  isOwner,
   currentPlan,
   allPlans,
   usage,
 }: {
   canManageAlerts: boolean;
   canManagePlan: boolean;
+  isOwner: boolean;
   currentPlan: CurrentPlan | null;
   allPlans: PlanOption[];
   usage: { stores: number; users: number; products: number };
@@ -95,6 +98,14 @@ export default function SettingsClient({
             Notifications
           </button>
         )}
+        {isOwner && (
+          <button
+            onClick={() => setTab("userAccess")}
+            className={`px-4 py-2 text-sm font-semibold ${tab === "userAccess" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
+          >
+            User Access
+          </button>
+        )}
       </div>
 
       <div className="mt-6">
@@ -103,6 +114,7 @@ export default function SettingsClient({
         )}
         {tab === "receipt" && <ReceiptSettingsForm />}
         {tab === "notifications" && canManageAlerts && <NotificationSettingsForm />}
+        {tab === "userAccess" && isOwner && <UserAccessForm />}
       </div>
     </div>
   );

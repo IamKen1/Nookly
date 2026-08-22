@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
+import { hasPermission } from "@/lib/permissions";
 import AppShell from "@/components/app/AppShell";
 import UsersClient from "@/components/users/UsersClient";
 
 export default async function UsersPage() {
   const session = await requireActiveSession();
-  if (!["OWNER", "ADMIN"].includes(session.role)) {
+  if (!(await hasPermission(session.tenantId, session.role, "users"))) {
     redirect("/dashboard");
   }
 
@@ -20,7 +21,7 @@ export default async function UsersPage() {
   if (!tenant) return null;
 
   return (
-    <AppShell tenantName={tenant.name} planName={tenant.subscription?.plan.name} role={session.role}>
+    <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
       <UsersClient
         stores={stores.map((s) => ({ id: s.id, name: s.name }))}
         planName={tenant.subscription?.plan.name ?? ""}
