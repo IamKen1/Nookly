@@ -18,7 +18,7 @@ const NAV_ITEMS = [
   { label: "Support", icon: LifeBuoy },
 ];
 
-export default function AppShellSkeleton() {
+export default function AppShellSkeleton({ children }: { children?: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-zinc-50">
       <aside className="hidden w-56 shrink-0 border-r border-zinc-200 bg-white sm:flex sm:flex-col">
@@ -42,8 +42,12 @@ export default function AppShellSkeleton() {
         <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-3">
           <span className="h-4 w-24 animate-pulse rounded bg-zinc-100" />
         </header>
-        <main className="flex flex-1 items-center justify-center p-6">
-          <div className="h-8 w-8 animate-spin rounded-full border-3 border-emerald-600 border-t-transparent" />
+        <main className="flex-1 p-6">
+          {children ?? (
+            <div className="flex h-full items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-3 border-emerald-600 border-t-transparent" />
+            </div>
+          )}
         </main>
       </div>
     </div>
