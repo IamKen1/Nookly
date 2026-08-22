@@ -49,6 +49,29 @@ export default function SupportClient() {
   const newFileInputRef = useRef<HTMLInputElement>(null);
   const replyFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Lets a user paste a screenshot straight from the clipboard (Ctrl+V),
+  // the way most support/bug-report tools work, instead of forcing a
+  // save-to-disk-then-browse round trip just to attach one image.
+  const handlePasteScreenshot = (
+    e: React.ClipboardEvent,
+    attachments: string[],
+    onDone: (url: string) => void
+  ) => {
+    if (attachments.length >= MAX_ATTACHMENTS) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          uploadScreenshot(file, onDone);
+        }
+        break;
+      }
+    }
+  };
+
   const uploadScreenshot = async (file: File, onDone: (url: string) => void) => {
     setError(null);
     if (!file.type.startsWith("image/")) {
@@ -177,6 +200,7 @@ export default function SupportClient() {
               rows={4}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
+              onPaste={(e) => handlePasteScreenshot(e, newAttachments, (url) => setNewAttachments((prev) => [...prev, url]))}
               placeholder="Tell us what's happening..."
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-emerald-500"
             />
@@ -218,7 +242,7 @@ export default function SupportClient() {
                 }}
               />
             </div>
-            <p className="mt-1 text-xs text-zinc-400">Up to {MAX_ATTACHMENTS} images, 5MB each.</p>
+            <p className="mt-1 text-xs text-zinc-400">Up to {MAX_ATTACHMENTS} images, 5MB each — or paste one with Ctrl+V.</p>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
@@ -328,7 +352,8 @@ export default function SupportClient() {
                     <input
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
-                      placeholder="Write a reply..."
+                      onPaste={(e) => handlePasteScreenshot(e, replyAttachments, (url) => setReplyAttachments((prev) => [...prev, url]))}
+                      placeholder="Write a reply... (paste a screenshot with Ctrl+V)"
                       className="flex-1 rounded-full border border-zinc-200 px-4 py-2 text-sm outline-none focus:border-emerald-500"
                     />
                     {replyAttachments.length < MAX_ATTACHMENTS && (

@@ -88,6 +88,24 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
     }
   };
 
+  // Lets an admin paste a screenshot straight from the clipboard (Ctrl+V)
+  // instead of a save-to-disk-then-browse round trip just to attach one image.
+  const handlePasteScreenshot = (e: React.ClipboardEvent) => {
+    if (replyAttachments.length >= MAX_ATTACHMENTS) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          uploadScreenshot(file);
+        }
+        break;
+      }
+    }
+  };
+
   // showLoading only applies to the very first fetch — refreshing after a
   // reply/status change must not flash the ticket list back to "Loading...".
   const load = async (showLoading = false) => {
@@ -326,7 +344,8 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                 <input
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  placeholder="Reply to this tenant..."
+                  onPaste={handlePasteScreenshot}
+                  placeholder="Reply to this tenant... (paste a screenshot with Ctrl+V)"
                   className="flex-1 rounded-full border border-zinc-700 bg-zinc-950 px-4 py-2 text-sm text-white outline-none focus:border-zinc-500"
                 />
                 {replyAttachments.length < MAX_ATTACHMENTS && (
