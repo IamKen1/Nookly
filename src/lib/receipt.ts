@@ -1,5 +1,6 @@
 import type { ReceiptData } from "@/types/receipt";
 import { formatPaymentMethodLabel, getReceiptFooterLines, getReceiptHeaderLines, NOT_BIR_ACCREDITED_NOTICE } from "@/types/receipt";
+import { getComputationLines, type ComputationLine, type DiscountType, type VatCalculationResult } from "@/lib/vat-calculations";
 
 const peso = (value: number) => (value < 0 ? `-₱${(-value).toFixed(2)}` : `₱${value.toFixed(2)}`);
 
@@ -12,75 +13,29 @@ const DISCOUNT_LABEL: Record<string, string> = {
 };
 const isSeniorOrPwd = (discountType?: string) => discountType === "SENIOR" || discountType === "PWD";
 
-interface AmountLine {
-  label: string;
-  amount: number;
-  bold?: boolean;
-}
-
-interface DiscountSection {
-  headerLabel: string;
-  lines: AmountLine[];
-  totalLabel: string;
-  totalAmount: number;
-}
-
-// Every number here is read straight off the fields persisted on the Sale at
-// checkout time — nothing is re-derived — so a reprint always shows the exact
-// original computation, never an approximation.
-const buildVatSection = (r: ReceiptData): AmountLine[] => {
-  const vatableGross = r.vatableGross ?? 0;
-  const nonVatableGross = r.nonVatableGross ?? 0;
-  const vatRemoved = r.vatRemovedFromVatable ?? 0;
-
-  if (isSeniorOrPwd(r.discountType)) {
-    // Senior/PWD purchases are VAT-exempt outright — the entire net-of-VAT
-    // total (vatable base + whatever was never vatable) counts as exempt.
-    const vatExempt = Number((vatableGross - vatRemoved + nonVatableGross).toFixed(2));
-    return [
-      { label: "VAT Sales (Gross)", amount: vatableGross },
-      { label: "Less: 12% VAT", amount: -vatRemoved },
-      { label: "VAT-Exempt Sales", amount: vatExempt },
-      { label: "VAT Zero-Rated Sales", amount: r.zeroRatedSales ?? 0 },
-      { label: "Total Net of VAT", amount: vatExempt, bold: true },
-    ];
-  }
-
-  const discountApplies = (r.vatableDiscountAmount ?? 0) > 0 || (r.nonVatableDiscountAmount ?? 0) > 0;
-  const netOfVat = Number(((r.vatableSales ?? 0) + (r.nonVatableSales ?? 0)).toFixed(2));
-  const lines: AmountLine[] = [{ label: "VAT Sales (Gross)", amount: vatableGross }];
-  if (discountApplies && (r.vatableDiscountAmount ?? 0) > 0) {
-    const label = `Less: ${DISCOUNT_PERCENT[r.discountType ?? "NONE"] ?? 0}% ${DISCOUNT_LABEL[r.discountType ?? ""] ?? r.discountType} Discount`;
-    lines.push({ label, amount: -(r.vatableDiscountAmount ?? 0) });
-    lines.push({ label: "Vatable Sales (Net of Discount)", amount: vatableGross - (r.vatableDiscountAmount ?? 0) });
-  }
-  lines.push({ label: "Less: 12% VAT", amount: -r.taxAmount });
-  lines.push({ label: "VAT Sales (Net of VAT)", amount: r.vatableSales ?? 0 });
-  if (nonVatableGross > 0) {
-    lines.push({ label: "Non-VAT Sales (Gross)", amount: nonVatableGross });
-    if (discountApplies && (r.nonVatableDiscountAmount ?? 0) > 0) {
-      const label = `Less: ${DISCOUNT_PERCENT[r.discountType ?? "NONE"] ?? 0}% ${DISCOUNT_LABEL[r.discountType ?? ""] ?? r.discountType} Discount`;
-      lines.push({ label, amount: -(r.nonVatableDiscountAmount ?? 0) });
-      lines.push({ label: "Non-VAT Sales (Net)", amount: r.nonVatableSales ?? 0 });
-    }
-  }
-  lines.push({ label: "Total Net of VAT", amount: netOfVat, bold: true });
-  return lines;
-};
-
-const buildDiscountSection = (r: ReceiptData): DiscountSection | null => {
-  if (!isSeniorOrPwd(r.discountType) || !(r.discountAmount && r.discountAmount > 0)) return null;
-  const pct = DISCOUNT_PERCENT[r.discountType ?? "NONE"] ?? 20;
-  const typeLabel = DISCOUNT_LABEL[r.discountType ?? ""] ?? r.discountType ?? "";
-  const lines: AmountLine[] = [];
-  if ((r.vatableDiscountAmount ?? 0) > 0) lines.push({ label: `- ${typeLabel} Discount on VATable Meds`, amount: r.vatableDiscountAmount ?? 0 });
-  if ((r.nonVatableDiscountAmount ?? 0) > 0) lines.push({ label: `- ${typeLabel} Discount on Non-VAT Meds`, amount: r.nonVatableDiscountAmount ?? 0 });
-  return {
-    headerLabel: `Less: ${pct}% ${typeLabel} Discount`,
-    lines,
-    totalLabel: `Total ${typeLabel} Discount`,
-    totalAmount: -(r.discountAmount ?? 0),
+// Reuses the exact same step-by-step derivation the checkout screen shows
+// before the sale is even made — so the printed receipt can never disagree
+// with what the cashier already saw, and there is only one place that knows
+// how the math works. Every number is read straight off the fields persisted
+// on the Sale at checkout time, so a reprint always matches the original.
+const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
+  const discountType = (r.discountType ?? "NONE") as DiscountType;
+  const discountPercent = DISCOUNT_PERCENT[discountType] ?? 0;
+  const result: VatCalculationResult = {
+    subtotal: r.subtotal,
+    vatableSales: r.vatableSales ?? 0,
+    nonVatableSales: r.nonVatableSales ?? 0,
+    vatAmount: r.taxAmount,
+    discountAmount: r.discountAmount ?? 0,
+    finalTotal: r.totalAmount,
+    vatExemptSales: r.vatExemptSales,
+    vatableGross: r.vatableGross ?? 0,
+    nonVatableGross: r.nonVatableGross ?? 0,
+    vatableDiscountAmount: r.vatableDiscountAmount ?? 0,
+    nonVatableDiscountAmount: r.nonVatableDiscountAmount ?? 0,
+    vatRemovedFromVatable: r.vatRemovedFromVatable ?? 0,
   };
+  return getComputationLines(result, discountType, discountPercent).filter((line) => line.kind !== "total");
 };
 
 export const generateReceiptHTML = (receiptData: ReceiptData): string => {
@@ -88,12 +43,11 @@ export const generateReceiptHTML = (receiptData: ReceiptData): string => {
 
   const headerLines = getReceiptHeaderLines(store);
   const footerLines = getReceiptFooterLines(store).filter((line) => line !== NOT_BIR_ACCREDITED_NOTICE);
-  const vatLines = buildVatSection(receiptData);
-  const discountSection = buildDiscountSection(receiptData);
+  const computationLines = buildComputationLines(receiptData);
   const showScPwdBlock = isSeniorOrPwd(receiptData.discountType) && Boolean(receiptData.discountAmount && receiptData.discountAmount > 0);
 
-  const amountLine = (line: AmountLine) =>
-    `<div class="total-line${line.bold ? " grand-total" : ""}"><span>${line.label}:</span><span>${peso(line.amount)}</span></div>`;
+  const amountLine = (line: ComputationLine) =>
+    `<div class="total-line comp-${line.kind}"><span>${line.label}:</span><span>${line.kind === "subtotal" ? "= " : ""}${peso(line.amount)}</span></div>`;
 
   return `
     <!DOCTYPE html>
@@ -126,7 +80,9 @@ export const generateReceiptHTML = (receiptData: ReceiptData): string => {
         .section-title { font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 2px; }
         .total-line { display: flex; justify-content: space-between; margin-bottom: 1px; }
         .total-line.grand-total { font-weight: bold; border-top: 1px dashed #000; padding-top: 2px; margin-top: 2px; }
-        .discount-line { display: flex; justify-content: space-between; margin-bottom: 1px; padding-left: 4px; font-size: 9px; }
+        .comp-base { font-weight: 700; }
+        .comp-subtract { color: #b91c1c; }
+        .comp-subtotal { color: #555; border-top: 1px dashed #ccc; padding-top: 1px; margin-top: 1px; }
         .final-total { font-weight: bold; font-size: 13px; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 3px 0; margin: 4px 0; display: flex; justify-content: space-between; }
         .sc-pwd-block { border: 1px solid #000; padding: 4px; margin-bottom: 4px; font-size: 9px; }
         .sc-pwd-title { font-weight: 700; text-align: center; margin-bottom: 4px; text-transform: uppercase; }
@@ -172,20 +128,9 @@ export const generateReceiptHTML = (receiptData: ReceiptData): string => {
       <div class="item-count">Total Items: ${items.length}</div>
 
       <div class="section">
-        <div class="section-title">VAT Breakdown</div>
-        ${vatLines.map(amountLine).join("")}
+        <div class="section-title">How This Total Was Computed</div>
+        ${computationLines.map(amountLine).join("")}
       </div>
-
-      ${
-        discountSection
-          ? `
-      <div class="section">
-        <div class="section-title">${discountSection.headerLabel}</div>
-        ${discountSection.lines.map((l) => `<div class="discount-line"><span>${l.label}:</span><span>${peso(l.amount)}</span></div>`).join("")}
-        <div class="total-line grand-total"><span>${discountSection.totalLabel}:</span><span>${peso(discountSection.totalAmount)}</span></div>
-      </div>`
-          : ""
-      }
 
       <div class="final-total"><span>Total Amount Due:</span><span>${peso(totalAmount)}</span></div>
 
@@ -275,8 +220,7 @@ export const generateThermalReceiptText = (receiptData: ReceiptData): string => 
 
   const headerLines = getReceiptHeaderLines(store);
   const footerLines = getReceiptFooterLines(store).filter((line) => line !== NOT_BIR_ACCREDITED_NOTICE);
-  const vatLines = buildVatSection(receiptData);
-  const discountSection = buildDiscountSection(receiptData);
+  const computationLines = buildComputationLines(receiptData);
   const showScPwdBlock = isSeniorOrPwd(receiptData.discountType) && Boolean(receiptData.discountAmount && receiptData.discountAmount > 0);
 
   let receipt = INIT;
@@ -329,15 +273,12 @@ export const generateThermalReceiptText = (receiptData: ReceiptData): string => 
   receipt += `Total Items: ${items.length}` + NEWLINE;
   receipt += SEPARATOR + NEWLINE;
 
-  receipt += CENTER + UNDERLINE_ON + "VAT BREAKDOWN" + UNDERLINE_OFF + NEWLINE + LEFT;
-  vatLines.forEach((l) => addTotalLine(l.label + ":", l.amount, l.bold));
-
-  if (discountSection) {
-    receipt += SEPARATOR + NEWLINE;
-    receipt += discountSection.headerLabel + ":" + NEWLINE;
-    discountSection.lines.forEach((l) => addTotalLine("  " + l.label + ":", l.amount));
-    addTotalLine(discountSection.totalLabel + ":", discountSection.totalAmount, true);
-  }
+  receipt += CENTER + UNDERLINE_ON + "HOW THIS TOTAL WAS COMPUTED" + UNDERLINE_OFF + NEWLINE + LEFT;
+  computationLines.forEach((l) => {
+    const isBold = l.kind === "base" || l.kind === "subtotal";
+    const value = (l.kind === "subtotal" ? "= " : "") + peso(l.amount);
+    addRow(l.label + ":", value, isBold);
+  });
 
   receipt += DOUBLE_SEPARATOR + NEWLINE;
   addTotalLine("TOTAL AMOUNT DUE:", totalAmount, true);
