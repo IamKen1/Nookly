@@ -304,7 +304,7 @@ export default function PosClient({
                     key={href}
                     href={href}
                     onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-colors hover:bg-emerald-50 hover:text-emerald-700"
+                    className="btn-press flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-colors hover:bg-emerald-50 hover:text-emerald-700"
                   >
                     <Icon className="h-4 w-4" />
                     {label}

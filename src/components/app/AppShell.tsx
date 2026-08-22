@@ -45,7 +45,7 @@ export default function AppShell({
               key={href}
               href={href}
               data-tour={`nav-${href.slice(1)}`}
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-emerald-50 hover:text-emerald-700"
+              className="btn-press flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-emerald-50 hover:text-emerald-700"
             >
               <Icon className="h-4 w-4" />
               {label}
