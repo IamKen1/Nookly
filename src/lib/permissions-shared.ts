@@ -29,6 +29,10 @@ export const ROLE_LABELS: Record<ConfigurableRole, string> = {
   CASHIER: "Cashier",
 };
 
+// Includes OWNER (not a configurable role, but still needs a display label
+// wherever the logged-in user's role is shown in the UI).
+export const ALL_ROLE_LABELS: Record<string, string> = { OWNER: "Owner", ...ROLE_LABELS };
+
 // Mirrors exactly what was hardcoded across the app before this system
 // existed — so a tenant with no RolePermission rows yet behaves identically
 // to the old behavior. Only an explicit row in the DB overrides this.

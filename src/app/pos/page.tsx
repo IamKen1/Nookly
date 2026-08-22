@@ -25,6 +25,7 @@ export default async function PosPage() {
     <PosClient
       tenantName={tenant.name}
       planName={tenant.subscription?.plan.name}
+      role={session.role}
       permissions={permissions}
       categories={categories.map((c) => ({ id: c.id, name: c.name }))}
     />

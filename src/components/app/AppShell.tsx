@@ -3,6 +3,7 @@ import { BarChart3, Boxes, ClipboardPlus, LayoutDashboard, Leaf, LifeBuoy, Packa
 import LogoutButton from "./LogoutButton";
 import OnboardingTourLoader from "@/components/onboarding/OnboardingTourLoader";
 import { getRolePermissions, type PermissionModuleKey } from "@/lib/permissions";
+import { ALL_ROLE_LABELS } from "@/lib/permissions-shared";
 
 const navItems: { href: string; label: string; icon: typeof LayoutDashboard; module?: PermissionModuleKey }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -63,7 +64,14 @@ export default async function AppShell({
 
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-3">
-          <span className="text-sm font-medium text-zinc-700">{tenantName}</span>
+          <div className="flex items-center gap-2.5">
+            <span className="text-sm font-medium text-zinc-700">{tenantName}</span>
+            {role && (
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-600">
+                {ALL_ROLE_LABELS[role] ?? role}
+              </span>
+            )}
+          </div>
           <LogoutButton />
         </header>
         <main className="flex-1 p-6">{children}</main>

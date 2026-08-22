@@ -35,7 +35,7 @@ import { usePrinterConnection } from "@/lib/printer/usePrinterConnection";
 import { generateThermalReceiptText, printReceipt } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 import type { DiscountType } from "@/lib/vat-calculations";
-import type { PermissionModuleKey } from "@/lib/permissions-shared";
+import { ALL_ROLE_LABELS, type PermissionModuleKey } from "@/lib/permissions-shared";
 import CartPanel, { type CartLine } from "./CartPanel";
 import CheckoutModal, { type PrescriptionDraft } from "./CheckoutModal";
 import ShiftModal from "./ShiftModal";
@@ -89,11 +89,13 @@ export default function PosClient({
   categories,
   tenantName,
   planName,
+  role,
   permissions,
 }: {
   categories: Category[];
   tenantName: string;
   planName?: string;
+  role?: string;
   permissions: Record<PermissionModuleKey, boolean>;
 }) {
   const router = useRouter();
@@ -337,7 +339,14 @@ export default function PosClient({
             )}
           </div>
           <div className="leading-tight">
-            <p className="text-sm font-bold">{tenantName}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-bold">{tenantName}</p>
+              {role && (
+                <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-50">
+                  {ALL_ROLE_LABELS[role] ?? role}
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-emerald-200">{planName ? `${planName} plan` : "Point of Sale"}</p>
           </div>
         </div>
