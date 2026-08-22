@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { AlertTriangle, Download, PackagePlus, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Download, Loader2, PackagePlus, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 
@@ -302,9 +302,10 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
-            className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
           >
-            <Upload className="h-4 w-4" /> {importing ? "Importing..." : "Import spreadsheet"}
+            {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{" "}
+            {importing ? "Importing..." : "Import spreadsheet"}
           </button>
           <input
             ref={fileInputRef}
@@ -486,9 +487,13 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
                         <button
                           onClick={() => discardBatch(b, b.isExpired ? "expired" : "damaged")}
                           disabled={discardingId === b.id}
-                          className="flex items-center gap-1 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                          className="flex items-center gap-1 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:border-red-300 hover:text-red-600 disabled:opacity-50 btn-press"
                         >
-                          <Trash2 className={`h-3.5 w-3.5 ${discardingId === b.id ? "animate-pulse" : ""}`} />
+                          {discardingId === b.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
                           {discardingId === b.id ? "Discarding..." : "Discard"}
                         </button>
                       </td>
@@ -573,8 +578,9 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
               <button
                 type="submit"
                 disabled={saving}
-                className="w-full rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
               >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {saving ? "Saving..." : "Save adjustment"}
               </button>
             </form>
@@ -662,8 +668,9 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
               <button
                 type="submit"
                 disabled={batchSaving}
-                className="w-full rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
               >
+                {batchSaving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {batchSaving ? "Saving..." : "Receive batch"}
               </button>
             </form>
@@ -689,8 +696,9 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
             <button
               type="submit"
               disabled={clearing || clearConfirm !== "CLEAR INVENTORY"}
-              className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+              className="flex items-center justify-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50 btn-press"
             >
+              {clearing && <Loader2 className="h-4 w-4 animate-spin" />}
               {clearing ? "Clearing..." : "Clear inventory"}
             </button>
           </form>

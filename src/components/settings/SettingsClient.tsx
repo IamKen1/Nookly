@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import ReceiptSettingsForm from "./ReceiptSettingsForm";
 import NotificationSettingsForm from "./NotificationSettingsForm";
 import PlanSettingsForm from "./PlanSettingsForm";
@@ -66,8 +67,9 @@ export default function SettingsClient({
         <button
           onClick={restartTour}
           disabled={restarting}
-          className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:border-zinc-400 disabled:opacity-50"
+          className="flex items-center justify-center gap-2 rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:border-zinc-400 disabled:opacity-50 btn-press"
         >
+          {restarting && <Loader2 className="h-4 w-4 animate-spin" />}
           {restarting ? "Starting..." : "Replay guided tour"}
         </button>
       </div>

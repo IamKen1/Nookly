@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Inbox, MailOpen, CheckCircle2, Archive, Send, ChevronLeft, Paperclip, X } from "lucide-react";
+import { Inbox, MailOpen, CheckCircle2, Archive, Send, ChevronLeft, Paperclip, X, Loader2 } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 
 const MAX_ATTACHMENTS = 3;
@@ -261,17 +261,20 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                   {detail.tenant.name} · {detail.createdByUser.email}
                 </p>
               </div>
-              <select
-                value={detail.status}
-                onChange={(e) => changeStatus(e.target.value)}
-                disabled={busy}
-                className={`rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold outline-none ${STATUS_TONE[detail.status]}`}
-              >
-                <option value="OPEN">Open</option>
-                <option value="IN_PROGRESS">In progress</option>
-                <option value="RESOLVED">Resolved</option>
-                <option value="CLOSED">Closed</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  value={detail.status}
+                  onChange={(e) => changeStatus(e.target.value)}
+                  disabled={busy}
+                  className={`rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold outline-none ${STATUS_TONE[detail.status]}`}
+                >
+                  <option value="OPEN">Open</option>
+                  <option value="IN_PROGRESS">In progress</option>
+                  <option value="RESOLVED">Resolved</option>
+                  <option value="CLOSED">Closed</option>
+                </select>
+                {busy && <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />}
+              </div>
             </div>
 
             <div className="flex-1 space-y-3 overflow-y-auto">
@@ -332,9 +335,9 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                     onClick={() => replyFileInputRef.current?.click()}
                     disabled={uploading}
                     title="Attach a screenshot"
-                    className="flex items-center justify-center rounded-full border border-zinc-700 px-3 text-zinc-400 hover:border-zinc-500 disabled:opacity-50"
+                    className="flex items-center justify-center rounded-full border border-zinc-700 px-3 text-zinc-400 hover:border-zinc-500 disabled:opacity-50 btn-press"
                   >
-                    <Paperclip className="h-4 w-4" />
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                   </button>
                 )}
                 <input
@@ -351,10 +354,10 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                 <button
                   type="submit"
                   disabled={busy || uploading || !reply.trim()}
-                  className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className="flex items-center justify-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
                 >
-                  <Send className="h-3.5 w-3.5" />
-                  Send
+                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  {busy ? "Sending..." : "Send"}
                 </button>
               </div>
             </form>

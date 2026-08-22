@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Plus, Search, Settings, Trash2, X, Pencil } from "lucide-react";
+import { Plus, Search, Settings, Trash2, X, Pencil, Loader2 } from "lucide-react";
 import ImageUpload from "./ImageUpload";
 import CategoryManager from "./CategoryManager";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
@@ -294,9 +294,9 @@ export default function ProductsClient({
                       <button
                         onClick={() => handleDelete(p.id)}
                         disabled={deletingId === p.id}
-                        className="text-zinc-400 hover:text-red-600 disabled:opacity-40"
+                        className="text-zinc-400 hover:text-red-600 disabled:opacity-40 btn-press"
                       >
-                        <Trash2 className={`h-4 w-4 ${deletingId === p.id ? "animate-pulse" : ""}`} />
+                        {deletingId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                       </button>
                     </div>
                   </td>
@@ -520,8 +520,9 @@ export default function ProductsClient({
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
               >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {saving ? "Saving..." : editingProduct ? "Save changes" : "Save product"}
               </button>
             </div>

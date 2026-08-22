@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Send, Paperclip, X } from "lucide-react";
+import { Plus, Send, Paperclip, X, Loader2 } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 
 const MAX_ATTACHMENTS = 3;
@@ -201,9 +201,9 @@ export default function SupportClient() {
                   type="button"
                   onClick={() => newFileInputRef.current?.click()}
                   disabled={uploading}
-                  className="flex h-14 w-14 items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-zinc-400 hover:border-zinc-400 disabled:opacity-50"
+                  className="flex h-14 w-14 items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 text-zinc-400 hover:border-zinc-400 disabled:opacity-50 btn-press"
                 >
-                  <Paperclip className="h-4 w-4" />
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 </button>
               )}
               <input
@@ -225,9 +225,10 @@ export default function SupportClient() {
             <button
               type="submit"
               disabled={busy || uploading}
-              className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+              className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
             >
-              Submit
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {busy ? "Submitting..." : "Submit"}
             </button>
             <button
               type="button"
@@ -336,9 +337,9 @@ export default function SupportClient() {
                         onClick={() => replyFileInputRef.current?.click()}
                         disabled={uploading}
                         title="Attach a screenshot"
-                        className="flex items-center justify-center rounded-full border border-zinc-200 px-3 text-zinc-500 hover:border-zinc-300 disabled:opacity-50"
+                        className="flex items-center justify-center rounded-full border border-zinc-200 px-3 text-zinc-500 hover:border-zinc-300 disabled:opacity-50 btn-press"
                       >
-                        <Paperclip className="h-4 w-4" />
+                        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                       </button>
                     )}
                     <input
@@ -355,10 +356,10 @@ export default function SupportClient() {
                     <button
                       type="submit"
                       disabled={busy || uploading || !reply.trim()}
-                      className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                      className="flex items-center justify-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
                     >
-                      <Send className="h-3.5 w-3.5" />
-                      Send
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      {busy ? "Sending..." : "Send"}
                     </button>
                   </div>
                 </form>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 interface ReceiptSettings {
   storeName: string;
@@ -115,8 +116,9 @@ export default function ReceiptSettingsForm() {
         <button
           type="submit"
           disabled={saving}
-          className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+          className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
         >
+          {saving && <Loader2 className="h-4 w-4 animate-spin" />}
           {saving ? "Saving..." : "Save receipt settings"}
         </button>
         {saved && <span className="text-sm text-emerald-600">Saved.</span>}

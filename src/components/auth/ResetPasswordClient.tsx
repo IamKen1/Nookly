@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Leaf, Lock } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Leaf, Loader2, Lock } from "lucide-react";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -148,8 +148,9 @@ function ResetPasswordForm() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60"
+                  className="btn-press flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60"
                 >
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   {loading ? "Updating..." : "Update password"}
                 </button>
               </form>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ImageIcon, Upload, X } from "lucide-react";
+import { ImageIcon, Loader2, Upload, X } from "lucide-react";
 
 interface ImageUploadProps {
   currentImage?: string | null;
@@ -75,9 +75,10 @@ export default function ImageUpload({ currentImage, onImageChange }: ImageUpload
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300 disabled:opacity-50 btn-press"
           >
-            <Upload className="h-4 w-4" /> {isUploading ? "Uploading..." : currentImage ? "Change image" : "Upload image"}
+            {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{" "}
+            {isUploading ? "Uploading..." : currentImage ? "Change image" : "Upload image"}
           </button>
           {error && <p className="text-xs text-red-600">{error}</p>}
           <p className="text-xs text-zinc-400">JPG, PNG, or GIF. Max 5MB.</p>

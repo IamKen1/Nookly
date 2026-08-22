@@ -23,6 +23,7 @@ import {
   ShoppingCart,
   Wallet,
   Banknote,
+  Loader2,
 } from "lucide-react";
 import { useBarcode } from "@/hooks/useBarcode";
 import { useBarcodeAudio } from "@/hooks/useBarcodeAudio";
@@ -99,6 +100,7 @@ export default function PosClient({
   const [showCheckout, setShowCheckout] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -311,13 +313,19 @@ export default function PosClient({
                 <div className="mt-1 border-t border-gray-100 pt-1">
                   <button
                     onClick={async () => {
-                      await fetch("/api/auth/logout", { method: "POST" });
-                      router.push("/login");
-                      router.refresh();
+                      setLoggingOut(true);
+                      try {
+                        await fetch("/api/auth/logout", { method: "POST" });
+                        router.push("/login");
+                        router.refresh();
+                      } finally {
+                        setLoggingOut(false);
+                      }
                     }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                    disabled={loggingOut}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60 btn-press"
                   >
-                    <LogOut className="h-4 w-4" />
+                    {loggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
                     Log out
                   </button>
                 </div>

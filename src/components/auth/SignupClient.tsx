@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Leaf } from "lucide-react";
+import { Leaf, Loader2 } from "lucide-react";
 import UsernameField from "@/components/shared/UsernameField";
 
 const planLabels: Record<string, string> = {
@@ -233,8 +233,9 @@ function SignupForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
+              className="btn-press flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
             >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               {loading ? "Creating workspace..." : "Create my Nookly workspace"}
             </button>
           </form>

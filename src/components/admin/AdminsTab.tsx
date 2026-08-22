@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 interface AdminRow {
   userId: string;
@@ -101,8 +102,9 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
         <button
           type="submit"
           disabled={granting}
-          className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
         >
+          {granting && <Loader2 className="h-4 w-4 animate-spin" />}
           {granting ? "Granting..." : "Grant admin access"}
         </button>
       </form>
@@ -148,8 +150,9 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
                       <button
                         onClick={() => revoke(a)}
                         disabled={busyId === a.userId}
-                        className="rounded-full border border-red-800 px-3 py-1.5 text-xs font-semibold text-red-400 hover:border-red-600 disabled:opacity-50"
+                        className="flex items-center justify-center gap-2 rounded-full border border-red-800 px-3 py-1.5 text-xs font-semibold text-red-400 hover:border-red-600 disabled:opacity-50 btn-press"
                       >
+                        {busyId === a.userId && <Loader2 className="h-4 w-4 animate-spin" />}
                         Revoke
                       </button>
                     )}

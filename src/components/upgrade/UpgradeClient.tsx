@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Leaf, AlertTriangle, Check } from "lucide-react";
+import { Leaf, AlertTriangle, Check, Loader2 } from "lucide-react";
 import { peso, formatDate } from "@/lib/format";
 
 interface Lapse {
@@ -58,6 +58,7 @@ export default function UpgradeClient({
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     fetch("/api/plan-requests")
@@ -105,12 +106,19 @@ export default function UpgradeClient({
           </div>
           <button
             onClick={async () => {
-              await fetch("/api/auth/logout", { method: "POST" });
-              router.push("/login");
-              router.refresh();
+              setLoggingOut(true);
+              try {
+                await fetch("/api/auth/logout", { method: "POST" });
+                router.push("/login");
+                router.refresh();
+              } finally {
+                setLoggingOut(false);
+              }
             }}
-            className="text-sm font-medium text-zinc-500 hover:text-zinc-900"
+            disabled={loggingOut}
+            className="btn-press flex items-center justify-center gap-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 disabled:opacity-60"
           >
+            {loggingOut && <Loader2 className="h-4 w-4 animate-spin" />}
             Log out
           </button>
         </div>
@@ -190,8 +198,9 @@ export default function UpgradeClient({
                 <button
                   onClick={() => submit(p.code)}
                   disabled={submittingCode !== null || hasPending}
-                  className="mt-5 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className="btn-press mt-5 flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                 >
+                  {submittingCode === p.code && <Loader2 className="h-4 w-4 animate-spin" />}
                   {submittingCode === p.code ? "Sending..." : "Request this plan"}
                 </button>
               )}

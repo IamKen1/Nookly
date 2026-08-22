@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Wallet, Clock } from "lucide-react";
+import { X, Wallet, Clock, Loader2 } from "lucide-react";
 import { peso, formatDateTime } from "@/lib/format";
 
 interface ShiftReading {
@@ -211,8 +211,9 @@ export default function ShiftModal({
               <button
                 onClick={handleStart}
                 disabled={busy}
-                className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 btn-press"
               >
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 {busy ? "Starting..." : "Start shift"}
               </button>
             </div>
@@ -292,8 +293,9 @@ export default function ShiftModal({
                 <button
                   onClick={handleEnd}
                   disabled={busy}
-                  className="mt-3 w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 btn-press"
                 >
+                  {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                   {busy ? "Ending..." : "End shift"}
                 </button>
               </div>

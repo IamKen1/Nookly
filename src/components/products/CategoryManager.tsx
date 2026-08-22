@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 
 export interface CategoryRow {
   id: string;
@@ -115,9 +115,9 @@ export default function CategoryManager({
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            className="flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
           >
-            <Plus className="h-4 w-4" /> Add
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
           </button>
         </form>
 
@@ -138,9 +138,9 @@ export default function CategoryManager({
                   <button
                     onClick={() => saveRename(c.id)}
                     disabled={busyId === c.id}
-                    className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40"
+                    className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40 btn-press"
                   >
-                    <Check className={`h-4 w-4 ${busyId === c.id ? "animate-pulse" : ""}`} />
+                    {busyId === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                   </button>
                   <button onClick={() => setEditingId(null)} disabled={busyId === c.id} className="text-zinc-400 hover:text-zinc-600 disabled:opacity-40">
                     <X className="h-4 w-4" />
@@ -163,9 +163,9 @@ export default function CategoryManager({
                     <button
                       onClick={() => deactivate(c.id)}
                       disabled={busyId === c.id}
-                      className="text-zinc-400 hover:text-red-600 disabled:opacity-40"
+                      className="text-zinc-400 hover:text-red-600 disabled:opacity-40 btn-press"
                     >
-                      <Trash2 className={`h-3.5 w-3.5 ${busyId === c.id ? "animate-pulse" : ""}`} />
+                      {busyId === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 </>

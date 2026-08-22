@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 
 interface AdminPlanRequest {
@@ -27,6 +28,7 @@ export default function PlanRequestsTab() {
   const [requests, setRequests] = useState<AdminPlanRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<"contacted" | "activate" | "cancel" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // showLoading only applies to the initial fetch — refreshing after
@@ -48,6 +50,7 @@ export default function PlanRequestsTab() {
     if (action === "cancel" && !confirm("Cancel this request?")) return;
     setError(null);
     setBusyId(id);
+    setBusyAction(action);
     try {
       const res = await fetch(`/api/nk-ops-72fq9/plan-requests/${id}`, {
         method: "PATCH",
@@ -64,6 +67,7 @@ export default function PlanRequestsTab() {
       setError("Network error.");
     } finally {
       setBusyId(null);
+      setBusyAction(null);
     }
   };
 
@@ -122,23 +126,26 @@ export default function PlanRequestsTab() {
                         <button
                           onClick={() => act(r.id, "contacted")}
                           disabled={busyId === r.id}
-                          className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-500 disabled:opacity-50"
+                          className="flex items-center justify-center gap-2 rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-500 disabled:opacity-50 btn-press"
                         >
+                          {busyId === r.id && busyAction === "contacted" && <Loader2 className="h-4 w-4 animate-spin" />}
                           Mark contacted
                         </button>
                       )}
                       <button
                         onClick={() => act(r.id, "activate")}
                         disabled={busyId === r.id}
-                        className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                        className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
                       >
+                        {busyId === r.id && busyAction === "activate" && <Loader2 className="h-4 w-4 animate-spin" />}
                         Activate
                       </button>
                       <button
                         onClick={() => act(r.id, "cancel")}
                         disabled={busyId === r.id}
-                        className="rounded-full border border-red-800 px-3 py-1.5 text-xs font-semibold text-red-400 hover:border-red-600 disabled:opacity-50"
+                        className="flex items-center justify-center gap-2 rounded-full border border-red-800 px-3 py-1.5 text-xs font-semibold text-red-400 hover:border-red-600 disabled:opacity-50 btn-press"
                       >
+                        {busyId === r.id && busyAction === "cancel" && <Loader2 className="h-4 w-4 animate-spin" />}
                         Cancel
                       </button>
                     </div>

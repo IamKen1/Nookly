@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 
 export default function ImpersonationBanner() {
   const router = useRouter();
@@ -45,8 +45,9 @@ export default function ImpersonationBanner() {
       <button
         onClick={handleStop}
         disabled={stopping}
-        className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white transition hover:bg-white/25 disabled:opacity-60"
+        className="flex items-center justify-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white transition hover:bg-white/25 disabled:opacity-60 btn-press"
       >
+        {stopping && <Loader2 className="h-4 w-4 animate-spin" />}
         {stopping ? "Returning..." : "Return to admin"}
       </button>
     </div>

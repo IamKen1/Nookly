@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, LogOut, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Loader2, LogOut, ShieldCheck } from "lucide-react";
 import OverviewTab from "./OverviewTab";
 import AnalyticsTab from "./AnalyticsTab";
 import RevenueTab from "./RevenueTab";
@@ -69,10 +69,10 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
             <button
               onClick={handleLock}
               disabled={locking}
-              className="flex h-8 items-center gap-1.5 rounded-full border border-red-800 px-2.5 text-xs font-medium text-red-400 hover:border-red-600 disabled:opacity-50 sm:px-3"
+              className="flex h-8 items-center justify-center gap-1.5 rounded-full border border-red-800 px-2.5 text-xs font-medium text-red-400 hover:border-red-600 disabled:opacity-50 sm:px-3 btn-press"
             >
-              <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Lock console</span>
+              {locking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{locking ? "Locking..." : "Lock console"}</span>
             </button>
           </div>
         </div>

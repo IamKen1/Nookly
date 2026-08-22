@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { formatDate, peso } from "@/lib/format";
 
 interface Tenant {
@@ -29,6 +30,7 @@ export default function TenantsTab() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [plans, setPlans] = useState<PlanOption[]>([]);
@@ -47,6 +49,15 @@ export default function TenantsTab() {
     const data = await res.json();
     setTenants(Array.isArray(data) ? data : []);
     if (showLoading) setLoading(false);
+  };
+
+  const handleSearch = async () => {
+    setSearching(true);
+    try {
+      await load(search);
+    } finally {
+      setSearching(false);
+    }
   };
 
   useEffect(() => {
@@ -143,10 +154,12 @@ export default function TenantsTab() {
           className="w-full max-w-sm rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
         />
         <button
-          onClick={() => load(search)}
-          className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-500"
+          onClick={handleSearch}
+          disabled={searching}
+          className="flex items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-500 disabled:opacity-60 btn-press"
         >
-          Search
+          {searching && <Loader2 className="h-4 w-4 animate-spin" />}
+          {searching ? "Searching..." : "Search"}
         </button>
       </div>
 
@@ -212,19 +225,21 @@ export default function TenantsTab() {
                       <button
                         onClick={() => impersonate(t)}
                         disabled={busyId === t.id}
-                        className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-500 disabled:opacity-50"
+                        className="flex items-center justify-center gap-2 rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-500 disabled:opacity-50 btn-press"
                       >
+                        {busyId === t.id && <Loader2 className="h-4 w-4 animate-spin" />}
                         Impersonate
                       </button>
                       <button
                         onClick={() => toggleActive(t)}
                         disabled={busyId === t.id}
-                        className={`rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                        className={`flex items-center justify-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-50 btn-press ${
                           t.isActive
                             ? "border border-red-800 text-red-400 hover:border-red-600"
                             : "bg-emerald-600 text-white hover:bg-emerald-500"
                         }`}
                       >
+                        {busyId === t.id && <Loader2 className="h-4 w-4 animate-spin" />}
                         {t.isActive ? "Suspend" : "Reactivate"}
                       </button>
                     </div>
@@ -289,8 +304,9 @@ export default function TenantsTab() {
                 <button
                   onClick={submitActivate}
                   disabled={activating || !activatePlanId}
-                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
                 >
+                  {activating && <Loader2 className="h-4 w-4 animate-spin" />}
                   {activating ? "Activating..." : "Activate"}
                 </button>
               </div>

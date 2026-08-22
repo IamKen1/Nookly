@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Banknote } from "lucide-react";
+import { X, Banknote, Loader2 } from "lucide-react";
 import { peso, formatDateTime } from "@/lib/format";
 
 interface CashTxn {
@@ -238,8 +238,9 @@ export default function CashTransactionModal({
             <button
               onClick={submit}
               disabled={busy}
-              className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 btn-press"
             >
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
               {busy ? "Logging..." : `Log ${TYPE_LABELS[type].toLowerCase()}`}
             </button>
           </div>

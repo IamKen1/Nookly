@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, ChevronDown, ChevronUp, Printer, RotateCcw, X } from "lucide-react";
+import { Ban, ChevronDown, ChevronUp, Loader2, Printer, RotateCcw, X } from "lucide-react";
 import { printReceipt } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 
@@ -220,10 +220,10 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
                               handleVoid(s.id);
                             }}
                             disabled={voidingId === s.id}
-                            className="text-zinc-400 hover:text-red-600 disabled:opacity-50"
+                            className="text-zinc-400 hover:text-red-600 disabled:opacity-50 btn-press"
                             title="Void sale (same-day only)"
                           >
-                            <Ban className="h-4 w-4" />
+                            {voidingId === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
                           </button>
                         )}
                         <button
@@ -232,10 +232,10 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
                             handlePrint(s.id);
                           }}
                           disabled={printingId === s.id}
-                          className="text-zinc-400 hover:text-emerald-600 disabled:opacity-50"
+                          className="text-zinc-400 hover:text-emerald-600 disabled:opacity-50 btn-press"
                           title="Print receipt"
                         >
-                          <Printer className="h-4 w-4" />
+                          {printingId === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
                         </button>
                         {expanded === s.id ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
                       </div>
@@ -318,8 +318,9 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
               <button
                 type="submit"
                 disabled={returning}
-                className="w-full rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
               >
+                {returning && <Loader2 className="h-4 w-4 animate-spin" />}
                 {returning ? "Processing..." : "Process return"}
               </button>
             </form>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 interface NotificationSettings {
   emailNotificationsEnabled: boolean;
@@ -109,16 +110,18 @@ export default function NotificationSettingsForm() {
         <button
           type="submit"
           disabled={saving}
-          className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+          className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
         >
+          {saving && <Loader2 className="h-4 w-4 animate-spin" />}
           {saving ? "Saving..." : "Save notification settings"}
         </button>
         <button
           type="button"
           onClick={sendTestEmail}
           disabled={testing}
-          className="rounded-full border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 hover:border-zinc-300 disabled:opacity-60"
+          className="flex items-center justify-center gap-2 rounded-full border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 hover:border-zinc-300 disabled:opacity-60 btn-press"
         >
+          {testing && <Loader2 className="h-4 w-4 animate-spin" />}
           {testing ? "Sending..." : "Send test email"}
         </button>
         {saved && <span className="text-sm text-emerald-600">Saved.</span>}

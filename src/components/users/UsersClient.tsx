@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 import UsernameField from "@/components/shared/UsernameField";
 
 interface Store {
@@ -187,18 +187,20 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                     <button
                       onClick={() => toggleActive(u)}
                       disabled={busyId === u.id}
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"}`}
+                      className={`flex items-center justify-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold disabled:opacity-50 btn-press ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"}`}
                     >
-                      {busyId === u.id ? "..." : u.isActive ? "Active" : "Inactive"}
+                      {busyId === u.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {u.isActive ? "Active" : "Inactive"}
                     </button>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => remove(u.id)}
                       disabled={busyId === u.id}
-                      className="text-xs font-semibold text-zinc-400 hover:text-red-600 disabled:opacity-50"
+                      className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-red-600 disabled:opacity-50 btn-press"
                     >
-                      {busyId === u.id ? "..." : "Remove"}
+                      {busyId === u.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                      Remove
                     </button>
                   </td>
                 </tr>
@@ -283,8 +285,9 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
               <button
                 type="submit"
                 disabled={saving}
-                className="w-full rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
               >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {saving ? "Saving..." : "Save user"}
               </button>
             </form>

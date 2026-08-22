@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Leaf, User } from "lucide-react";
+import { ArrowLeft, Leaf, Loader2, User } from "lucide-react";
 
 export default function ForgotPasswordClient() {
   const [identifier, setIdentifier] = useState("");
@@ -71,8 +71,9 @@ export default function ForgotPasswordClient() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60"
+                  className="btn-press flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60"
                 >
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   {loading ? "Sending..." : "Send reset link"}
                 </button>
               </form>
