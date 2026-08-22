@@ -1,5 +1,6 @@
 import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
+import { startOfTodayPH } from "@/lib/timezone";
 import AppShell from "@/components/app/AppShell";
 import SalesClient from "@/components/sales/SalesClient";
 
@@ -13,17 +14,28 @@ export default async function SalesPage() {
 
   if (!tenant) return null;
 
-  const sales = await prisma.sale.findMany({
-    where: { tenantId: tenant.id },
-    include: { items: { include: { product: true } }, user: true },
-    orderBy: { saleDate: "desc" },
-    take: 100,
-  });
+  const [sales, todayAgg] = await Promise.all([
+    prisma.sale.findMany({
+      where: { tenantId: tenant.id },
+      include: { items: { include: { product: true } }, user: true },
+      orderBy: { saleDate: "desc" },
+      take: 100,
+    }),
+    // Computed independently from the (capped) list above, on the same PH-day
+    // boundary the dashboard uses — so this total is never wrong just because
+    // a busy day pushed early sales out of the most-recent-100 window.
+    prisma.sale.aggregate({
+      where: { tenantId: tenant.id, status: "COMPLETED", saleDate: { gte: startOfTodayPH() } },
+      _sum: { totalAmount: true },
+    }),
+  ]);
+  const todayTotal = Number(todayAgg._sum.totalAmount ?? 0);
 
   return (
     <AppShell tenantName={tenant.name} planName={tenant.subscription?.plan.name} role={session.role}>
       <SalesClient
         canVoid={["OWNER", "ADMIN", "MANAGER"].includes(session.role)}
+        todayTotal={todayTotal}
         sales={sales.map((s) => ({
           id: s.id,
           saleNumber: s.saleNumber,

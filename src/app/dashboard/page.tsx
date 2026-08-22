@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { daysUntil } from "@/lib/plans";
+import { startOfTodayPH } from "@/lib/timezone";
 import AppShell from "@/components/app/AppShell";
 
 export default async function DashboardPage() {
@@ -24,7 +25,8 @@ export default async function DashboardPage() {
     prisma.sale.aggregate({
       where: {
         tenantId: tenant.id,
-        saleDate: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+        status: "COMPLETED",
+        saleDate: { gte: startOfTodayPH() },
       },
       _sum: { totalAmount: true },
       _count: true,

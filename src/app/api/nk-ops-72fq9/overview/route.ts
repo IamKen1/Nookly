@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireAdminAccessRequest } from "@/lib/platform-admin";
+import { startOfTodayPH } from "@/lib/timezone";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
     prisma.product.count({ where: { isActive: true } }),
     prisma.sale.aggregate({ where: { status: "COMPLETED" }, _sum: { totalAmount: true }, _count: true }),
     prisma.sale.aggregate({
-      where: { status: "COMPLETED", saleDate: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
+      where: { status: "COMPLETED", saleDate: { gte: startOfTodayPH() } },
       _sum: { totalAmount: true },
       _count: true,
     }),

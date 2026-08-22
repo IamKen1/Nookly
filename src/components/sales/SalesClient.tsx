@@ -31,7 +31,15 @@ interface Sale {
 
 const peso = (value: number) => `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
 
-export default function SalesClient({ sales: initialSales, canVoid }: { sales: Sale[]; canVoid: boolean }) {
+export default function SalesClient({
+  sales: initialSales,
+  canVoid,
+  todayTotal,
+}: {
+  sales: Sale[];
+  canVoid: boolean;
+  todayTotal: number;
+}) {
   const router = useRouter();
   const [sales, setSales] = useState(initialSales);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -131,10 +139,6 @@ export default function SalesClient({ sales: initialSales, canVoid }: { sales: S
       setPrintingId(null);
     }
   };
-
-  const todayTotal = sales
-    .filter((s) => s.status === "COMPLETED" && new Date(s.saleDate).toDateString() === new Date().toDateString())
-    .reduce((sum, s) => sum + s.totalAmount, 0);
 
   const canReturnSale = (s: Sale) =>
     canVoid && !s.isReturnRecord && s.status !== "CANCELLED" && s.items.some((i) => i.quantity - i.returnedQuantity > 0);
