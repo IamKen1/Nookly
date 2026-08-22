@@ -309,18 +309,22 @@ export default function ProductsClient({
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between">
+          <form
+            onSubmit={handleSubmit}
+            className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
               <h2 className="text-lg font-semibold text-zinc-900">{editingProduct ? "Edit product" : "Add product"}</h2>
-              <button onClick={closeForm}>
+              <button type="button" onClick={closeForm}>
                 <X className="h-5 w-5 text-zinc-400" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+            <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
               <ImageUpload currentImage={form.imageUrl} onImageChange={(url) => setForm({ ...form, imageUrl: url })} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Product name" className="col-span-2">
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Product name" className="sm:col-span-2 lg:col-span-3">
                   <input
                     required
                     placeholder="e.g., Biogesic 500mg Tablet"
@@ -365,61 +369,7 @@ export default function ProductsClient({
                     ))}
                   </select>
                 </Field>
-                <Field label="Cost Price (₱)">
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={form.costPrice}
-                    onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                </Field>
-                <Field label="Selling Price (₱)">
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={form.sellingPrice}
-                    onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                </Field>
-                <Field label={editingProduct ? "Current Stock" : "Starting Stock"}>
-                  <input
-                    type="number"
-                    value={form.currentStock}
-                    onChange={(e) => setForm({ ...form, currentStock: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                </Field>
-                <Field label="Minimum Stock">
-                  <input
-                    type="number"
-                    value={form.minimumStock}
-                    onChange={(e) => setForm({ ...form, minimumStock: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                </Field>
-                <Field label="Maximum Stock">
-                  <input
-                    type="number"
-                    value={form.maximumStock}
-                    onChange={(e) => setForm({ ...form, maximumStock: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                </Field>
-                <Field label="Reorder Point">
-                  <input
-                    type="number"
-                    value={form.reorderPoint}
-                    onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                </Field>
-                <Field label="Drug Schedule" className="col-span-2">
+                <Field label="Drug Schedule" className="sm:col-span-1 lg:col-span-2">
                   <select
                     value={form.drugSchedule}
                     onChange={(e) => setForm({ ...form, drugSchedule: e.target.value })}
@@ -433,6 +383,66 @@ export default function ProductsClient({
                     ))}
                   </select>
                 </Field>
+              </div>
+
+              <div className="rounded-xl border border-zinc-200 p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Pricing &amp; Stock</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                  <Field label="Cost Price (₱)">
+                    <input
+                      required
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={form.costPrice}
+                      onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field label="Selling Price (₱)">
+                    <input
+                      required
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={form.sellingPrice}
+                      onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field label={editingProduct ? "Current Stock" : "Starting Stock"}>
+                    <input
+                      type="number"
+                      value={form.currentStock}
+                      onChange={(e) => setForm({ ...form, currentStock: e.target.value })}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field label="Minimum Stock">
+                    <input
+                      type="number"
+                      value={form.minimumStock}
+                      onChange={(e) => setForm({ ...form, minimumStock: e.target.value })}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field label="Maximum Stock">
+                    <input
+                      type="number"
+                      value={form.maximumStock}
+                      onChange={(e) => setForm({ ...form, maximumStock: e.target.value })}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field label="Reorder Point">
+                    <input
+                      type="number"
+                      value={form.reorderPoint}
+                      onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                  </Field>
+                </div>
               </div>
 
               <Field label="Description">
@@ -450,7 +460,7 @@ export default function ProductsClient({
                   <p className="mb-2 text-xs font-medium text-zinc-500">
                     Track this starting stock as a batch (optional) so it&apos;s covered by expiry alerts.
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="Batch number">
                       <input
                         value={form.batchNumber}
@@ -470,42 +480,52 @@ export default function ProductsClient({
                 </div>
               )}
 
-              <label className="flex items-center gap-2 text-sm text-zinc-600">
-                <input
-                  type="checkbox"
-                  checked={form.requiresPrescription}
-                  onChange={(e) => setForm({ ...form, requiresPrescription: e.target.checked })}
-                />
-                Requires prescription
-              </label>
-              <label className="flex items-center gap-2 text-sm text-zinc-600">
-                <input
-                  type="checkbox"
-                  checked={form.isOTC}
-                  onChange={(e) => setForm({ ...form, isOTC: e.target.checked })}
-                />
-                Over-the-counter (OTC)
-              </label>
-              <label className="flex items-center gap-2 text-sm text-zinc-600">
-                <input
-                  type="checkbox"
-                  checked={form.isVatable}
-                  onChange={(e) => setForm({ ...form, isVatable: e.target.checked })}
-                />
-                VAT-able
-              </label>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                <label className="flex items-center gap-2 text-sm text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={form.requiresPrescription}
+                    onChange={(e) => setForm({ ...form, requiresPrescription: e.target.checked })}
+                  />
+                  Requires prescription
+                </label>
+                <label className="flex items-center gap-2 text-sm text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={form.isOTC}
+                    onChange={(e) => setForm({ ...form, isOTC: e.target.checked })}
+                  />
+                  Over-the-counter (OTC)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={form.isVatable}
+                    onChange={(e) => setForm({ ...form, isVatable: e.target.checked })}
+                  />
+                  VAT-able
+                </label>
+              </div>
+            </div>
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
-
+            <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+              {error && <p className="mr-auto text-sm text-red-600">{error}</p>}
+              <button
+                type="button"
+                onClick={closeForm}
+                className="rounded-full px-4 py-2.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
+              >
+                Cancel
+              </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="w-full rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
               >
                 {saving ? "Saving..." : editingProduct ? "Save changes" : "Save product"}
               </button>
-            </form>
-          </div>
+            </div>
+          </form>
         </div>
       )}
 
