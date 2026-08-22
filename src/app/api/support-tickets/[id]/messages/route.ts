@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { sanitizeSupportAttachments } from "@/lib/support-attachments";
+import { sendAlertEmail } from "@/lib/email";
+import { platformAdminRecipients } from "@/lib/platform-admin";
+import { ADMIN_BASE_PATH } from "@/lib/admin-path";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -36,6 +39,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       data: { updatedAt: new Date(), status: ticket.status === "RESOLVED" ? "OPEN" : ticket.status },
     }),
   ]);
+
+  if (platformAdminRecipients.length > 0) {
+    const tenant = await prisma.tenant.findUnique({ where: { id: session.tenantId }, select: { name: true } });
+    const origin = new URL(request.url).origin;
+    await sendAlertEmail({
+      to: platformAdminRecipients,
+      subject: `[Nookly Support] New reply — ${ticket.subject}`,
+      text: [
+        `Tenant: ${tenant?.name ?? session.tenantSlug}`,
+        `From: ${user.email}`,
+        `Ticket: ${ticket.subject}`,
+        "",
+        message.trim(),
+        "",
+        `Reply from the ops console: ${origin}/${ADMIN_BASE_PATH}`,
+      ].join("\n"),
+    }).catch((err) => console.error("Failed to send support-ticket reply notification:", err));
+  }
 
   return NextResponse.json(reply, { status: 201 });
 }

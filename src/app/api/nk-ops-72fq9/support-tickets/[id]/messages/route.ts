@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireAdminAccessRequest, logAdminAction } from "@/lib/platform-admin";
 import { sanitizeSupportAttachments } from "@/lib/support-attachments";
+import { sendAlertEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -11,7 +12,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!access.ok) return NextResponse.json({ error: "Forbidden", reason: access.reason }, { status: 403 });
 
   const { id } = await params;
-  const ticket = await prisma.supportTicket.findUnique({ where: { id } });
+  const ticket = await prisma.supportTicket.findUnique({
+    where: { id },
+    include: { createdByUser: { select: { email: true, firstName: true } } },
+  });
   if (!ticket) return NextResponse.json({ error: "Ticket not found." }, { status: 404 });
 
   const { message, attachments }: { message: string; attachments?: string[] } = await request.json();
@@ -42,6 +46,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     targetId: id,
     metadata: { subject: ticket.subject },
   });
+
+  if (ticket.createdByUser?.email) {
+    const origin = new URL(request.url).origin;
+    await sendAlertEmail({
+      to: [ticket.createdByUser.email],
+      subject: `[Nookly Support] New reply — ${ticket.subject}`,
+      text: [
+        `Hi ${ticket.createdByUser.firstName},`,
+        "",
+        `Nookly support replied to your ticket "${ticket.subject}":`,
+        "",
+        message.trim(),
+        "",
+        `View and reply: ${origin}/support`,
+      ].join("\n"),
+    }).catch((err) => console.error("Failed to send tenant support-reply notification:", err));
+  }
 
   return NextResponse.json(reply, { status: 201 });
 }
