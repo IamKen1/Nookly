@@ -594,6 +594,9 @@ const ProductCard = memo(({ product, onAddToCart }: { product: Product; onAddToC
           </div>
         )}
         <StockBadge isOutOfStock={isOutOfStock} isLowStock={isLowStock} />
+        {product.isVatable && (
+          <span className="absolute left-1.5 top-1.5 rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">VAT</span>
+        )}
       </div>
 
       <h3 className="line-clamp-2 min-h-8 text-xs font-semibold leading-tight text-gray-900" title={product.name}>
@@ -651,7 +654,12 @@ const ProductListItem = memo(({ product, onAddToCart }: { product: Product; onAd
       </div>
 
       <div className="min-w-0 flex-1">
-        <h3 className="truncate text-sm font-semibold text-gray-900">{product.name}</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="truncate text-sm font-semibold text-gray-900">{product.name}</h3>
+          {product.isVatable && (
+            <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">VAT</span>
+          )}
+        </div>
         <p className="truncate text-xs text-gray-500">{[product.genericName, details].filter(Boolean).join(" · ") || " "}</p>
       </div>
 
