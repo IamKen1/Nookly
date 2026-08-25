@@ -39,7 +39,16 @@ export async function GET(request: NextRequest) {
       contactNumber: t.contactNumber,
       isActive: t.isActive,
       createdAt: t.createdAt.toISOString(),
-      plan: t.subscription ? { code: t.subscription.plan.code, name: t.subscription.plan.name, status: t.subscription.status } : null,
+      plan: t.subscription
+        ? {
+            code: t.subscription.plan.code,
+            name: t.subscription.plan.name,
+            status: t.subscription.status,
+            // Whichever date actually matters for "when does this lapse" —
+            // trial end while trialing, renewal date once on a paid cycle.
+            expiresAt: (t.subscription.status === "TRIALING" ? t.subscription.trialEndsAt : t.subscription.currentPeriodEnd)?.toISOString() ?? null,
+          }
+        : null,
       counts: t._count,
     }))
   );

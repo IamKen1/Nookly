@@ -13,9 +13,18 @@ interface Tenant {
   contactNumber: string | null;
   isActive: boolean;
   createdAt: string;
-  plan: { code: string; name: string; status: string } | null;
+  plan: { code: string; name: string; status: string; expiresAt: string | null } | null;
   counts: { users: number; products: number; sales: number; stores: number };
 }
+
+// Highlights an already-lapsed or soon-to-lapse date so admins can spot
+// tenants needing follow-up without opening each one.
+const expiryTone = (expiresAt: string) => {
+  const daysLeft = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return "text-red-400";
+  if (daysLeft <= 7) return "text-amber-400";
+  return "text-zinc-500";
+};
 
 interface PlanOption {
   id: string;
@@ -195,6 +204,12 @@ export default function TenantsTab() {
                       <>
                         {t.plan.name}
                         <p className="text-xs text-zinc-500">{t.plan.status}</p>
+                        {t.plan.expiresAt && (
+                          <p className={`text-xs ${expiryTone(t.plan.expiresAt)}`}>
+                            {t.plan.status === "TRIALING" ? "Trial ends" : t.plan.status === "CANCELED" ? "Ends" : "Renews"}{" "}
+                            {formatDate(t.plan.expiresAt)}
+                          </p>
+                        )}
                       </>
                     ) : (
                       "—"
