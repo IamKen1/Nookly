@@ -67,7 +67,11 @@ export default function PricingSection({ isAuthenticated, plans }: { isAuthentic
 
         <div className="mt-12 grid gap-6 sm:mt-16 lg:grid-cols-3">
           {plans.map((plan) => {
-            const price = cycle === "monthly" ? plan.priceMonthly : Math.round(plan.priceYearly / 12);
+            // In yearly mode, the amount actually billed is the yearly total
+            // — that must be the prominent number, not the /mo breakdown,
+            // or customers don't notice what they're really committing to.
+            const monthlyEquivalent = Math.round(plan.priceYearly / 12);
+            const price = cycle === "monthly" ? plan.priceMonthly : plan.priceYearly;
             const highlight = plan.code === highlightCode;
             return (
               <div
@@ -92,11 +96,11 @@ export default function PricingSection({ isAuthenticated, plans }: { isAuthentic
 
                 <div className="mt-6 flex items-baseline gap-1">
                   <span className="text-4xl font-bold tracking-tight">{peso(price)}</span>
-                  <span className={highlight ? "text-zinc-400" : "text-zinc-500"}>/mo</span>
+                  <span className={highlight ? "text-zinc-400" : "text-zinc-500"}>{cycle === "monthly" ? "/mo" : "/year"}</span>
                 </div>
                 {cycle === "yearly" && (
                   <p className={`mt-1 text-xs ${highlight ? "text-zinc-400" : "text-zinc-500"}`}>
-                    billed {peso(plan.priceYearly)} yearly
+                    that&apos;s {peso(monthlyEquivalent)}/mo — 2 months free
                   </p>
                 )}
 
