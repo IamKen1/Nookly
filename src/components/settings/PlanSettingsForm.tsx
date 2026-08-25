@@ -139,7 +139,14 @@ export default function PlanSettingsForm({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-medium text-zinc-500">Current plan</p>
-            <p className="mt-1 text-xl font-bold text-zinc-900">{currentPlan.name}</p>
+            <p className="mt-1 text-xl font-bold text-zinc-900">
+              {currentPlan.name}
+              {currentPlan.status !== "TRIALING" && (
+                <span className="ml-1.5 text-sm font-medium text-zinc-400">
+                  ({currentPlan.billingCycle === "YEARLY" ? "Yearly" : "Monthly"})
+                </span>
+              )}
+            </p>
           </div>
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -167,7 +174,7 @@ export default function PlanSettingsForm({
             : currentPlan.status === "EXPIRED" || currentPlan.status === "PAST_DUE"
             ? `Access paused — pick a plan below to reactivate`
             : currentPlan.currentPeriodEnd
-            ? `Renews ${formatDate(currentPlan.currentPeriodEnd)}`
+            ? `${currentPlan.status === "CANCELED" ? "Ends" : "Renews"} ${formatDate(currentPlan.currentPeriodEnd)}`
             : null}
         </p>
 
