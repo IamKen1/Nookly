@@ -13,7 +13,7 @@ interface Tenant {
   contactNumber: string | null;
   isActive: boolean;
   createdAt: string;
-  plan: { code: string; name: string; status: string; expiresAt: string | null } | null;
+  plan: { code: string; name: string; status: string; billingCycle: string; expiresAt: string | null } | null;
   counts: { users: number; products: number; sales: number; stores: number };
 }
 
@@ -203,6 +203,9 @@ export default function TenantsTab() {
                     {t.plan ? (
                       <>
                         {t.plan.name}
+                        {t.plan.status !== "TRIALING" && (
+                          <span className="text-xs text-zinc-500"> ({t.plan.billingCycle === "YEARLY" ? "Yearly" : "Monthly"})</span>
+                        )}
                         <p className="text-xs text-zinc-500">{t.plan.status}</p>
                         {t.plan.expiresAt && (
                           <p className={`text-xs ${expiryTone(t.plan.expiresAt)}`}>
