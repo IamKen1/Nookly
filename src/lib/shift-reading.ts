@@ -33,6 +33,11 @@ export interface ShiftReading {
     total: number;
     feesEarned: number;
   };
+  expenses: {
+    count: number;
+    total: number;
+    items: { id: string; description: string; amount: number; createdAt: string }[];
+  };
   computedExpectedCash: number;
 }
 
@@ -43,9 +48,10 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
   });
   if (!shift) return null;
 
-  const [sales, cashTransactions] = await Promise.all([
+  const [sales, cashTransactions, shiftExpenses] = await Promise.all([
     prisma.sale.findMany({ where: { shiftId } }),
     prisma.cashTransaction.findMany({ where: { shiftId } }),
+    prisma.shiftExpense.findMany({ where: { shiftId }, orderBy: { createdAt: "asc" } }),
   ]);
   const active = sales.filter((s) => s.status !== "CANCELLED");
   const completed = active.filter((s) => s.status === "COMPLETED");
@@ -80,6 +86,7 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
   // Load: customer pays cash for prepaid load — same direction as cash-in, no
   // physical cash leaves the drawer (its fee is included below too).
   const netCashImpact = cashInTotal - cashOutTotal + loadTotal + eWalletFeesEarned + loadFeesEarned;
+  const expensesTotal = shiftExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
   return {
     id: shift.id,
@@ -114,6 +121,16 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
       total: loadTotal,
       feesEarned: loadFeesEarned,
     },
-    computedExpectedCash: Number(shift.startingCash) + cashSalesTotal + netCashImpact,
+    expenses: {
+      count: shiftExpenses.length,
+      total: expensesTotal,
+      items: shiftExpenses.map((e) => ({
+        id: e.id,
+        description: e.description,
+        amount: Number(e.amount),
+        createdAt: e.createdAt.toISOString(),
+      })),
+    },
+    computedExpectedCash: Number(shift.startingCash) + cashSalesTotal + netCashImpact - expensesTotal,
   };
 }

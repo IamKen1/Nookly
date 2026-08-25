@@ -71,6 +71,7 @@ model Tenant {
   invites              TenantInvite[]
   planChangeRequests   PlanChangeRequest[]
   rolePermissions      RolePermission[]
+  shiftExpenses        ShiftExpense[]
 
   @@map("tenants")
 }
@@ -706,10 +707,29 @@ model Shift {
   user             User              @relation(fields: [userId], references: [id])
   sales            Sale[]
   cashTransactions CashTransaction[]
+  expenses         ShiftExpense[]
 
   @@index([tenantId, storeId, closedAt])
   @@index([userId, closedAt])
   @@map("shifts")
+}
+
+// Cash paid out of the drawer during a shift for a business expense (e.g.
+// supplies, delivery fee) — distinct from CashTransaction (e-wallet/load
+// services), which has its own reporting and shouldn't be conflated with
+// this. Reduces the shift's expected cash-in-drawer by the same amount.
+model ShiftExpense {
+  id          String   @id @default(cuid())
+  tenantId    String
+  shiftId     String
+  description String
+  amount      Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shift       Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([shiftId])
+  @@map("shift_expenses")
 }
 
 // GCash/Maya/etc "cash in / cash out" agent transactions, plus prepaid mobile

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Wallet, Clock, Loader2 } from "lucide-react";
+import { X, Wallet, Clock, Loader2, Plus } from "lucide-react";
 import { peso, formatDateTime } from "@/lib/format";
 
 interface ShiftReading {
@@ -31,6 +31,11 @@ interface ShiftReading {
     count: number;
     total: number;
     feesEarned: number;
+  };
+  expenses: {
+    count: number;
+    total: number;
+    items: { id: string; description: string; amount: number; createdAt: string }[];
   };
   computedExpectedCash: number;
 }
@@ -66,6 +71,11 @@ export default function ShiftModal({
   const [error, setError] = useState<string | null>(null);
   const [closedSummary, setClosedSummary] = useState<{ endingCash: number; expectedCash: number; variance: number } | null>(null);
 
+  const [expenseDescription, setExpenseDescription] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseBusy, setExpenseBusy] = useState(false);
+  const [expenseError, setExpenseError] = useState<string | null>(null);
+
   // showLoading is true when the modal first opens (expected, brief flash is
   // fine), but must be false after handleStart() succeeds — the user just
   // filled in a starting-cash amount and clicked "Start shift"; they should
@@ -89,11 +99,63 @@ export default function ShiftModal({
     if (showLoading) setLoading(false);
   };
 
+  const refreshReading = async () => {
+    if (!openShiftId) return;
+    const readingRes = await fetch(`/api/shifts/${openShiftId}`);
+    if (readingRes.ok) setReading(await readingRes.json());
+  };
+
+  const addExpense = async () => {
+    if (!openShiftId) return;
+    setExpenseError(null);
+    const amt = parseFloat(expenseAmount);
+    if (!expenseDescription.trim()) {
+      setExpenseError("Enter what the expense was for.");
+      return;
+    }
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setExpenseError("Enter a valid amount.");
+      return;
+    }
+    setExpenseBusy(true);
+    try {
+      const res = await fetch(`/api/shifts/${openShiftId}/expenses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: expenseDescription.trim(), amount: amt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setExpenseError(data.error ?? "Failed to add expense.");
+        return;
+      }
+      setExpenseDescription("");
+      setExpenseAmount("");
+      await refreshReading();
+    } finally {
+      setExpenseBusy(false);
+    }
+  };
+
+  const removeExpense = async (expenseId: string) => {
+    if (!openShiftId) return;
+    setExpenseBusy(true);
+    try {
+      await fetch(`/api/shifts/${openShiftId}/expenses/${expenseId}`, { method: "DELETE" });
+      await refreshReading();
+    } finally {
+      setExpenseBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       setClosedSummary(null);
       setEndingCashInput("");
       setNotes("");
+      setExpenseDescription("");
+      setExpenseAmount("");
+      setExpenseError(null);
       load();
     }
   }, [isOpen]);
@@ -266,8 +328,66 @@ export default function ShiftModal({
                       <div className="flex justify-between"><span>Fees earned</span><span>{peso(reading?.load.feesEarned ?? 0)}</span></div>
                     </div>
                   )}
+                  {(reading?.expenses.count ?? 0) > 0 && (
+                    <div className="mt-2 space-y-0.5 border-t pt-2 text-xs text-gray-500">
+                      <p className="font-medium text-gray-700">Expenses</p>
+                      <div className="flex justify-between"><span>Total ({reading?.expenses.count})</span><span>-{peso(reading?.expenses.total ?? 0)}</span></div>
+                    </div>
+                  )}
                   <div className="flex justify-between border-t pt-1 font-semibold text-emerald-700"><span>Expected cash in drawer</span><span>{peso(reading?.computedExpectedCash ?? 0)}</span></div>
                 </div>
+              </div>
+
+              <div className="border-t pt-3">
+                <p className="mb-2 text-sm font-semibold text-gray-900">Expenses</p>
+                <p className="mb-2 text-xs text-gray-500">Cash paid out of the drawer for a business expense (supplies, delivery, etc.) — subtracted from expected cash.</p>
+                {(reading?.expenses.items.length ?? 0) > 0 && (
+                  <div className="mb-2 space-y-1.5">
+                    {reading?.expenses.items.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs">
+                        <span className="text-gray-700">{item.description}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">{peso(item.amount)}</span>
+                          <button
+                            onClick={() => removeExpense(item.id)}
+                            disabled={expenseBusy}
+                            className="text-gray-400 hover:text-red-600 disabled:opacity-50"
+                            title="Remove"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    value={expenseDescription}
+                    onChange={(e) => setExpenseDescription(e.target.value)}
+                    placeholder="What was it for?"
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500"
+                  />
+                  <div className="relative w-28 shrink-0">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">₱</span>
+                    <input
+                      type="text"
+                      value={expenseAmount}
+                      onChange={(e) => setExpenseAmount(e.target.value.replace(/[^\d.]/g, ""))}
+                      placeholder="0.00"
+                      className="w-full rounded-lg border border-gray-300 py-2 pl-8 pr-2 text-sm focus:border-emerald-500"
+                    />
+                  </div>
+                  <button
+                    onClick={addExpense}
+                    disabled={expenseBusy}
+                    className="flex shrink-0 items-center justify-center rounded-lg bg-gray-900 px-3 text-white hover:bg-gray-700 disabled:opacity-50 btn-press"
+                    title="Add expense"
+                  >
+                    {expenseBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  </button>
+                </div>
+                {expenseError && <p className="mt-1.5 text-xs text-red-600">{expenseError}</p>}
               </div>
 
               <div className="border-t pt-3">
