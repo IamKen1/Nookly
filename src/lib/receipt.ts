@@ -38,7 +38,8 @@ const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
   return getComputationLines(result, discountType, discountPercent).filter((line) => line.kind !== "total");
 };
 
-export const generateReceiptHTML = (receiptData: ReceiptData): string => {
+export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPrint?: boolean } = {}): string => {
+  const { autoPrint = true } = options;
   const { saleNumber, date, items, totalAmount, paymentMethod, cashReceived, changeGiven, customer, cashier, orderRemarks, store } = receiptData;
 
   const headerLines = getReceiptHeaderLines(store);
@@ -164,27 +165,64 @@ export const generateReceiptHTML = (receiptData: ReceiptData): string => {
         ${footerLines.map((line) => `<div>${line}</div>`).join("")}
       </div>
 
-      <script>
+      ${
+        autoPrint
+          ? `<script>
         window.onload = function() {
           window.print();
           window.addEventListener('afterprint', function() {
             setTimeout(function() { window.close(); }, 500);
           });
         }
-      </script>
+      </script>`
+          : ""
+      }
     </body>
     </html>
   `;
 };
 
+// Prints via a hidden same-page <iframe> instead of window.open(...). A
+// popup opened asynchronously (after the checkout/receipt fetch resolves,
+// not synchronously inside the button click that started it) is exactly
+// the case Chrome's popup blocker is designed to silently kill or push to
+// the background — which is why the print preview sometimes never
+// auto-printed and closing it did nothing. An iframe needs no such
+// permission, so triggering print() from it is reliable regardless of how
+// long the async work before it took.
 export const printReceipt = (receiptData: ReceiptData) => {
-  const html = generateReceiptHTML(receiptData);
-  const printWindow = window.open("", "_blank", "width=400,height=600");
-  if (printWindow) {
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-  }
+  const html = generateReceiptHTML(receiptData, { autoPrint: false });
+
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+
+  const cleanup = () => {
+    // Give the print dialog a moment to actually hand off to the OS print
+    // spooler before tearing down the iframe it's printing from.
+    setTimeout(() => iframe.remove(), 1000);
+  };
+
+  iframe.onload = () => {
+    const win = iframe.contentWindow;
+    if (!win) {
+      cleanup();
+      return;
+    }
+    win.addEventListener("afterprint", cleanup);
+    win.focus();
+    win.print();
+    // afterprint doesn't fire in every browser (e.g. some in-app webviews) —
+    // fall back to a fixed timeout so the iframe is never left behind.
+    setTimeout(cleanup, 15000);
+  };
+
+  iframe.srcdoc = html;
 };
 
 export const downloadReceiptHTML = (receiptData: ReceiptData) => {
