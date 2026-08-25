@@ -16,7 +16,7 @@ export default function Hero({ isAuthenticated }: { isAuthenticated: boolean }) 
             trust
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-zinc-600">
-            One subscription for POS, inventory, prescriptions, and official receipts —
+            One subscription for POS, inventory, prescriptions, and receipts —
             from a single sari-sari pharmacy to a multi-branch chain.
             Setup in minutes, sales insights in real time.
           </p>
@@ -48,7 +48,7 @@ export default function Hero({ isAuthenticated }: { isAuthenticated: boolean }) 
         <div className="relative">
           <div className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-2xl shadow-zinc-900/10">
             <div className="flex items-center justify-between rounded-t-2xl bg-zinc-900 px-4 py-3 text-white">
-              <span className="text-sm font-semibold">Nookly · Kendall&apos;s Pharmacy</span>
+              <span className="text-sm font-semibold">Nookly · Juan Pharmacy</span>
               <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
                 Live
               </span>

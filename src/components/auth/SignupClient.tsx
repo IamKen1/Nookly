@@ -107,7 +107,7 @@ function SignupForm() {
                   required
                   value={form.businessName}
                   onChange={(e) => set("businessName", e.target.value)}
-                  placeholder="Kendall's Pharmacy"
+                  placeholder="Pharmacy Name"
                   className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 />
               </div>

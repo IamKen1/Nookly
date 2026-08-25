@@ -28,7 +28,7 @@ const features = [
   },
   {
     icon: ReceiptText,
-    title: "Detailed official receipts",
+    title: "Detailed, transparent receipts",
     description:
       "VAT breakdown, discount computation, and store details configured per branch, printable on a thermal printer.",
   },

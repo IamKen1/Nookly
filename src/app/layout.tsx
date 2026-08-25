@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Nookly — Point of Sale for the Modern Drugstore",
   description:
-    "Nookly is a multi-branch, cloud-based POS built for drugstores and pharmacies: inventory, prescriptions, official receipts, and sales analytics — all in one subscription.",
+    "Nookly is a multi-branch, cloud-based POS built for drugstores and pharmacies: inventory, prescriptions, receipts, and sales analytics — all in one subscription.",
 };
 
 export default function RootLayout({

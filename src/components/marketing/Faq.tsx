@@ -13,7 +13,7 @@ const faqs = [
   },
   {
     q: "What if I already have existing products and inventory?",
-    a: "You can bulk import via Excel/CSV from day one, and if you're moving from another Kendall's-style POS system, ask us about a direct data migration — products, sales history, customers, prescriptions, and staff accounts can be brought over in one go.",
+    a: "You can bulk import via Excel/CSV from day one, and if you're moving from another POS system, ask us about a direct data migration — products, sales history, customers, prescriptions, and staff accounts can be brought over in one go.",
   },
   {
     q: "Does it handle VAT and Senior/PWD discounts?",
