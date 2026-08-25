@@ -1,12 +1,26 @@
+import { Prisma } from "@prisma/client";
 import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
-import { startOfTodayPH } from "@/lib/timezone";
+import { startOfTodayPH, startOfDatePH, endOfDatePH } from "@/lib/timezone";
 import { hasPermission } from "@/lib/permissions";
 import AppShell from "@/components/app/AppShell";
 import SalesClient from "@/components/sales/SalesClient";
 
-export default async function SalesPage() {
+export default async function SalesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const session = await requireActiveSession();
+  const params = await searchParams;
+  const asString = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || "";
+
+  const dateFrom = asString(params.dateFrom);
+  const dateTo = asString(params.dateTo);
+  const cashierId = asString(params.cashierId);
+  const paymentMethod = asString(params.paymentMethod);
+  const status = asString(params.status);
+  const search = asString(params.search).trim();
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },
@@ -17,19 +31,33 @@ export default async function SalesPage() {
 
   const canVoid = await hasPermission(session.tenantId, session.role, "sales_void");
 
-  const [sales, todayAgg] = await Promise.all([
+  const where: Prisma.SaleWhereInput = { tenantId: tenant.id };
+  if (dateFrom) where.saleDate = { ...(where.saleDate as object), gte: startOfDatePH(dateFrom) };
+  if (dateTo) where.saleDate = { ...(where.saleDate as object), lt: endOfDatePH(dateTo) };
+  if (cashierId) where.userId = cashierId;
+  if (paymentMethod) where.paymentMethod = paymentMethod as Prisma.SaleWhereInput["paymentMethod"];
+  if (status) where.status = status as Prisma.SaleWhereInput["status"];
+  if (search) where.saleNumber = { contains: search, mode: "insensitive" };
+
+  const [sales, todayAgg, cashiers] = await Promise.all([
     prisma.sale.findMany({
-      where: { tenantId: tenant.id },
+      where,
       include: { items: { include: { product: true } }, user: true },
       orderBy: { saleDate: "desc" },
       take: 100,
     }),
-    // Computed independently from the (capped) list above, on the same PH-day
-    // boundary the dashboard uses — so this total is never wrong just because
-    // a busy day pushed early sales out of the most-recent-100 window.
+    // Computed independently of the filtered/capped list above, on the same
+    // PH-day boundary the dashboard uses — the "Today's total" stat always
+    // reflects the real day, regardless of what filters are applied to the
+    // table below it.
     prisma.sale.aggregate({
       where: { tenantId: tenant.id, status: "COMPLETED", saleDate: { gte: startOfTodayPH() } },
       _sum: { totalAmount: true },
+    }),
+    prisma.user.findMany({
+      where: { tenantId: tenant.id, isActive: true },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: { firstName: "asc" },
     }),
   ]);
   const todayTotal = Number(todayAgg._sum.totalAmount ?? 0);
@@ -39,6 +67,8 @@ export default async function SalesPage() {
       <SalesClient
         canVoid={canVoid}
         todayTotal={todayTotal}
+        cashiers={cashiers.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`.trim() }))}
+        filters={{ dateFrom, dateTo, cashierId, paymentMethod, status, search }}
         sales={sales.map((s) => ({
           id: s.id,
           saleNumber: s.saleNumber,

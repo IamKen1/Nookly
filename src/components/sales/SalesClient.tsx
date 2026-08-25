@@ -1,10 +1,13 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, ChevronDown, ChevronUp, Loader2, Printer, RotateCcw, X } from "lucide-react";
+import { Ban, ChevronDown, ChevronUp, Loader2, Printer, RotateCcw, Search, X } from "lucide-react";
 import { printReceipt } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
+
+const PAYMENT_METHODS = ["CASH", "CREDIT_CARD", "DEBIT_CARD", "INSURANCE", "CHECK", "SPLIT"];
+const STATUSES = ["COMPLETED", "CANCELLED", "RETURNED"];
 
 interface SaleItem {
   id: string;
@@ -31,21 +34,74 @@ interface Sale {
 
 const peso = (value: number) => `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
 
+interface Filters {
+  dateFrom: string;
+  dateTo: string;
+  cashierId: string;
+  paymentMethod: string;
+  status: string;
+  search: string;
+}
+
 export default function SalesClient({
   sales: initialSales,
   canVoid,
   todayTotal,
+  cashiers,
+  filters,
 }: {
   sales: Sale[];
   canVoid: boolean;
   todayTotal: number;
+  cashiers: { id: string; name: string }[];
+  filters: Filters;
 }) {
   const router = useRouter();
   const [sales, setSales] = useState(initialSales);
+  const [prevInitialSales, setPrevInitialSales] = useState(initialSales);
+  // Adjusting state directly during render (React's documented pattern for
+  // "reset state when a prop changes") instead of a useEffect — a new
+  // server-rendered `initialSales` (from a filter navigation) must replace
+  // local state before this render commits, not one tick later.
+  if (initialSales !== prevInitialSales) {
+    setPrevInitialSales(initialSales);
+    setSales(initialSales);
+  }
+
   const [expanded, setExpanded] = useState<string | null>(null);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const [searchInput, setSearchInput] = useState(filters.search);
+  const [prevSearchFilter, setPrevSearchFilter] = useState(filters.search);
+  if (filters.search !== prevSearchFilter) {
+    setPrevSearchFilter(filters.search);
+    setSearchInput(filters.search);
+  }
+
+  const applyFilters = (patch: Partial<Filters>) => {
+    const next = { ...filters, ...patch };
+    const params = new URLSearchParams();
+    if (next.dateFrom) params.set("dateFrom", next.dateFrom);
+    if (next.dateTo) params.set("dateTo", next.dateTo);
+    if (next.cashierId) params.set("cashierId", next.cashierId);
+    if (next.paymentMethod) params.set("paymentMethod", next.paymentMethod);
+    if (next.status) params.set("status", next.status);
+    if (next.search) params.set("search", next.search);
+    router.push(`/sales${params.toString() ? `?${params}` : ""}`);
+  };
+
+  useEffect(() => {
+    if (searchInput === filters.search) return;
+    const t = setTimeout(() => applyFilters({ search: searchInput }), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  const hasActiveFilters = Boolean(
+    filters.dateFrom || filters.dateTo || filters.cashierId || filters.paymentMethod || filters.status || filters.search
+  );
 
   const flashSuccess = (message: string) => {
     setSuccessMessage(message);
@@ -157,7 +213,87 @@ export default function SalesClient({
         <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{successMessage}</p>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+      <div className="mt-4 flex flex-wrap items-end gap-2 rounded-2xl border border-zinc-200 bg-white p-3">
+        <div className="relative min-w-0 flex-1 basis-48">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search AR #..."
+            className="w-full rounded-lg border border-zinc-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
+          <input
+            type="date"
+            value={filters.dateFrom}
+            onChange={(e) => applyFilters({ dateFrom: e.target.value })}
+            className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
+          <input
+            type="date"
+            value={filters.dateTo}
+            onChange={(e) => applyFilters({ dateTo: e.target.value })}
+            className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-500">Cashier</label>
+          <select
+            value={filters.cashierId}
+            onChange={(e) => applyFilters({ cashierId: e.target.value })}
+            className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
+          >
+            <option value="">All cashiers</option>
+            {cashiers.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-500">Payment</label>
+          <select
+            value={filters.paymentMethod}
+            onChange={(e) => applyFilters({ paymentMethod: e.target.value })}
+            className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
+          >
+            <option value="">All methods</option>
+            {PAYMENT_METHODS.map((m) => (
+              <option key={m} value={m}>{m.replace("_", " ")}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-500">Status</label>
+          <select
+            value={filters.status}
+            onChange={(e) => applyFilters({ status: e.target.value })}
+            className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
+          >
+            <option value="">All statuses</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        {hasActiveFilters && (
+          <button
+            onClick={() => {
+              setSearchInput("");
+              router.push("/sales");
+            }}
+            className="btn-press rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-500 hover:border-zinc-300 hover:text-zinc-700"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-200 bg-white">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
@@ -174,7 +310,7 @@ export default function SalesClient({
             {sales.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-zinc-400">
-                  No sales yet — head to the POS to make your first sale.
+                  {hasActiveFilters ? "No sales match your filters." : "No sales yet — head to the POS to make your first sale."}
                 </td>
               </tr>
             ) : (
