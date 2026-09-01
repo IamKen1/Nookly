@@ -175,6 +175,12 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                   <span>Less: Withholding Tax:</span>
                   <span>-{peso(0)}</span>
                 </div>
+                {totals.vatRemovedFromVatable > 0 && (
+                  <div className="flex justify-between text-sm font-semibold text-emerald-700">
+                    <span>Total Savings:</span>
+                    <span>{peso(totals.vatRemovedFromVatable + totals.discountAmount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="font-semibold">Total Amount Due:</span>
                   <span className="font-semibold text-emerald-600">{peso(finalTotal)}</span>
@@ -193,6 +199,8 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                           ? "font-medium text-gray-700"
                           : line.kind === "subtract"
                           ? "text-red-600"
+                          : line.kind === "savings"
+                          ? "font-semibold text-emerald-600"
                           : "text-gray-500"
                       }`}
                     >

@@ -94,8 +94,8 @@ export const calculateVatInclusiveTotals = ({
 export interface ComputationLine {
   label: string
   amount: number
-  /** "base" = starting gross figure, "subtract" = a -amount deduction, "subtotal"/"total" = a running = result */
-  kind: 'base' | 'subtract' | 'subtotal' | 'total'
+  /** "base" = starting gross figure, "subtract" = a -amount deduction, "subtotal"/"total" = a running = result, "savings" = the customer's total benefit */
+  kind: 'base' | 'subtract' | 'subtotal' | 'total' | 'savings'
 }
 
 // Renders the exact arithmetic behind calculateVatInclusiveTotals as a flat list of
@@ -140,6 +140,13 @@ export const getComputationLines = (
 
   if (result.discountAmount > 0) {
     lines.push({ label: 'Total Discount', amount: -result.discountAmount, kind: 'subtract' })
+  }
+
+  // For senior/PWD, the customer benefits from BOTH the VAT removal and the
+  // discount — "Total Discount" alone understates what they actually saved,
+  // since it doesn't include the VAT that was stripped off first.
+  if (isSeniorPwd && result.vatRemovedFromVatable > 0) {
+    lines.push({ label: 'Total Savings', amount: result.vatRemovedFromVatable + result.discountAmount, kind: 'savings' })
   }
 
   lines.push({ label: 'Total Amount Due', amount: result.finalTotal, kind: 'total' })
