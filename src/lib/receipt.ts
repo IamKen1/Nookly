@@ -84,7 +84,7 @@ export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPri
         .comp-subtract { color: #b91c1c; }
         .comp-subtotal { color: #555; border-top: 1px dashed #ccc; padding-top: 1px; margin-top: 1px; }
         .comp-savings { font-weight: 700; color: #047857; border-top: 1px dashed #ccc; padding-top: 2px; margin-top: 1px; }
-        .final-total { font-weight: bold; font-size: 13px; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 3px 0; margin: 4px 0; display: flex; justify-content: space-between; }
+        .final-total { font-weight: bold; font-size: 11px; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 3px 0; margin: 4px 0; display: flex; justify-content: space-between; }
         .sc-pwd-block { border: 1px solid #000; padding: 4px; margin-bottom: 4px; font-size: 9px; }
         .sc-pwd-title { font-weight: 700; text-align: center; margin-bottom: 4px; text-transform: uppercase; }
         .sc-pwd-field { margin-bottom: 6px; }
