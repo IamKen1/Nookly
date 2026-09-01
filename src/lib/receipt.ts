@@ -78,7 +78,6 @@ export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPri
         .item-line { display: flex; justify-content: space-between; font-size: 9.5px; }
         .item-count { font-size: 9px; border-bottom: 1px dashed #000; padding-bottom: 3px; margin-bottom: 3px; }
         .section { margin-bottom: 4px; font-size: 9.5px; }
-        .section-title { font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 2px; }
         .total-line { display: flex; justify-content: space-between; margin-bottom: 1px; }
         .total-line.grand-total { font-weight: bold; border-top: 1px dashed #000; padding-top: 2px; margin-top: 2px; }
         .comp-base { font-weight: 700; }
@@ -130,7 +129,6 @@ export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPri
       <div class="item-count">Total Items: ${items.length}</div>
 
       <div class="section">
-        <div class="section-title">How This Total Was Computed</div>
         ${computationLines.map(amountLine).join("")}
       </div>
 
@@ -249,8 +247,6 @@ export const generateThermalReceiptText = (receiptData: ReceiptData): string => 
   const LEFT = ESC + "a0";
   const BOLD_ON = ESC + "E1";
   const BOLD_OFF = ESC + "E0";
-  const UNDERLINE_ON = ESC + "-1";
-  const UNDERLINE_OFF = ESC + "-0";
   const CUT = GS + "V1";
   const NEWLINE = "\n";
   const WIDTH = 32;
@@ -312,7 +308,6 @@ export const generateThermalReceiptText = (receiptData: ReceiptData): string => 
   receipt += `Total Items: ${items.length}` + NEWLINE;
   receipt += SEPARATOR + NEWLINE;
 
-  receipt += CENTER + UNDERLINE_ON + "HOW THIS TOTAL WAS COMPUTED" + UNDERLINE_OFF + NEWLINE + LEFT;
   computationLines.forEach((l) => {
     const isBold = l.kind === "base" || l.kind === "subtotal" || l.kind === "savings";
     const value = (l.kind === "subtotal" ? "= " : "") + peso(l.amount);
