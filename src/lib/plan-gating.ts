@@ -2,13 +2,17 @@ import { prisma } from "@/lib/prisma";
 
 export type PlanCode = "SPROUT" | "BLOOM" | "EMPIRE";
 
-export type FeatureKey = "reports" | "prescriptions" | "alerts" | "multiBranch";
+export type FeatureKey = "reports" | "prescriptions" | "alerts" | "multiBranch" | "apiAccess";
 
-const FEATURE_COLUMN: Record<FeatureKey, "featureReports" | "featurePrescriptions" | "featureAlerts" | "featureMultiBranch"> = {
+const FEATURE_COLUMN: Record<
+  FeatureKey,
+  "featureReports" | "featurePrescriptions" | "featureAlerts" | "featureMultiBranch" | "featureApiAccess"
+> = {
   reports: "featureReports",
   prescriptions: "featurePrescriptions",
   alerts: "featureAlerts",
   multiBranch: "featureMultiBranch",
+  apiAccess: "featureApiAccess",
 };
 
 const UPGRADE_FEATURE_LABEL: Record<FeatureKey, string> = {
@@ -16,6 +20,7 @@ const UPGRADE_FEATURE_LABEL: Record<FeatureKey, string> = {
   prescriptions: "Prescription management",
   alerts: "Email alerts",
   multiBranch: "Multi-branch",
+  apiAccess: "API access",
 };
 
 // Admin-configurable via the ops console "Plans" tab — each plan's checklist

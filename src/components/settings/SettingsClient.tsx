@@ -6,8 +6,9 @@ import ReceiptSettingsForm from "./ReceiptSettingsForm";
 import NotificationSettingsForm from "./NotificationSettingsForm";
 import PlanSettingsForm from "./PlanSettingsForm";
 import UserAccessForm from "./UserAccessForm";
+import ApiKeysForm from "./ApiKeysForm";
 
-type Tab = "plan" | "receipt" | "notifications" | "userAccess";
+type Tab = "plan" | "receipt" | "notifications" | "userAccess" | "apiAccess";
 
 interface CurrentPlan {
   code: string;
@@ -31,6 +32,7 @@ interface PlanOption {
 export default function SettingsClient({
   canManageAlerts,
   canManagePlan,
+  canManageApiAccess,
   isOwner,
   currentPlan,
   allPlans,
@@ -38,6 +40,7 @@ export default function SettingsClient({
 }: {
   canManageAlerts: boolean;
   canManagePlan: boolean;
+  canManageApiAccess: boolean;
   isOwner: boolean;
   currentPlan: CurrentPlan | null;
   allPlans: PlanOption[];
@@ -106,6 +109,14 @@ export default function SettingsClient({
             User Access
           </button>
         )}
+        {canManageApiAccess && (
+          <button
+            onClick={() => setTab("apiAccess")}
+            className={`px-4 py-2 text-sm font-semibold ${tab === "apiAccess" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
+          >
+            API Access
+          </button>
+        )}
       </div>
 
       <div className="mt-6">
@@ -115,6 +126,7 @@ export default function SettingsClient({
         {tab === "receipt" && <ReceiptSettingsForm />}
         {tab === "notifications" && canManageAlerts && <NotificationSettingsForm />}
         {tab === "userAccess" && isOwner && <UserAccessForm />}
+        {tab === "apiAccess" && canManageApiAccess && <ApiKeysForm />}
       </div>
     </div>
   );

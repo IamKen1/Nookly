@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { getSubscriptionLapse } from "@/lib/subscription-access";
 import { hasPermission } from "@/lib/permissions";
+import { hasFeature, type PlanCode } from "@/lib/plan-gating";
 import AppShell from "@/components/app/AppShell";
 import SettingsClient from "@/components/settings/SettingsClient";
 
@@ -27,12 +28,15 @@ export default async function SettingsPage() {
   const displayStatus = lapse?.reason === "trial_expired" ? "EXPIRED" : lapse?.reason === "renewal_expired" ? "PAST_DUE" : tenant.subscription?.status;
 
   const canManage = await hasPermission(session.tenantId, session.role, "settings");
+  const canManageApiAccess =
+    canManage && (await hasFeature(tenant.subscription?.plan.code as PlanCode | undefined, "apiAccess"));
 
   return (
     <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
       <SettingsClient
         canManageAlerts={canManage}
         canManagePlan={canManage}
+        canManageApiAccess={canManageApiAccess}
         isOwner={session.role === "OWNER"}
         currentPlan={
           tenant.subscription

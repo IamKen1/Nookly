@@ -28,6 +28,7 @@ model Plan {
   featurePrescriptions Boolean             @default(false)
   featureAlerts        Boolean             @default(false)
   featureMultiBranch   Boolean             @default(false)
+  featureApiAccess     Boolean             @default(false)
   isActive             Boolean             @default(true)
   sortOrder            Int                 @default(0)
   createdAt            DateTime            @default(now())
@@ -37,6 +38,26 @@ model Plan {
   requestsTo           PlanChangeRequest[] @relation("RequestedPlanRequests")
 
   @@map("plans")
+}
+
+// A tenant-generated credential for the read-only public API (gated behind
+// featureApiAccess). Only the sha256 hash is stored — the raw key is shown
+// once at creation time, same pattern as password reset tokens.
+model ApiKey {
+  id              String    @id @default(cuid())
+  tenantId        String
+  name            String
+  keyPrefix       String // first chars of the raw key, shown in the UI so a tenant can tell keys apart without re-revealing them
+  keyHash         String    @unique
+  createdByUserId String
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser   User      @relation(fields: [createdByUserId], references: [id])
+
+  @@index([tenantId])
+  @@map("api_keys")
 }
 
 model Tenant {
@@ -65,6 +86,7 @@ model Tenant {
   receiptSettings      ReceiptSettings?
   notificationSettings NotificationSettings?
   scheduledReports     ScheduledReportDelivery[]
+  apiKeys              ApiKey[]
   supportTickets       SupportTicket[]
   shifts               Shift[]
   cashTransactions     CashTransaction[]
@@ -293,6 +315,7 @@ model User {
   shifts                Shift[]
   cashTransactions      CashTransaction[]
   passwordResetTokens   PasswordResetToken[]
+  apiKeys               ApiKey[]
 
   @@unique([tenantId, email])
   @@map("users")

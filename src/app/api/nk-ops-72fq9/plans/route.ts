@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
       featurePrescriptions: p.featurePrescriptions,
       featureAlerts: p.featureAlerts,
       featureMultiBranch: p.featureMultiBranch,
+      featureApiAccess: p.featureApiAccess,
       isActive: p.isActive,
       tenantCount: p._count.subscriptions,
     }))

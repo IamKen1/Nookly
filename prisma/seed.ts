@@ -17,6 +17,7 @@ const plans = [
     featurePrescriptions: false,
     featureAlerts: false,
     featureMultiBranch: false,
+    featureApiAccess: false,
     features: [
       '1 branch / store',
       'Up to 2 staff accounts',
@@ -42,6 +43,7 @@ const plans = [
     featurePrescriptions: true,
     featureAlerts: true,
     featureMultiBranch: false,
+    featureApiAccess: false,
     features: [
       'Up to 3 branches',
       'Up to 10 staff accounts',
@@ -68,6 +70,7 @@ const plans = [
     featurePrescriptions: true,
     featureAlerts: true,
     featureMultiBranch: true,
+    featureApiAccess: true,
     features: [
       'Unlimited branches',
       'Unlimited staff accounts',
