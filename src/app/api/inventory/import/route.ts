@@ -16,6 +16,11 @@ type RowData = Record<string, unknown>;
 
 const DRUG_SCHEDULE_VALUES: DrugSchedule[] = ["SCHEDULE_I", "SCHEDULE_II", "SCHEDULE_III", "SCHEDULE_IV", "SCHEDULE_V"];
 
+// categoryMap entries created during a dry run use this prefix instead of a
+// real Category id, so later rows in the same file still recognize the
+// category as "already accounted for" without anything being persisted.
+const DRY_RUN_CATEGORY_PREFIX = "__dryrun__:";
+
 const getFieldValue = (row: RowData, candidates: string[]): unknown => {
   for (const candidate of candidates) {
     if (row[candidate] !== undefined && row[candidate] !== null && row[candidate] !== "") return row[candidate];
@@ -86,6 +91,9 @@ const buildProductPayload = (row: RowData, categoryId: string) => {
   const weight = parseNumber(getFieldValue(row, ["Net Weight", "Weight"]));
   const expiryDateValue = getTextValue(row, ["Expiry Date"]);
   const expiryDate = expiryDateValue ? new Date(expiryDateValue) : null;
+  const batchNumber = getTextValue(row, ["Batch Number"]);
+  const batchExpirationValue = getTextValue(row, ["Batch Expiration Date"]);
+  const batchExpirationDate = batchExpirationValue ? new Date(batchExpirationValue) : null;
 
   return {
     name: productName,
@@ -119,6 +127,11 @@ const buildProductPayload = (row: RowData, categoryId: string) => {
     isOTC: parseYesNo(getFieldValue(row, ["Is OTC"]), true),
     isVatable: parseYesNo(getFieldValue(row, ["Is VATable", "Is Vatable"]), true),
     isActive: parseYesNo(getFieldValue(row, ["Is Active"]), true),
+    // Batch/expiry are only ever applied when adding a brand-new product —
+    // valid only if both are present, the date parses, and there's stock to track.
+    batchNumber: batchNumber || null,
+    batchExpirationDate: batchExpirationDate && !Number.isNaN(batchExpirationDate.getTime()) ? batchExpirationDate : null,
+    hasInvalidBatchExpiration: Boolean(batchNumber && batchExpirationValue && Number.isNaN(new Date(batchExpirationValue).getTime())),
   };
 };
 
@@ -127,7 +140,8 @@ const ensureCategory = async (
   row: RowData,
   categoryMap: Map<string, string>,
   warnings: ImportIssue[],
-  rowNumber: number
+  rowNumber: number,
+  dryRun: boolean
 ) => {
   const rawCategoryName = getCategoryName(row);
   if (!rawCategoryName) return null;
@@ -135,6 +149,13 @@ const ensureCategory = async (
   const normalizedName = rawCategoryName.toLowerCase();
   const existingCategoryId = categoryMap.get(normalizedName);
   if (existingCategoryId) return existingCategoryId;
+
+  if (dryRun) {
+    const previewId = `${DRY_RUN_CATEGORY_PREFIX}${normalizedName}`;
+    categoryMap.set(normalizedName, previewId);
+    warnings.push({ row: rowNumber, field: "Category", message: `Would create missing category "${rawCategoryName}"` });
+    return previewId;
+  }
 
   const createdCategory = await prisma.category.create({
     data: { tenantId, name: rawCategoryName, description: "Auto-created from inventory import" },
@@ -153,6 +174,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const mode = formData.get("mode") as string;
+    const dryRun = formData.get("dryRun") === "true";
 
     if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
@@ -171,6 +193,15 @@ export async function POST(request: NextRequest) {
     const categories = await prisma.category.findMany({ where: { tenantId: session.tenantId, isActive: true } });
     const categoryMap = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
 
+    // Only "add" imports create brand-new products, so only they get an
+    // undoable batch record — nothing here needs to revert an update/correction.
+    const importBatch =
+      mode === "add" && !dryRun
+        ? await prisma.importBatch.create({
+            data: { tenantId: session.tenantId, storeId: session.storeId, userId: session.userId, fileName: file.name },
+          })
+        : null;
+
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
       const rowNumber = i + 2;
@@ -178,11 +209,11 @@ export async function POST(request: NextRequest) {
       try {
         let result: "created" | "updated" | "skipped" = "skipped";
         if (mode === "correction") {
-          result = await processStockCorrection(session, row, rowNumber, errors, warnings);
+          result = await processStockCorrection(session, row, rowNumber, errors, warnings, dryRun);
         } else if (mode === "add") {
-          result = await processAddProduct(session, row, rowNumber, categoryMap, errors, warnings);
+          result = await processAddProduct(session, row, rowNumber, categoryMap, errors, warnings, dryRun, importBatch?.id);
         } else if (mode === "update") {
-          result = await processUpdateProduct(session, row, rowNumber, categoryMap, errors, warnings);
+          result = await processUpdateProduct(session, row, rowNumber, categoryMap, errors, warnings, dryRun);
         } else {
           errors.push({ row: rowNumber, field: "mode", message: `Unknown import mode "${mode}"` });
         }
@@ -200,12 +231,25 @@ export async function POST(request: NextRequest) {
     if (created > 0) parts.push(`${created} created`);
     if (updated > 0) parts.push(`${updated} updated`);
     if (skipped > 0) parts.push(`${skipped} skipped`);
+    const verb = dryRun ? "Would process" : "Successfully processed";
     const message = success
-      ? `Successfully processed ${processed} rows: ${parts.join(", ") || "no changes"}`
-      : `Processed ${processed} rows (${parts.join(", ") || "no changes"}) with ${errors.length} error(s)`;
+      ? `${verb} ${processed} rows: ${parts.join(", ") || "no changes"}`
+      : `${dryRun ? "Previewed" : "Processed"} ${processed} rows (${parts.join(", ") || "no changes"}) with ${errors.length} error(s)`;
 
-    invalidateCached(`products:${session.tenantId}`);
-    return NextResponse.json({ success, message, processed, created, updated, skipped, errors, warnings });
+    if (!dryRun) invalidateCached(`products:${session.tenantId}`);
+
+    return NextResponse.json({
+      success,
+      message,
+      dryRun,
+      processed,
+      created,
+      updated,
+      skipped,
+      errors,
+      warnings,
+      importBatchId: importBatch && created > 0 ? importBatch.id : null,
+    });
   } catch (error) {
     console.error("Import error:", error);
     return NextResponse.json({ error: "Import failed: " + (error as Error).message }, { status: 500 });
@@ -217,7 +261,8 @@ async function processStockCorrection(
   row: RowData,
   rowNumber: number,
   errors: ImportIssue[],
-  warnings: ImportIssue[]
+  warnings: ImportIssue[],
+  dryRun: boolean
 ): Promise<"created" | "updated" | "skipped"> {
   const productId = String(row["Product ID"] ?? "");
   const actualCount = parseFloat(String(row["Actual Count"] ?? ""));
@@ -249,6 +294,8 @@ async function processStockCorrection(
     return "skipped";
   }
 
+  if (dryRun) return "updated";
+
   await prisma.productStock.upsert({
     where: { productId_storeId: { productId, storeId: session.storeId! } },
     update: { currentStock: actualCount },
@@ -277,7 +324,9 @@ async function processAddProduct(
   rowNumber: number,
   categoryMap: Map<string, string>,
   errors: ImportIssue[],
-  warnings: ImportIssue[]
+  warnings: ImportIssue[],
+  dryRun: boolean,
+  importBatchId?: string
 ): Promise<"created" | "updated" | "skipped"> {
   const productName = buildProductName(row);
   if (!productName) {
@@ -285,7 +334,7 @@ async function processAddProduct(
     return "skipped";
   }
 
-  const categoryId = await ensureCategory(session.tenantId, row, categoryMap, warnings, rowNumber);
+  const categoryId = await ensureCategory(session.tenantId, row, categoryMap, warnings, rowNumber, dryRun);
   if (!categoryId) {
     errors.push({ row: rowNumber, field: "Category/Use", message: "Category or Use is required" });
     return "skipped";
@@ -299,6 +348,13 @@ async function processAddProduct(
   if (payload.sellingPrice <= 0) {
     errors.push({ row: rowNumber, field: "Selling Price", message: "A valid selling price is required" });
     return "skipped";
+  }
+  if (payload.hasInvalidBatchExpiration) {
+    warnings.push({
+      row: rowNumber,
+      field: "Batch Expiration Date",
+      message: "Couldn't read this date — stock was added without batch/expiry tracking. Use \"Receive batch\" in Inventory to add it later.",
+    });
   }
 
   const existingProduct = await prisma.product.findFirst({
@@ -322,18 +378,41 @@ async function processAddProduct(
     return "skipped";
   }
 
-  const { currentStock, ...productData } = payload;
+  const { currentStock, batchNumber, batchExpirationDate, hasInvalidBatchExpiration, ...productData } = payload;
+  const willTrackBatch = Boolean(batchNumber && batchExpirationDate && currentStock > 0 && !hasInvalidBatchExpiration);
+
+  if (dryRun) {
+    if (willTrackBatch) {
+      warnings.push({ row: rowNumber, field: "Batch", message: `Would receive batch "${batchNumber}" (${currentStock} units, expires ${batchExpirationDate!.toDateString()})` });
+    }
+    return "created";
+  }
 
   try {
-    await prisma.product.create({
-      data: {
-        tenantId: session.tenantId,
-        ...productData,
-        costPrice: new Prisma.Decimal(productData.costPrice),
-        sellingPrice: new Prisma.Decimal(productData.sellingPrice),
-        costPricePerBox: productData.costPricePerBox != null ? new Prisma.Decimal(productData.costPricePerBox) : null,
-        stocks: { create: { storeId: session.storeId!, currentStock } },
-      },
+    await prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
+          tenantId: session.tenantId,
+          ...productData,
+          importBatchId: importBatchId ?? null,
+          costPrice: new Prisma.Decimal(productData.costPrice),
+          sellingPrice: new Prisma.Decimal(productData.sellingPrice),
+          costPricePerBox: productData.costPricePerBox != null ? new Prisma.Decimal(productData.costPricePerBox) : null,
+          stocks: { create: { storeId: session.storeId!, currentStock } },
+        },
+      });
+
+      if (willTrackBatch) {
+        await tx.productBatch.create({
+          data: {
+            productId: product.id,
+            batchNumber: batchNumber!,
+            expirationDate: batchExpirationDate!,
+            quantity: currentStock,
+            costPrice: new Prisma.Decimal(productData.costPrice),
+          },
+        });
+      }
     });
     return "created";
   } catch (error) {
@@ -351,7 +430,8 @@ async function processUpdateProduct(
   rowNumber: number,
   categoryMap: Map<string, string>,
   errors: ImportIssue[],
-  warnings: ImportIssue[]
+  warnings: ImportIssue[],
+  dryRun: boolean
 ): Promise<"created" | "updated" | "skipped"> {
   const productId = getTextValue(row, ["Product ID"]);
   const productName = buildProductName(row);
@@ -369,10 +449,12 @@ async function processUpdateProduct(
   }
 
   let categoryId = product.categoryId;
-  const resolvedCategoryId = await ensureCategory(session.tenantId, row, categoryMap, warnings, rowNumber);
+  const resolvedCategoryId = await ensureCategory(session.tenantId, row, categoryMap, warnings, rowNumber, dryRun);
   if (resolvedCategoryId) categoryId = resolvedCategoryId;
 
   const payload = buildProductPayload(row, categoryId);
+
+  if (dryRun) return "updated";
 
   await prisma.product.update({
     where: { id: product.id },

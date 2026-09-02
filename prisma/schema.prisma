@@ -60,6 +60,25 @@ model ApiKey {
   @@map("api_keys")
 }
 
+// One row per committed spreadsheet import in "add new products" mode — the
+// only mode simple enough to safely undo (nothing to revert on existing
+// products). Tags every product it created so an accidental/wrong-file
+// import can be undone in one click, as long as none of its products have
+// been sold yet.
+model ImportBatch {
+  id        String    @id @default(cuid())
+  tenantId  String
+  storeId   String
+  userId    String
+  fileName  String?
+  createdAt DateTime  @default(now())
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products  Product[]
+
+  @@index([tenantId])
+  @@map("import_batches")
+}
+
 model Tenant {
   id                   String                    @id @default(cuid())
   name                 String // Drugstore / business name shown on receipts
@@ -87,6 +106,7 @@ model Tenant {
   notificationSettings NotificationSettings?
   scheduledReports     ScheduledReportDelivery[]
   apiKeys              ApiKey[]
+  importBatches        ImportBatch[]
   supportTickets       SupportTicket[]
   shifts               Shift[]
   cashTransactions     CashTransaction[]
@@ -510,6 +530,9 @@ model Product {
   size                 String?
   material             String?
   expiryDate           DateTime?
+  // Set only for products created by a spreadsheet import — lets that import
+  // be undone (see ImportBatch) while it's still safe to (nothing sold yet).
+  importBatchId        String?
   tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   prescriptionItems    PrescriptionItem[]
   batches              ProductBatch[]
@@ -518,6 +541,7 @@ model Product {
   saleItems            SaleItem[]
   stockMovements       StockMovement[]
   stocks               ProductStock[]
+  importBatch          ImportBatch?       @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, barcode])
   @@unique([tenantId, ndcNumber])

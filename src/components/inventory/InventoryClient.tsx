@@ -35,12 +35,14 @@ interface ImportIssue {
 interface ImportResult {
   success: boolean;
   message: string;
+  dryRun: boolean;
   processed: number;
   created: number;
   updated: number;
   skipped: number;
   errors: ImportIssue[];
   warnings: ImportIssue[];
+  importBatchId: string | null;
 }
 
 interface Batch {
@@ -67,6 +69,9 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
   const [importMode, setImportMode] = useState<"add" | "update" | "correction">("add");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importing, setImporting] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoMessage, setUndoMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showReceiveBatch, setShowReceiveBatch] = useState(false);
@@ -231,31 +236,88 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
     }
   };
 
-  const handleImport = async (file: File) => {
+  const runImport = async (file: File, dryRun: boolean) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("mode", importMode);
+    formData.append("dryRun", String(dryRun));
+    const res = await fetch("/api/inventory/import", { method: "POST", body: formData });
+    return (await res.json()) as ImportResult;
+  };
+
+  // Every upload previews first (dryRun) — nothing is written until the user
+  // reviews what would happen and explicitly confirms.
+  const handleFileSelected = async (file: File) => {
     setImporting(true);
     setImportResult(null);
+    setUndoMessage(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("mode", importMode);
-      const res = await fetch("/api/inventory/import", { method: "POST", body: formData });
-      const data = await res.json();
+      const data = await runImport(file, true);
       setImportResult(data);
-      if (data.created || data.updated) refreshProducts();
+      setPendingFile(file);
     } catch {
       setImportResult({
         success: false,
-        message: "Network error during import.",
+        message: "Network error while previewing the file.",
+        dryRun: true,
         processed: 0,
         created: 0,
         updated: 0,
         skipped: 0,
         errors: [{ row: 0, field: "network", message: "Failed to reach server." }],
         warnings: [],
+        importBatchId: null,
       });
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!pendingFile) return;
+    setImporting(true);
+    try {
+      const data = await runImport(pendingFile, false);
+      setImportResult(data);
+      if (data.created || data.updated) refreshProducts();
+    } catch {
+      setImportResult({
+        success: false,
+        message: "Network error during import.",
+        dryRun: false,
+        processed: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        errors: [{ row: 0, field: "network", message: "Failed to reach server." }],
+        warnings: [],
+        importBatchId: null,
+      });
+    } finally {
+      setImporting(false);
+      setPendingFile(null);
+    }
+  };
+
+  const cancelImport = () => {
+    setPendingFile(null);
+    setImportResult(null);
+  };
+
+  const undoImport = async (batchId: string) => {
+    if (!confirm("Undo this import? Any products it created that haven't been sold yet will be removed.")) return;
+    setUndoing(true);
+    try {
+      const res = await fetch(`/api/inventory/import/${batchId}`, { method: "DELETE" });
+      const data = await res.json();
+      setUndoMessage(data.message ?? "Undo failed.");
+      setImportResult((prev) => (prev ? { ...prev, importBatchId: null } : prev));
+      refreshProducts();
+    } catch {
+      setUndoMessage("Network error while undoing the import.");
+    } finally {
+      setUndoing(false);
     }
   };
 
@@ -301,11 +363,11 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
           </select>
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
+            disabled={importing || Boolean(pendingFile)}
             className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
           >
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{" "}
-            {importing ? "Importing..." : "Import spreadsheet"}
+            {importing ? "Checking file..." : "Import spreadsheet"}
           </button>
           <input
             ref={fileInputRef}
@@ -314,13 +376,18 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) handleImport(file);
+              if (file) handleFileSelected(file);
             }}
           />
         </div>
 
         {importResult && (
           <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
+            {importResult.dryRun && (
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Preview — nothing has been saved yet
+              </p>
+            )}
             <p className={importResult.success ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
               {importResult.message}
             </p>
@@ -342,6 +409,43 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
                 ))}
               </ul>
             )}
+
+            {importResult.dryRun && pendingFile && (
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={confirmImport}
+                  disabled={importing || importResult.processed === 0}
+                  className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
+                >
+                  {importing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {importing ? "Importing..." : "Confirm import"}
+                </button>
+                <button
+                  onClick={cancelImport}
+                  disabled={importing}
+                  className="rounded-full border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-600 hover:border-zinc-400 btn-press"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {!importResult.dryRun && importResult.importBatchId && (
+              <div className="mt-3">
+                <button
+                  onClick={() => undoImport(importResult.importBatchId!)}
+                  disabled={undoing}
+                  className="flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 btn-press"
+                >
+                  {undoing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {undoing ? "Undoing..." : "Undo this import"}
+                </button>
+                <p className="mt-1 text-xs text-zinc-400">
+                  Only removes products from this import that haven&apos;t been sold yet.
+                </p>
+              </div>
+            )}
+            {undoMessage && <p className="mt-2 text-xs text-zinc-600">{undoMessage}</p>}
           </div>
         )}
       </div>
