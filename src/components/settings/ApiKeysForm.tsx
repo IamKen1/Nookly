@@ -79,10 +79,11 @@ export default function ApiKeysForm() {
         <h3 className="font-semibold text-zinc-900">API access</h3>
         <p className="mt-1 text-sm text-zinc-500">
           Read-only keys for pulling your products, inventory, and sales data into external tools (accounting, BI, etc).
-          See <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">/api/public/v1/products</code>,{" "}
-          <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">/api/public/v1/inventory</code>, and{" "}
-          <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">/api/public/v1/sales</code> — pass the key as{" "}
-          <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">Authorization: Bearer &lt;key&gt;</code>.
+          See the{" "}
+          <a href="/docs/api" target="_blank" className="font-medium text-emerald-700 underline hover:text-emerald-800">
+            API reference
+          </a>{" "}
+          for endpoints, parameters, and sample responses.
         </p>
 
         {revealedKey && (
