@@ -247,9 +247,11 @@ export async function GET(request: NextRequest) {
       totalTransactions: sales.length,
       grossRevenue: grandRevenue,
       totalDiscount: grandDiscount,
-      // "Net Revenue" is sales revenue net of end-of-shift business expenses —
-      // grossProfit/margin below are still computed off sales revenue alone,
+      // Total Sales = sales revenue net of discount, before expenses.
+      // "Net Revenue" is Total Sales net of end-of-shift business expenses —
+      // grossProfit/margin below are still computed off Total Sales alone,
       // since those measure product-level profitability, not cash kept.
+      totalSales: grandNetRevenue,
       netRevenue: grandNetRevenue - grandExpenses,
       totalExpenses: grandExpenses,
       totalCOGS: grandCOGS,

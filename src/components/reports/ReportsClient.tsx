@@ -10,6 +10,7 @@ interface UnifiedDashboard {
   summary: {
     totalTransactions: number;
     grossRevenue: number;
+    totalSales: number;
     netRevenue: number;
     totalExpenses: number;
     totalCOGS: number;
@@ -276,16 +277,17 @@ export default function ReportsClient() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <StatCard label="Total sales" value={peso(dashboard.summary.totalSales)} />
+            <StatCard label="Expenses" value={peso(dashboard.summary.totalExpenses)} tone="red" />
             <StatCard label="Net revenue" value={peso(dashboard.summary.netRevenue)} />
-            <StatCard label="Total expenses" value={peso(dashboard.summary.totalExpenses)} tone="red" />
             <StatCard label="Gross profit" value={peso(dashboard.summary.grossProfit)} tone="emerald" />
             <StatCard label="Margin" value={`${dashboard.summary.grossMarginPercent}%`} />
             <StatCard label="Transactions" value={String(dashboard.summary.totalTransactions)} />
           </div>
           <p className="text-xs text-zinc-400">
-            Net revenue is sales revenue minus expenses logged at end-of-shift. Gross profit and margin are based on
-            sales revenue only (not affected by expenses).
+            Net revenue = Total sales minus expenses logged at end-of-shift. Gross profit and margin are based on
+            total sales only (not affected by expenses).
           </p>
 
           <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
