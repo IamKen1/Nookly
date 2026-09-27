@@ -4,23 +4,37 @@ import { useCallback, useEffect, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import { peso, formatDate, formatDateTime } from "@/lib/format";
 
-type Tab = "overview" | "income" | "inventory-dates" | "e-services";
+type Tab = "overview" | "income" | "expenses" | "inventory-dates" | "e-services";
 
 interface UnifiedDashboard {
   summary: {
     totalTransactions: number;
     grossRevenue: number;
     netRevenue: number;
+    totalExpenses: number;
     totalCOGS: number;
     grossProfit: number;
     grossMarginPercent: number;
     vatCollected: number;
     averageSale: number;
   };
-  trend: Array<{ periodKey: string; periodLabel: string; netRevenue: number; grossProfit: number; salesCount: number }>;
+  trend: Array<{ periodKey: string; periodLabel: string; netRevenue: number; expenses: number; grossProfit: number; salesCount: number }>;
   topProductsByRevenue: Array<{ productId: string; productName: string; unitsSold: number; revenue: number; grossProfit: number }>;
   categorySales: Array<{ categoryName: string; revenue: number; grossProfit: number }>;
   paymentMethods: Array<{ label: string; salesCount: number; totalAmount: number }>;
+}
+
+interface ExpensesReport {
+  filters: { startDate: string | null; endDate: string | null };
+  summary: { count: number; totalAmount: number };
+  rows: Array<{
+    id: string;
+    description: string;
+    amount: number;
+    createdAt: string;
+    storeName: string | null;
+    cashierName: string | null;
+  }>;
 }
 
 interface IncomeReport {
@@ -103,6 +117,7 @@ export default function ReportsClient() {
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<UnifiedDashboard | null>(null);
   const [income, setIncome] = useState<IncomeReport | null>(null);
+  const [expenses, setExpenses] = useState<ExpensesReport | null>(null);
   const [inventoryDates, setInventoryDates] = useState<InventoryDatesReport | null>(null);
   const [cashServices, setCashServices] = useState<CashServicesReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,21 +126,41 @@ export default function ReportsClient() {
   const [cashEndDate, setCashEndDate] = useState(todayStr());
   const [cashPeriod, setCashPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
 
+  const [overviewStartDate, setOverviewStartDate] = useState(firstOfMonthStr());
+  const [overviewEndDate, setOverviewEndDate] = useState(todayStr());
+  const [overviewPeriod, setOverviewPeriod] = useState<"daily" | "weekly" | "monthly" | "annually">("monthly");
+
+  const [incomeStartDate, setIncomeStartDate] = useState(firstOfMonthStr());
+  const [incomeEndDate, setIncomeEndDate] = useState(todayStr());
+
+  const [expensesStartDate, setExpensesStartDate] = useState(firstOfMonthStr());
+  const [expensesEndDate, setExpensesEndDate] = useState(todayStr());
+
+  const [expiryWindowDays, setExpiryWindowDays] = useState(90);
+
   const load = useCallback(
     async (t: Tab) => {
       setLoading(true);
       setError(null);
       try {
         if (t === "overview") {
-          const res = await fetch("/api/reports/unified-dashboard?period=monthly");
+          const params = new URLSearchParams({ startDate: overviewStartDate, endDate: overviewEndDate, period: overviewPeriod });
+          const res = await fetch(`/api/reports/unified-dashboard?${params.toString()}`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
           setDashboard(data);
         } else if (t === "income") {
-          const res = await fetch("/api/reports/income");
+          const params = new URLSearchParams({ startDate: incomeStartDate, endDate: incomeEndDate });
+          const res = await fetch(`/api/reports/income?${params.toString()}`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
           setIncome(data);
+        } else if (t === "expenses") {
+          const params = new URLSearchParams({ startDate: expensesStartDate, endDate: expensesEndDate });
+          const res = await fetch(`/api/reports/expenses?${params.toString()}`);
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+          setExpenses(data);
         } else if (t === "e-services") {
           const params = new URLSearchParams({ startDate: cashStartDate, endDate: cashEndDate, period: cashPeriod });
           const res = await fetch(`/api/reports/e-services?${params.toString()}`);
@@ -133,7 +168,8 @@ export default function ReportsClient() {
           if (!res.ok) throw new Error(data.error);
           setCashServices(data);
         } else {
-          const res = await fetch("/api/reports/inventory-dates");
+          const params = new URLSearchParams({ expiryWindowDays: String(expiryWindowDays) });
+          const res = await fetch(`/api/reports/inventory-dates?${params.toString()}`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
           setInventoryDates(data);
@@ -144,7 +180,19 @@ export default function ReportsClient() {
         setLoading(false);
       }
     },
-    [cashStartDate, cashEndDate, cashPeriod]
+    [
+      cashStartDate,
+      cashEndDate,
+      cashPeriod,
+      overviewStartDate,
+      overviewEndDate,
+      overviewPeriod,
+      incomeStartDate,
+      incomeEndDate,
+      expensesStartDate,
+      expensesEndDate,
+      expiryWindowDays,
+    ]
   );
 
   useEffect(() => {
@@ -170,6 +218,7 @@ export default function ReportsClient() {
         {([
           ["overview", "Overview"],
           ["income", "Income by product"],
+          ["expenses", "Expenses"],
           ["e-services", "E-Services"],
           ["inventory-dates", "Expiry monitor"],
         ] as [Tab, string][]).map(([key, label]) => (
@@ -190,12 +239,54 @@ export default function ReportsClient() {
 
       {!loading && tab === "overview" && dashboard && (
         <div className="mt-6 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
+              <input
+                type="date"
+                value={overviewStartDate}
+                max={overviewEndDate}
+                onChange={(e) => setOverviewStartDate(e.target.value)}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
+              <input
+                type="date"
+                value={overviewEndDate}
+                min={overviewStartDate}
+                max={todayStr()}
+                onChange={(e) => setOverviewEndDate(e.target.value)}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">Group by</label>
+              <select
+                value={overviewPeriod}
+                onChange={(e) => setOverviewPeriod(e.target.value as typeof overviewPeriod)}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              >
+                <option value="daily">Day</option>
+                <option value="weekly">Week</option>
+                <option value="monthly">Month</option>
+                <option value="annually">Year</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-5">
             <StatCard label="Net revenue" value={peso(dashboard.summary.netRevenue)} />
+            <StatCard label="Total expenses" value={peso(dashboard.summary.totalExpenses)} tone="red" />
             <StatCard label="Gross profit" value={peso(dashboard.summary.grossProfit)} tone="emerald" />
             <StatCard label="Margin" value={`${dashboard.summary.grossMarginPercent}%`} />
             <StatCard label="Transactions" value={String(dashboard.summary.totalTransactions)} />
           </div>
+          <p className="text-xs text-zinc-400">
+            Net revenue is sales revenue minus expenses logged at end-of-shift. Gross profit and margin are based on
+            sales revenue only (not affected by expenses).
+          </p>
 
           <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
             <table className="w-full text-sm">
@@ -204,6 +295,7 @@ export default function ReportsClient() {
                   <th className="px-4 py-3">Period</th>
                   <th className="px-4 py-3">Sales</th>
                   <th className="px-4 py-3">Net revenue</th>
+                  <th className="px-4 py-3">Expenses</th>
                   <th className="px-4 py-3">Gross profit</th>
                 </tr>
               </thead>
@@ -213,6 +305,7 @@ export default function ReportsClient() {
                     <td className="px-4 py-3 text-zinc-700">{row.periodLabel}</td>
                     <td className="px-4 py-3 text-zinc-600">{row.salesCount}</td>
                     <td className="px-4 py-3 text-zinc-900">{peso(row.netRevenue)}</td>
+                    <td className="px-4 py-3 text-red-600">{peso(row.expenses)}</td>
                     <td className="px-4 py-3 text-emerald-700">{peso(row.grossProfit)}</td>
                   </tr>
                 ))}
@@ -253,6 +346,30 @@ export default function ReportsClient() {
 
       {!loading && tab === "income" && income && (
         <div className="mt-6 space-y-6">
+          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
+              <input
+                type="date"
+                value={incomeStartDate}
+                max={incomeEndDate}
+                onChange={(e) => setIncomeStartDate(e.target.value)}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
+              <input
+                type="date"
+                value={incomeEndDate}
+                min={incomeStartDate}
+                max={todayStr()}
+                onChange={(e) => setIncomeEndDate(e.target.value)}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-3">
             <StatCard label="Total revenue" value={peso(income.summary.totalRevenue)} />
             <StatCard label="Gross income" value={peso(income.summary.grossIncome)} tone="emerald" />
@@ -279,6 +396,72 @@ export default function ReportsClient() {
                     <td className="px-4 py-3 text-zinc-600">{r.marginPercent}%</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!loading && tab === "expenses" && expenses && (
+        <div className="mt-6 space-y-6">
+          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
+              <input
+                type="date"
+                value={expensesStartDate}
+                max={expensesEndDate}
+                onChange={(e) => setExpensesStartDate(e.target.value)}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
+              <input
+                type="date"
+                value={expensesEndDate}
+                min={expensesStartDate}
+                max={todayStr()}
+                onChange={(e) => setExpensesEndDate(e.target.value)}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <StatCard label="Total expenses" value={peso(expenses.summary.totalAmount)} tone="red" />
+            <StatCard label="Entries" value={String(expenses.summary.count)} />
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Description</th>
+                  <th className="px-4 py-3">Branch</th>
+                  <th className="px-4 py-3">Logged by</th>
+                  <th className="px-4 py-3">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">
+                      No expenses logged in this period.
+                    </td>
+                  </tr>
+                ) : (
+                  expenses.rows.map((row) => (
+                    <tr key={row.id} className="border-b border-zinc-50 last:border-0">
+                      <td className="px-4 py-3 text-zinc-500">{formatDateTime(row.createdAt)}</td>
+                      <td className="px-4 py-3 text-zinc-900">{row.description}</td>
+                      <td className="px-4 py-3 text-zinc-600">{row.storeName ?? "-"}</td>
+                      <td className="px-4 py-3 text-zinc-600">{row.cashierName ?? "-"}</td>
+                      <td className="px-4 py-3 text-red-600">{peso(row.amount)}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -480,6 +663,23 @@ export default function ReportsClient() {
 
       {!loading && tab === "inventory-dates" && inventoryDates && (
         <div className="mt-6 space-y-6">
+          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">Expiring within</label>
+              <select
+                value={expiryWindowDays}
+                onChange={(e) => setExpiryWindowDays(Number(e.target.value))}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              >
+                <option value={30}>30 days</option>
+                <option value={60}>60 days</option>
+                <option value={90}>90 days</option>
+                <option value={180}>180 days</option>
+                <option value={365}>1 year</option>
+              </select>
+            </div>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-3">
             <StatCard label="Expired" value={String(inventoryDates.summary.expired)} tone="red" />
             <StatCard label="Expiring soon" value={String(inventoryDates.summary.expiringSoon)} tone="amber" />

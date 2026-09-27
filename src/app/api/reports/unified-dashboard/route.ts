@@ -97,6 +97,17 @@ export async function GET(request: NextRequest) {
       orderBy: { saleDate: "asc" },
     });
 
+    // Expenses logged at end-of-shift (ShiftExpense) — netted against sales revenue
+    // below so "Net Revenue" reflects what the business actually kept, not just sales.
+    const shiftExpenses = await prisma.shiftExpense.findMany({
+      where: {
+        tenantId: session.tenantId,
+        ...(session.storeId ? { shift: { storeId: session.storeId } } : {}),
+        ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}),
+      },
+      select: { amount: true, createdAt: true },
+    });
+
     const trendMap = new Map<
       string,
       {
@@ -109,6 +120,7 @@ export async function GET(request: NextRequest) {
         cogs: number;
         grossProfit: number;
         vatAmount: number;
+        expenses: number;
       }
     >();
     const productMap = new Map<
@@ -158,6 +170,7 @@ export async function GET(request: NextRequest) {
           cogs: saleCOGS,
           grossProfit: saleRevenue - saleCOGS,
           vatAmount: saleVAT,
+          expenses: 0,
         });
       }
 
@@ -203,13 +216,42 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    let grandExpenses = 0;
+    for (const exp of shiftExpenses) {
+      const amt = Number(exp.amount);
+      grandExpenses += amt;
+
+      const pkey = getPeriodKey(exp.createdAt, period, timeZone);
+      const existing = trendMap.get(pkey);
+      if (existing) {
+        existing.expenses += amt;
+      } else {
+        trendMap.set(pkey, {
+          periodKey: pkey,
+          periodLabel: getPeriodLabel(pkey, period),
+          salesCount: 0,
+          revenue: 0,
+          discount: 0,
+          netRevenue: 0,
+          cogs: 0,
+          grossProfit: 0,
+          vatAmount: 0,
+          expenses: amt,
+        });
+      }
+    }
+
     const grandGrossProfit = grandNetRevenue - grandCOGS;
 
     const summary = {
       totalTransactions: sales.length,
       grossRevenue: grandRevenue,
       totalDiscount: grandDiscount,
-      netRevenue: grandNetRevenue,
+      // "Net Revenue" is sales revenue net of end-of-shift business expenses —
+      // grossProfit/margin below are still computed off sales revenue alone,
+      // since those measure product-level profitability, not cash kept.
+      netRevenue: grandNetRevenue - grandExpenses,
+      totalExpenses: grandExpenses,
       totalCOGS: grandCOGS,
       grossProfit: grandGrossProfit,
       grossMarginPercent: grandNetRevenue > 0 ? Number(((grandGrossProfit / grandNetRevenue) * 100).toFixed(1)) : 0,
@@ -220,10 +262,14 @@ export async function GET(request: NextRequest) {
     const trend = Array.from(trendMap.values())
       .sort((a, b) => a.periodKey.localeCompare(b.periodKey))
       .slice(-PERIOD_LIMIT[period])
-      .map((row) => ({
-        ...row,
-        grossProfitMarginPercent: row.netRevenue > 0 ? Number(((row.grossProfit / row.netRevenue) * 100).toFixed(1)) : 0,
-      }));
+      .map((row) => {
+        const grossProfitMarginPercent = row.netRevenue > 0 ? Number(((row.grossProfit / row.netRevenue) * 100).toFixed(1)) : 0;
+        return {
+          ...row,
+          grossProfitMarginPercent,
+          netRevenue: row.netRevenue - row.expenses,
+        };
+      });
 
     const topProductsByProfit = Array.from(productMap.values())
       .map((p) => ({ ...p, grossProfit: p.revenue - p.cogs, marginPercent: p.revenue > 0 ? Number((((p.revenue - p.cogs) / p.revenue) * 100).toFixed(1)) : 0 }))
