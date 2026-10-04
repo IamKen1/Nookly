@@ -333,7 +333,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
             href="/api/inventory/template"
             className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300"
           >
-            <Download className="h-4 w-4" /> Import template
+            <Download className="h-4 w-4" /> Download template
           </a>
           <a
             href="/api/inventory/correction-template"
