@@ -5,6 +5,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import type { SessionPayload } from "@/lib/auth";
 import { DrugSchedule, Prisma } from "@prisma/client";
 import { invalidateCached } from "@/lib/route-cache";
+import { getMaxProducts } from "@/lib/plan-gating";
 
 interface ImportIssue {
   row: number;
@@ -193,6 +194,18 @@ export async function POST(request: NextRequest) {
     const categories = await prisma.category.findMany({ where: { tenantId: session.tenantId, isActive: true } });
     const categoryMap = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
 
+    // "Add new products" is the only mode that can push a tenant over their
+    // plan's product limit (update/correction never create a product) — track
+    // remaining headroom locally instead of re-counting every row.
+    let remainingCapacity = Infinity;
+    if (mode === "add") {
+      const [maxProducts, currentCount] = await Promise.all([
+        getMaxProducts(session.tenantId),
+        prisma.product.count({ where: { tenantId: session.tenantId, isActive: true } }),
+      ]);
+      remainingCapacity = maxProducts === -1 ? Infinity : Math.max(0, maxProducts - currentCount);
+    }
+
     // Only "add" imports create brand-new products, so only they get an
     // undoable batch record — nothing here needs to revert an update/correction.
     const importBatch =
@@ -211,7 +224,12 @@ export async function POST(request: NextRequest) {
         if (mode === "correction") {
           result = await processStockCorrection(session, row, rowNumber, errors, warnings, dryRun);
         } else if (mode === "add") {
-          result = await processAddProduct(session, row, rowNumber, categoryMap, errors, warnings, dryRun, importBatch?.id);
+          if (remainingCapacity <= 0) {
+            errors.push({ row: rowNumber, field: "Product limit", message: "Skipped: plan's product limit reached. Upgrade to add more." });
+          } else {
+            result = await processAddProduct(session, row, rowNumber, categoryMap, errors, warnings, dryRun, importBatch?.id);
+            if (result === "created") remainingCapacity--;
+          }
         } else if (mode === "update") {
           result = await processUpdateProduct(session, row, rowNumber, categoryMap, errors, warnings, dryRun);
         } else {
