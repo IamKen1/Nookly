@@ -12,7 +12,7 @@ interface PlanUpdateBody {
   maxUsers?: number;
   maxProducts?: number;
   features?: string[];
-  featureReports?: boolean;
+  enabledReports?: string[];
   featurePrescriptions?: boolean;
   featureAlerts?: boolean;
   featureMultiBranch?: boolean;
@@ -43,7 +43,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ...(body.maxUsers !== undefined ? { maxUsers: body.maxUsers } : {}),
       ...(body.maxProducts !== undefined ? { maxProducts: body.maxProducts } : {}),
       ...(body.features !== undefined ? { features: body.features } : {}),
-      ...(body.featureReports !== undefined ? { featureReports: body.featureReports } : {}),
+      ...(body.enabledReports !== undefined ? { enabledReports: body.enabledReports } : {}),
       ...(body.featurePrescriptions !== undefined ? { featurePrescriptions: body.featurePrescriptions } : {}),
       ...(body.featureAlerts !== undefined ? { featureAlerts: body.featureAlerts } : {}),
       ...(body.featureMultiBranch !== undefined ? { featureMultiBranch: body.featureMultiBranch } : {}),

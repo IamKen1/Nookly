@@ -14,7 +14,7 @@ interface Plan {
   maxUsers: number;
   maxProducts: number;
   features: string[];
-  featureReports: boolean;
+  enabledReports: string[];
   featurePrescriptions: boolean;
   featureAlerts: boolean;
   featureMultiBranch: boolean;
@@ -24,11 +24,19 @@ interface Plan {
 }
 
 const FEATURE_FLAGS: { key: keyof Plan; label: string }[] = [
-  { key: "featureReports", label: "Reports & analytics" },
   { key: "featurePrescriptions", label: "Prescription management" },
   { key: "featureAlerts", label: "Email alerts & scheduled reports" },
   { key: "featureMultiBranch", label: "Multi-branch stock transfer" },
   { key: "featureApiAccess", label: "API access (read-only data export)" },
+];
+
+const REPORT_FLAGS: { key: string; label: string }[] = [
+  { key: "overview", label: "Overview" },
+  { key: "income", label: "Income by product" },
+  { key: "expenses", label: "Expenses" },
+  { key: "e-services", label: "E-Services" },
+  { key: "inventory-dates", label: "Expiry monitor" },
+  { key: "inventory-valuation", label: "Inventory valuation export" },
 ];
 
 function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
@@ -39,6 +47,12 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const set = <K extends keyof Plan>(key: K, value: Plan[K]) => setDraft((d) => ({ ...d, [key]: value }));
+
+  const toggleReport = (reportKey: string, checked: boolean) =>
+    setDraft((d) => ({
+      ...d,
+      enabledReports: checked ? [...d.enabledReports, reportKey] : d.enabledReports.filter((k) => k !== reportKey),
+    }));
 
   const save = async () => {
     setSaving(true);
@@ -55,7 +69,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
           maxStores: draft.maxStores,
           maxUsers: draft.maxUsers,
           maxProducts: draft.maxProducts,
-          featureReports: draft.featureReports,
+          enabledReports: draft.enabledReports,
           featurePrescriptions: draft.featurePrescriptions,
           featureAlerts: draft.featureAlerts,
           featureMultiBranch: draft.featureMultiBranch,
@@ -164,6 +178,22 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
                 onChange={(e) => set(f.key, e.target.checked as never)}
               />
               {f.label}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-medium text-zinc-500">Reports tabs (which Reports pages this plan can see)</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {REPORT_FLAGS.map((r) => (
+            <label key={r.key} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={draft.enabledReports.includes(r.key)}
+                onChange={(e) => toggleReport(r.key, e.target.checked)}
+              />
+              {r.label}
             </label>
           ))}
         </div>

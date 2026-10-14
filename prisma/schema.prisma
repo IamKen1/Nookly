@@ -24,7 +24,12 @@ model Plan {
   maxUsers             Int // -1 = unlimited
   maxProducts          Int // -1 = unlimited
   features             Json // list of feature strings shown on pricing page
-  featureReports       Boolean             @default(false)
+  // Which Reports tabs this plan can see — a JSON array of report keys (see
+  // ReportKey in src/lib/plan-gating.ts), e.g. ["overview","inventory-dates"].
+  // Replaces a single on/off "Reports" flag so a plan can offer some report
+  // tabs without all of them (e.g. expiry monitor on Sprout, full financials
+  // reserved for Bloom+).
+  enabledReports       Json                @default("[]")
   featurePrescriptions Boolean             @default(false)
   featureAlerts        Boolean             @default(false)
   featureMultiBranch   Boolean             @default(false)

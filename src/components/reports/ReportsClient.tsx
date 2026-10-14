@@ -113,8 +113,18 @@ const firstOfMonthStr = () => {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
 };
 
-export default function ReportsClient() {
-  const [tab, setTab] = useState<Tab>("overview");
+const ALL_TABS: [Tab, string][] = [
+  ["overview", "Overview"],
+  ["income", "Income by product"],
+  ["expenses", "Expenses"],
+  ["e-services", "E-Services"],
+  ["inventory-dates", "Expiry monitor"],
+];
+
+export default function ReportsClient({ enabledReports }: { enabledReports: string[] }) {
+  const tabs = ALL_TABS.filter(([key]) => enabledReports.includes(key));
+  const canExportValuation = enabledReports.includes("inventory-valuation");
+  const [tab, setTab] = useState<Tab>(tabs[0]?.[0] ?? "overview");
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<UnifiedDashboard | null>(null);
   const [income, setIncome] = useState<IncomeReport | null>(null);
@@ -207,22 +217,18 @@ export default function ReportsClient() {
           <h1 className="text-2xl font-bold text-zinc-900">Reports</h1>
           <p className="mt-1 text-sm text-zinc-500">Sales, profitability, and inventory insight for your business.</p>
         </div>
-        <a
-          href="/api/reports/inventory-valuation"
-          className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300"
-        >
-          <Download className="h-4 w-4" /> Export inventory valuation
-        </a>
+        {canExportValuation && (
+          <a
+            href="/api/reports/inventory-valuation"
+            className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300"
+          >
+            <Download className="h-4 w-4" /> Export inventory valuation
+          </a>
+        )}
       </div>
 
       <div className="mt-6 flex gap-2 border-b border-zinc-200">
-        {([
-          ["overview", "Overview"],
-          ["income", "Income by product"],
-          ["expenses", "Expenses"],
-          ["e-services", "E-Services"],
-          ["inventory-dates", "Expiry monitor"],
-        ] as [Tab, string][]).map(([key, label]) => (
+        {tabs.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}

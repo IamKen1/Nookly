@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       maxUsers: p.maxUsers,
       maxProducts: p.maxProducts,
       features: Array.isArray(p.features) ? p.features : [],
-      featureReports: p.featureReports,
+      enabledReports: Array.isArray(p.enabledReports) ? p.enabledReports : [],
       featurePrescriptions: p.featurePrescriptions,
       featureAlerts: p.featureAlerts,
       featureMultiBranch: p.featureMultiBranch,

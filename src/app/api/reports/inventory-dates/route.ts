@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
-import { requireFeature } from "@/lib/plan-gating";
+import { requireReport } from "@/lib/plan-gating";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const gate = await requireFeature(session.tenantId, "reports");
+  const gate = await requireReport(session.tenantId, "inventory-dates");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   try {

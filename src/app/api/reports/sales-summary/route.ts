@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/session";
-import { requireFeature } from "@/lib/plan-gating";
+import { requireReport } from "@/lib/plan-gating";
 import { generateSalesDashboardReport } from "@/lib/reporting";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const gate = await requireFeature(session.tenantId, "reports");
+  const gate = await requireReport(session.tenantId, "overview");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   try {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
-import { requireFeature } from "@/lib/plan-gating";
+import { requireReport } from "@/lib/plan-gating";
 
 const formatCurrency = (value: number) => Number(value.toFixed(2));
 
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const gate = await requireFeature(session.tenantId, "reports");
+  const gate = await requireReport(session.tenantId, "inventory-valuation");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   try {
