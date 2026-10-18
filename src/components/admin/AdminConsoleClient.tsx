@@ -46,22 +46,22 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
+    <div className="min-h-screen bg-zinc-50 text-zinc-900">
+      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-400 sm:h-9 sm:w-9">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600 sm:h-9 sm:w-9">
               <ShieldCheck className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
             </span>
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold text-white">Nookly Ops Console</h1>
+              <h1 className="truncate text-sm font-semibold text-zinc-900">Nookly Ops Console</h1>
               <p className="truncate text-xs text-zinc-500">{adminEmail}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <a
               href="/dashboard"
-              className="flex h-8 items-center gap-1.5 rounded-full border border-zinc-700 px-2.5 text-xs font-medium text-zinc-300 hover:border-zinc-500 sm:px-3"
+              className="flex h-8 items-center gap-1.5 rounded-full border border-zinc-300 px-2.5 text-xs font-medium text-zinc-700 hover:border-zinc-400 sm:px-3"
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Back to app</span>
@@ -69,7 +69,7 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
             <button
               onClick={handleLock}
               disabled={locking}
-              className="flex h-8 items-center justify-center gap-1.5 rounded-full border border-red-800 px-2.5 text-xs font-medium text-red-400 hover:border-red-600 disabled:opacity-50 sm:px-3 btn-press"
+              className="flex h-8 items-center justify-center gap-1.5 rounded-full border border-red-200 px-2.5 text-xs font-medium text-red-600 hover:border-red-400 hover:bg-red-50 disabled:opacity-50 sm:px-3 btn-press"
             >
               {locking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
               <span className="hidden sm:inline">{locking ? "Locking..." : "Lock console"}</span>
@@ -79,13 +79,13 @@ export default function AdminConsoleClient({ adminEmail }: { adminEmail: string 
       </header>
 
       <div className="px-4 py-4 sm:px-6 sm:py-6">
-        <nav className="-mx-4 mb-6 flex gap-1 overflow-x-auto scrollbar-none border-b border-zinc-800 px-4 sm:mx-0 sm:px-0">
+        <nav className="-mx-4 mb-6 flex gap-1 overflow-x-auto scrollbar-none border-b border-zinc-200 px-4 sm:mx-0 sm:px-0">
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
               className={`shrink-0 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-medium transition ${
-                tab === t.key ? "border-red-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300"
+                tab === t.key ? "border-red-500 text-zinc-900" : "border-transparent text-zinc-500 hover:text-zinc-700"
               }`}
             >
               {t.label}

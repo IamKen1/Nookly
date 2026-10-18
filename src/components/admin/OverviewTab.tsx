@@ -17,9 +17,9 @@ interface Overview {
 
 function StatCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
-      <p className={`mt-1.5 text-2xl font-semibold ${tone ?? "text-white"}`}>{value}</p>
+      <p className={`mt-1.5 text-2xl font-semibold ${tone ?? "text-zinc-900"}`}>{value}</p>
     </div>
   );
 }
@@ -38,16 +38,16 @@ export default function OverviewTab() {
       .catch((err) => setError(err.message));
   }, []);
 
-  if (error) return <p className="text-sm text-red-400">{error}</p>;
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!data) return <p className="text-sm text-zinc-500">Loading...</p>;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Tenants" value={`${data.tenants.active} active`} />
-        <StatCard label="Suspended" value={String(data.tenants.suspended)} tone={data.tenants.suspended > 0 ? "text-amber-400" : undefined} />
-        <StatCard label="Est. MRR" value={peso(data.estimatedMrr)} tone="text-emerald-400" />
-        <StatCard label="Pending plan requests" value={String(data.pendingPlanRequests)} tone={data.pendingPlanRequests > 0 ? "text-amber-400" : undefined} />
+        <StatCard label="Suspended" value={String(data.tenants.suspended)} tone={data.tenants.suspended > 0 ? "text-amber-600" : undefined} />
+        <StatCard label="Est. MRR" value={peso(data.estimatedMrr)} tone="text-emerald-600" />
+        <StatCard label="Pending plan requests" value={String(data.pendingPlanRequests)} tone={data.pendingPlanRequests > 0 ? "text-amber-600" : undefined} />
         <StatCard label="Active users" value={String(data.users)} />
         <StatCard label="Active products" value={String(data.products)} />
         <StatCard label="Sales today" value={`${data.sales.todayCount} · ${peso(data.sales.todayRevenue)}`} />
@@ -55,33 +55,33 @@ export default function OverviewTab() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-          <h3 className="text-sm font-semibold text-white">Subscription status</h3>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-zinc-900">Subscription status</h3>
           <div className="mt-3 space-y-2 text-sm">
             {Object.entries(data.subscriptions).map(([key, count]) => (
-              <div key={key} className="flex items-center justify-between text-zinc-400">
+              <div key={key} className="flex items-center justify-between text-zinc-500">
                 <span className="capitalize">{key.replace(/([A-Z])/g, " $1")}</span>
-                <span className="font-medium text-zinc-200">{count}</span>
+                <span className="font-medium text-zinc-800">{count}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-          <h3 className="text-sm font-semibold text-white">Plan breakdown</h3>
+        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-zinc-900">Plan breakdown</h3>
           <div className="mt-3 space-y-2 text-sm">
             {data.planBreakdown.map((p) => (
-              <div key={p.code} className="flex items-center justify-between text-zinc-400">
+              <div key={p.code} className="flex items-center justify-between text-zinc-500">
                 <span>{p.name}</span>
-                <span className="font-medium text-zinc-200">{p.tenantCount} tenants</span>
+                <span className="font-medium text-zinc-800">{p.tenantCount} tenants</span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-        <h3 className="text-sm font-semibold text-white">Recently signed up</h3>
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-zinc-900">Recently signed up</h3>
         <div className="overflow-x-auto">
         <table className="mt-3 w-full text-sm">
           <thead>
@@ -94,10 +94,10 @@ export default function OverviewTab() {
           </thead>
           <tbody>
             {data.recentTenants.map((t) => (
-              <tr key={t.id} className="border-t border-zinc-800 text-zinc-300">
+              <tr key={t.id} className="border-t border-zinc-100 text-zinc-700">
                 <td className="py-2">{t.name}</td>
-                <td className="py-2 text-zinc-400">{t.planName ?? "—"}</td>
-                <td className="py-2 text-zinc-400">{t.status ?? "—"}</td>
+                <td className="py-2 text-zinc-500">{t.planName ?? "—"}</td>
+                <td className="py-2 text-zinc-500">{t.status ?? "—"}</td>
                 <td className="py-2 text-zinc-500">{formatDate(t.createdAt)}</td>
               </tr>
             ))}

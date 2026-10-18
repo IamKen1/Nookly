@@ -91,13 +91,13 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
   };
 
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5">
       <div className="flex items-center justify-between">
         <div>
           <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{plan.code}</span>
           <p className="text-xs text-zinc-500">{plan.tenantCount} tenants on this plan</p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-zinc-400">
+        <label className="flex items-center gap-2 text-xs text-zinc-500">
           <input type="checkbox" checked={draft.isActive} onChange={(e) => set("isActive", e.target.checked)} />
           Active / visible on pricing page
         </label>
@@ -109,7 +109,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
           <input
             value={draft.name}
             onChange={(e) => set("name", e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
         <div>
@@ -117,7 +117,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
           <input
             value={draft.tagline ?? ""}
             onChange={(e) => set("tagline", e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
         <div>
@@ -126,7 +126,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
             type="number"
             value={draft.priceMonthly}
             onChange={(e) => set("priceMonthly", Number(e.target.value))}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
         <div>
@@ -135,7 +135,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
             type="number"
             value={draft.priceYearly}
             onChange={(e) => set("priceYearly", Number(e.target.value))}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
         <div>
@@ -144,7 +144,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
             type="number"
             value={draft.maxStores}
             onChange={(e) => set("maxStores", Number(e.target.value))}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
         <div>
@@ -153,7 +153,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
             type="number"
             value={draft.maxUsers}
             onChange={(e) => set("maxUsers", Number(e.target.value))}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
         <div>
@@ -162,7 +162,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
             type="number"
             value={draft.maxProducts}
             onChange={(e) => set("maxProducts", Number(e.target.value))}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
       </div>
@@ -171,7 +171,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
         <p className="mb-2 text-xs font-medium text-zinc-500">Feature checklist (controls real access, not just display)</p>
         <div className="grid gap-2 sm:grid-cols-2">
           {FEATURE_FLAGS.map((f) => (
-            <label key={f.key} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-300">
+            <label key={f.key} className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
               <input
                 type="checkbox"
                 checked={Boolean(draft[f.key])}
@@ -187,7 +187,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
         <p className="mb-2 text-xs font-medium text-zinc-500">Reports tabs (which Reports pages this plan can see)</p>
         <div className="grid gap-2 sm:grid-cols-2">
           {REPORT_FLAGS.map((r) => (
-            <label key={r.key} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-300">
+            <label key={r.key} className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
               <input
                 type="checkbox"
                 checked={draft.enabledReports.includes(r.key)}
@@ -205,11 +205,11 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
           rows={6}
           value={featuresText}
           onChange={(e) => setFeaturesText(e.target.value)}
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
         />
       </div>
 
-      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       <div className="mt-4 flex items-center gap-3">
         <button
           onClick={save}
@@ -219,7 +219,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
           {saving && <Loader2 className="h-4 w-4 animate-spin" />}
           {saving ? "Saving..." : "Save changes"}
         </button>
-        {savedAt && <span className="text-xs text-emerald-400">Saved.</span>}
+        {savedAt && <span className="text-xs text-emerald-600">Saved.</span>}
       </div>
     </div>
   );

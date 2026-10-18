@@ -35,17 +35,17 @@ export default function UnlockClient() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-6">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-6">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10 text-red-400">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
             <ShieldAlert className="h-6 w-6" />
           </span>
-          <h1 className="mt-4 text-lg font-semibold text-white">Ops console access</h1>
-          <p className="mt-1 text-sm text-zinc-400">Enter the passphrase to unlock this session for 12 hours.</p>
+          <h1 className="mt-4 text-lg font-semibold text-zinc-900">Ops console access</h1>
+          <p className="mt-1 text-sm text-zinc-500">Enter the passphrase to unlock this session for 12 hours.</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+        <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <input
             autoFocus
             required
@@ -53,9 +53,9 @@ export default function UnlockClient() {
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
             placeholder="Passphrase"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-white outline-none focus:border-red-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none focus:border-red-500"
           />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
             disabled={loading}

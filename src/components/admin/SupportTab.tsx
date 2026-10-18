@@ -31,17 +31,17 @@ const FOLDERS = [
 ] as const;
 
 const STATUS_TONE: Record<string, string> = {
-  OPEN: "text-amber-400",
-  IN_PROGRESS: "text-blue-400",
-  RESOLVED: "text-emerald-400",
+  OPEN: "text-amber-600",
+  IN_PROGRESS: "text-blue-600",
+  RESOLVED: "text-emerald-600",
   CLOSED: "text-zinc-500",
 };
 
 const PRIORITY_TONE: Record<string, string> = {
-  URGENT: "bg-red-500/10 text-red-400",
-  HIGH: "bg-amber-500/10 text-amber-400",
-  NORMAL: "bg-zinc-700/40 text-zinc-300",
-  LOW: "bg-zinc-800 text-zinc-500",
+  URGENT: "bg-red-100 text-red-700",
+  HIGH: "bg-amber-100 text-amber-700",
+  NORMAL: "bg-zinc-200 text-zinc-700",
+  LOW: "bg-zinc-100 text-zinc-500",
 };
 
 export default function SupportTab({ adminEmail }: { adminEmail: string }) {
@@ -195,7 +195,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
 
   return (
     <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[160px_280px_1fr]" style={{ minHeight: 480 }}>
-      <div className={`rounded-2xl border border-zinc-800 bg-zinc-900 p-2 ${mobileView === "folders" ? "block" : "hidden"} sm:block`}>
+      <div className={`rounded-2xl border border-zinc-200 bg-white p-2 ${mobileView === "folders" ? "block" : "hidden"} sm:block`}>
         {FOLDERS.map((f) => {
           const Icon = f.icon;
           const count = tickets.filter((t) =>
@@ -212,7 +212,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
               key={f.key}
               onClick={() => selectFolder(f.key)}
               className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm ${
-                folder === f.key ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800/60"
+                folder === f.key ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-100/60"
               }`}
             >
               <span className="flex items-center gap-2">
@@ -225,10 +225,10 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
         })}
       </div>
 
-      <div className={`overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 ${mobileView === "list" ? "block" : "hidden"} sm:block`}>
+      <div className={`overflow-y-auto rounded-2xl border border-zinc-200 bg-white ${mobileView === "list" ? "block" : "hidden"} sm:block`}>
         <button
           onClick={() => setMobileView("folders")}
-          className="flex w-full items-center gap-1.5 border-b border-zinc-800/60 px-3 py-2.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 sm:hidden"
+          className="flex w-full items-center gap-1.5 border-b border-zinc-100 px-3 py-2.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 sm:hidden"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
           Folders
@@ -242,15 +242,15 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
             <button
               key={t.id}
               onClick={() => loadDetail(t.id)}
-              className={`block w-full border-b border-zinc-800/60 px-4 py-3 text-left last:border-0 ${
-                selectedId === t.id ? "bg-zinc-800" : "hover:bg-zinc-800/40"
+              className={`block w-full border-b border-zinc-100 px-4 py-3 text-left last:border-0 ${
+                selectedId === t.id ? "bg-zinc-100" : "hover:bg-zinc-100/40"
               }`}
             >
               <div className="flex items-center justify-between">
-                <p className="truncate text-sm font-medium text-white">{t.tenant.name}</p>
+                <p className="truncate text-sm font-medium text-zinc-900">{t.tenant.name}</p>
                 {t.awaitingReply && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />}
               </div>
-              <p className="truncate text-xs text-zinc-400">{t.subject}</p>
+              <p className="truncate text-xs text-zinc-500">{t.subject}</p>
               <div className="mt-1 flex items-center gap-2">
                 <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_TONE[t.priority]}`}>{t.priority}</span>
                 <span className="text-[10px] text-zinc-500">{formatDateTime(t.updatedAt)}</span>
@@ -260,10 +260,10 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
         )}
       </div>
 
-      <div className={`rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5 ${mobileView === "thread" ? "block" : "hidden"} sm:block`}>
+      <div className={`rounded-2xl border border-zinc-200 bg-white p-4 sm:p-5 ${mobileView === "thread" ? "block" : "hidden"} sm:block`}>
         <button
           onClick={() => setMobileView("list")}
-          className="mb-3 flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 sm:hidden"
+          className="mb-3 flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-800 sm:hidden"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
           Tickets
@@ -274,7 +274,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
           <div className="flex h-full flex-col">
             <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h2 className="text-base font-semibold text-white">{detail.subject}</h2>
+                <h2 className="text-base font-semibold text-zinc-900">{detail.subject}</h2>
                 <p className="text-xs text-zinc-500">
                   {detail.tenant.name} · {detail.createdByUser.email}
                 </p>
@@ -284,14 +284,14 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                   value={detail.status}
                   onChange={(e) => changeStatus(e.target.value)}
                   disabled={busy}
-                  className={`rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold outline-none ${STATUS_TONE[detail.status]}`}
+                  className={`rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs font-semibold outline-none ${STATUS_TONE[detail.status]}`}
                 >
                   <option value="OPEN">Open</option>
                   <option value="IN_PROGRESS">In progress</option>
                   <option value="RESOLVED">Resolved</option>
                   <option value="CLOSED">Closed</option>
                 </select>
-                {busy && <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />}
+                {busy && <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />}
               </div>
             </div>
 
@@ -300,21 +300,21 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                 <div
                   key={m.id}
                   className={`rounded-xl border p-3 text-sm ${
-                    m.authorType === "ADMIN" ? "border-red-900/40 bg-red-950/20" : "border-zinc-800 bg-zinc-950"
+                    m.authorType === "ADMIN" ? "border-red-200 bg-red-50" : "border-zinc-200 bg-white"
                   }`}
                 >
                   <div className="mb-1 flex items-center justify-between text-xs text-zinc-500">
-                    <span className="font-medium text-zinc-300">
+                    <span className="font-medium text-zinc-700">
                       {m.authorType === "ADMIN" ? `You (${m.authorEmail === adminEmail ? "me" : m.authorEmail})` : m.authorEmail}
                     </span>
                     <span>{formatDateTime(m.createdAt)}</span>
                   </div>
-                  <p className="whitespace-pre-wrap text-zinc-200">{m.body}</p>
+                  <p className="whitespace-pre-wrap text-zinc-800">{m.body}</p>
                   {m.attachments?.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {m.attachments.map((url) => (
                         <a key={url} href={url} target="_blank" rel="noopener noreferrer">
-                          <img src={url} alt="Attached screenshot" className="h-16 w-16 rounded-lg border border-zinc-800 object-cover" />
+                          <img src={url} alt="Attached screenshot" className="h-16 w-16 rounded-lg border border-zinc-200 object-cover" />
                         </a>
                       ))}
                     </div>
@@ -328,7 +328,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                 <div className="flex flex-wrap gap-2">
                   {replyAttachments.map((url) => (
                     <div key={url} className="group relative">
-                      <img src={url} alt="Attached screenshot" className="h-14 w-14 rounded-lg border border-zinc-800 object-cover" />
+                      <img src={url} alt="Attached screenshot" className="h-14 w-14 rounded-lg border border-zinc-200 object-cover" />
                       <button
                         type="button"
                         onClick={() => setReplyAttachments((prev) => prev.filter((u) => u !== url))}
@@ -346,7 +346,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                   onChange={(e) => setReply(e.target.value)}
                   onPaste={handlePasteScreenshot}
                   placeholder="Reply to this tenant... (paste a screenshot with Ctrl+V)"
-                  className="flex-1 rounded-full border border-zinc-700 bg-zinc-950 px-4 py-2 text-sm text-white outline-none focus:border-zinc-500"
+                  className="flex-1 rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
                 />
                 {replyAttachments.length < MAX_ATTACHMENTS && (
                   <button
@@ -354,7 +354,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                     onClick={() => replyFileInputRef.current?.click()}
                     disabled={uploading}
                     title="Attach a screenshot"
-                    className="flex items-center justify-center rounded-full border border-zinc-700 px-3 text-zinc-400 hover:border-zinc-500 disabled:opacity-50 btn-press"
+                    className="flex items-center justify-center rounded-full border border-zinc-300 px-3 text-zinc-500 hover:border-zinc-400 disabled:opacity-50 btn-press"
                   >
                     {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                   </button>
@@ -380,7 +380,7 @@ export default function SupportTab({ adminEmail }: { adminEmail: string }) {
                 </button>
               </div>
             </form>
-            {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
           </div>
         )}
       </div>

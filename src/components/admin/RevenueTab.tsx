@@ -66,7 +66,7 @@ export default function RevenueTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
@@ -75,7 +75,7 @@ export default function RevenueTab() {
               value={startDate}
               max={endDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
             />
           </div>
           <div>
@@ -86,7 +86,7 @@ export default function RevenueTab() {
               min={startDate}
               max={todayStr()}
               onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
             />
           </div>
           <div>
@@ -94,7 +94,7 @@ export default function RevenueTab() {
             <select
               value={period}
               onChange={(e) => setPeriod(e.target.value as "daily" | "weekly" | "monthly")}
-              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
             >
               <option value="daily">Day</option>
               <option value="weekly">Week</option>
@@ -104,16 +104,16 @@ export default function RevenueTab() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
       {loading && <p className="py-8 text-center text-sm text-zinc-500">Loading...</p>}
 
       {!loading && data && (
         <>
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-            <div className="border-b border-zinc-800 pb-4 text-center">
-              <h2 className="text-lg font-bold text-white">Platform Revenue Statement</h2>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+            <div className="border-b border-zinc-200 pb-4 text-center">
+              <h2 className="text-lg font-bold text-zinc-900">Platform Revenue Statement</h2>
               <p className="mt-1 text-sm text-zinc-500">Subscription income Nookly collected from tenants — not tenant sales.</p>
-              <p className="mt-1 text-xs text-zinc-600">
+              <p className="mt-1 text-xs text-zinc-400">
                 {formatDate(data.filters.startDate ?? startDate)} – {formatDate(data.filters.endDate ?? endDate)}
               </p>
             </div>
@@ -121,32 +121,32 @@ export default function RevenueTab() {
             <div className="mt-5 grid gap-4 sm:grid-cols-4">
               <div>
                 <p className="text-xs text-zinc-500">Revenue collected (period)</p>
-                <p className="mt-1 text-xl font-bold text-emerald-400">{peso(data.summary.totalRevenueCollected)}</p>
-                <p className="text-xs text-zinc-600">{data.summary.invoiceCount} payments</p>
+                <p className="mt-1 text-xl font-bold text-emerald-600">{peso(data.summary.totalRevenueCollected)}</p>
+                <p className="text-xs text-zinc-400">{data.summary.invoiceCount} payments</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Current MRR</p>
-                <p className="mt-1 text-xl font-bold text-white">{peso(data.summary.mrr)}</p>
-                <p className="text-xs text-zinc-600">Monthly recurring, as of now</p>
+                <p className="mt-1 text-xl font-bold text-zinc-900">{peso(data.summary.mrr)}</p>
+                <p className="text-xs text-zinc-400">Monthly recurring, as of now</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Paying tenants</p>
-                <p className="mt-1 text-xl font-bold text-white">{data.summary.payingTenantsCount}</p>
+                <p className="mt-1 text-xl font-bold text-zinc-900">{data.summary.payingTenantsCount}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">ARPU</p>
-                <p className="mt-1 text-xl font-bold text-white">{peso(data.summary.arpu)}</p>
-                <p className="text-xs text-zinc-600">Avg. revenue per paying tenant</p>
+                <p className="mt-1 text-xl font-bold text-zinc-900">{peso(data.summary.arpu)}</p>
+                <p className="text-xs text-zinc-400">Avg. revenue per paying tenant</p>
               </div>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
-            <div className="border-b border-zinc-800 px-4 py-3 text-sm font-semibold text-white">Breakdown by plan</div>
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-900">Breakdown by plan</div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
+                  <tr className="border-b border-zinc-200 text-left text-xs uppercase text-zinc-500">
                     <th className="px-4 py-3">Plan</th>
                     <th className="px-4 py-3">Paying tenants</th>
                     <th className="px-4 py-3">MRR</th>
@@ -159,10 +159,10 @@ export default function RevenueTab() {
                     </tr>
                   ) : (
                     data.planBreakdown.map((p) => (
-                      <tr key={p.planName} className="border-b border-zinc-800/60 last:border-0">
-                        <td className="px-4 py-3 font-medium text-white">{p.planName}</td>
-                        <td className="px-4 py-3 text-zinc-400">{p.payingTenants}</td>
-                        <td className="px-4 py-3 text-emerald-400">{peso(p.mrr)}</td>
+                      <tr key={p.planName} className="border-b border-zinc-100 last:border-0">
+                        <td className="px-4 py-3 font-medium text-zinc-900">{p.planName}</td>
+                        <td className="px-4 py-3 text-zinc-500">{p.payingTenants}</td>
+                        <td className="px-4 py-3 text-emerald-600">{peso(p.mrr)}</td>
                       </tr>
                     ))
                   )}
@@ -171,14 +171,14 @@ export default function RevenueTab() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
-            <div className="border-b border-zinc-800 px-4 py-3 text-sm font-semibold text-white">
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-900">
               Revenue trend by {period === "daily" ? "day" : period === "weekly" ? "week" : "month"}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
+                  <tr className="border-b border-zinc-200 text-left text-xs uppercase text-zinc-500">
                     <th className="px-4 py-3">Period</th>
                     <th className="px-4 py-3">Payments</th>
                     <th className="px-4 py-3">Revenue</th>
@@ -191,10 +191,10 @@ export default function RevenueTab() {
                     </tr>
                   ) : (
                     data.trend.map((row) => (
-                      <tr key={row.periodKey} className="border-b border-zinc-800/60 last:border-0">
-                        <td className="px-4 py-3 text-zinc-300">{row.periodLabel}</td>
-                        <td className="px-4 py-3 text-zinc-400">{row.count}</td>
-                        <td className="px-4 py-3 text-emerald-400">{peso(row.total)}</td>
+                      <tr key={row.periodKey} className="border-b border-zinc-100 last:border-0">
+                        <td className="px-4 py-3 text-zinc-700">{row.periodLabel}</td>
+                        <td className="px-4 py-3 text-zinc-500">{row.count}</td>
+                        <td className="px-4 py-3 text-emerald-600">{peso(row.total)}</td>
                       </tr>
                     ))
                   )}
@@ -203,14 +203,14 @@ export default function RevenueTab() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
-            <div className="border-b border-zinc-800 px-4 py-3 text-sm font-semibold text-white">
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-900">
               Paying tenants ({data.payingTenants.length})
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
+                  <tr className="border-b border-zinc-200 text-left text-xs uppercase text-zinc-500">
                     <th className="px-4 py-3">Tenant</th>
                     <th className="px-4 py-3">Plan</th>
                     <th className="px-4 py-3">Billing</th>
@@ -225,17 +225,17 @@ export default function RevenueTab() {
                     </tr>
                   ) : (
                     data.payingTenants.map((t) => (
-                      <tr key={t.tenantSlug} className="border-b border-zinc-800/60 last:border-0">
+                      <tr key={t.tenantSlug} className="border-b border-zinc-100 last:border-0">
                         <td className="px-4 py-3">
-                          <p className="font-medium text-white">{t.tenantName}</p>
+                          <p className="font-medium text-zinc-900">{t.tenantName}</p>
                           <p className="text-xs text-zinc-500">{t.ownerEmail}</p>
                         </td>
-                        <td className="px-4 py-3 text-zinc-300">{t.planName}</td>
-                        <td className="px-4 py-3 text-zinc-400">{t.billingCycle === "YEARLY" ? "Yearly" : "Monthly"}</td>
+                        <td className="px-4 py-3 text-zinc-700">{t.planName}</td>
+                        <td className="px-4 py-3 text-zinc-500">{t.billingCycle === "YEARLY" ? "Yearly" : "Monthly"}</td>
                         <td className="px-4 py-3">
                           <span
                             className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                              t.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                              t.status === "ACTIVE" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
                             }`}
                           >
                             {t.status === "ACTIVE" ? "Active" : "Past due"}
@@ -250,12 +250,12 @@ export default function RevenueTab() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
-            <div className="border-b border-zinc-800 px-4 py-3 text-sm font-semibold text-white">Recent payments</div>
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-900">Recent payments</div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
+                  <tr className="border-b border-zinc-200 text-left text-xs uppercase text-zinc-500">
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Tenant</th>
                     <th className="px-4 py-3">Plan</th>
@@ -270,12 +270,12 @@ export default function RevenueTab() {
                     </tr>
                   ) : (
                     data.payments.map((p, i) => (
-                      <tr key={i} className="border-b border-zinc-800/60 last:border-0">
+                      <tr key={i} className="border-b border-zinc-100 last:border-0">
                         <td className="px-4 py-3 text-zinc-500">{p.paidAt ? formatDate(p.paidAt) : "-"}</td>
-                        <td className="px-4 py-3 text-white">{p.tenantName}</td>
-                        <td className="px-4 py-3 text-zinc-300">{p.planName}</td>
-                        <td className="px-4 py-3 text-zinc-400">{p.billingCycle === "YEARLY" ? "Yearly" : "Monthly"}</td>
-                        <td className="px-4 py-3 text-emerald-400">{peso(p.amount)}</td>
+                        <td className="px-4 py-3 text-zinc-900">{p.tenantName}</td>
+                        <td className="px-4 py-3 text-zinc-700">{p.planName}</td>
+                        <td className="px-4 py-3 text-zinc-500">{p.billingCycle === "YEARLY" ? "Yearly" : "Monthly"}</td>
+                        <td className="px-4 py-3 text-emerald-600">{peso(p.amount)}</td>
                       </tr>
                     ))
                   )}

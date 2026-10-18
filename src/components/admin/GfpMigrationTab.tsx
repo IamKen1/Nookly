@@ -73,12 +73,12 @@ export default function GfpMigrationTab() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-amber-800/40 bg-amber-950/20 p-4">
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
         <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-          <div className="text-sm text-amber-200/90">
-            <p className="font-semibold text-amber-300">Migrate gfp-pos data</p>
-            <p className="mt-1 text-amber-200/70">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="text-sm text-amber-900">
+            <p className="font-semibold text-amber-800">Migrate gfp-pos data</p>
+            <p className="mt-1 text-amber-700">
               Pulls the <strong>current, live</strong> data from the legacy gfp-pos database — products, categories,
               suppliers, customers, doctors, prescriptions, sales, sale items, stock movements, staff accounts (with
               their existing login working as-is), and settings — into the tenant you choose below. Existing rows
@@ -89,14 +89,14 @@ export default function GfpMigrationTab() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+      <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-zinc-200 bg-white p-4">
         <div>
           <label className="mb-1 block text-xs text-zinc-500">Target tenant</label>
           <select
             value={tenantId}
             onChange={(e) => setTenantId(e.target.value)}
             disabled={loadingTenants}
-            className="w-64 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-64 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           >
             <option value="">Select a tenant...</option>
             {tenants.map((t) => (
@@ -116,30 +116,30 @@ export default function GfpMigrationTab() {
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
       {summary && (
         <div className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4">
               <p className="text-xs uppercase text-zinc-500">Created</p>
-              <p className="mt-1 text-2xl font-semibold text-emerald-400">{totalCreated}</p>
+              <p className="mt-1 text-2xl font-semibold text-emerald-600">{totalCreated}</p>
             </div>
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4">
               <p className="text-xs uppercase text-zinc-500">Updated</p>
-              <p className="mt-1 text-2xl font-semibold text-blue-400">{totalUpdated}</p>
+              <p className="mt-1 text-2xl font-semibold text-blue-600">{totalUpdated}</p>
             </div>
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-4">
               <p className="text-xs uppercase text-zinc-500">Failed</p>
-              <p className="mt-1 text-2xl font-semibold text-red-400">{totalFailed}</p>
+              <p className="mt-1 text-2xl font-semibold text-red-600">{totalFailed}</p>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
+                <tr className="border-b border-zinc-200 text-left text-xs uppercase text-zinc-500">
                   <th className="px-4 py-2">Table</th>
                   <th className="px-4 py-2">Created</th>
                   <th className="px-4 py-2">Updated</th>
@@ -149,11 +149,11 @@ export default function GfpMigrationTab() {
               </thead>
               <tbody>
                 {summary.tables.map((t) => (
-                  <tr key={t.table} className="border-b border-zinc-800/60 last:border-0">
-                    <td className="px-4 py-2.5 font-medium text-zinc-200">{t.table}</td>
-                    <td className="px-4 py-2.5 text-emerald-400">{t.created}</td>
-                    <td className="px-4 py-2.5 text-blue-400">{t.updated}</td>
-                    <td className="px-4 py-2.5 text-red-400">{t.failed}</td>
+                  <tr key={t.table} className="border-b border-zinc-100 last:border-0">
+                    <td className="px-4 py-2.5 font-medium text-zinc-800">{t.table}</td>
+                    <td className="px-4 py-2.5 text-emerald-600">{t.created}</td>
+                    <td className="px-4 py-2.5 text-blue-600">{t.updated}</td>
+                    <td className="px-4 py-2.5 text-red-600">{t.failed}</td>
                     <td className="px-4 py-2.5 text-xs text-zinc-500">{t.errors.join("; ")}</td>
                   </tr>
                 ))}

@@ -18,10 +18,10 @@ interface AdminPlanRequest {
 }
 
 const STATUS_TONE: Record<string, string> = {
-  PENDING: "bg-amber-500/10 text-amber-400",
-  CONTACTED: "bg-blue-500/10 text-blue-400",
-  ACTIVATED: "bg-emerald-500/10 text-emerald-400",
-  CANCELLED: "bg-zinc-700/40 text-zinc-400",
+  PENDING: "bg-amber-100 text-amber-700",
+  CONTACTED: "bg-blue-100 text-blue-700",
+  ACTIVATED: "bg-emerald-100 text-emerald-700",
+  CANCELLED: "bg-zinc-200 text-zinc-500",
 };
 
 export default function PlanRequestsTab() {
@@ -72,12 +72,12 @@ export default function PlanRequestsTab() {
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
-      {error && <p className="border-b border-red-900/50 bg-red-950/40 px-4 py-2 text-sm text-red-400">{error}</p>}
+    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+      {error && <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
       <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-zinc-800 text-left text-xs font-medium uppercase text-zinc-500">
+          <tr className="border-b border-zinc-200 text-left text-xs font-medium uppercase text-zinc-500">
             <th className="px-4 py-3">Tenant</th>
             <th className="px-4 py-3">Change</th>
             <th className="px-4 py-3">Requested by</th>
@@ -97,25 +97,25 @@ export default function PlanRequestsTab() {
             </tr>
           ) : (
             requests.map((r) => (
-              <tr key={r.id} className="border-b border-zinc-800/60 last:border-0 align-top">
+              <tr key={r.id} className="border-b border-zinc-100 last:border-0 align-top">
                 <td className="px-4 py-3">
-                  <p className="font-medium text-white">{r.tenant.name}</p>
+                  <p className="font-medium text-zinc-900">{r.tenant.name}</p>
                   <p className="text-xs text-zinc-500">{r.tenant.ownerEmail}</p>
-                  {r.tenant.contactNumber && <p className="text-xs text-zinc-600">{r.tenant.contactNumber}</p>}
+                  {r.tenant.contactNumber && <p className="text-xs text-zinc-400">{r.tenant.contactNumber}</p>}
                 </td>
                 <td className="px-4 py-3">
-                  <p className="text-zinc-200">
+                  <p className="text-zinc-800">
                     {r.currentPlan.name} → {r.requestedPlan.name}
                   </p>
                   <p className="text-xs text-zinc-500">{r.billingCycle}</p>
                   {r.note && <p className="mt-1 text-xs text-zinc-500">&ldquo;{r.note}&rdquo;</p>}
                 </td>
-                <td className="px-4 py-3 text-zinc-400">
+                <td className="px-4 py-3 text-zinc-500">
                   {r.requestedByUser.firstName} {r.requestedByUser.lastName}
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{formatDateTime(r.createdAt)}</td>
                 <td className="px-4 py-3">
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_TONE[r.status] ?? "bg-zinc-700/40 text-zinc-400"}`}>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_TONE[r.status] ?? "bg-zinc-200 text-zinc-500"}`}>
                     {r.status}
                   </span>
                 </td>
@@ -126,7 +126,7 @@ export default function PlanRequestsTab() {
                         <button
                           onClick={() => act(r.id, "contacted")}
                           disabled={busyId === r.id}
-                          className="flex items-center justify-center gap-2 rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-zinc-500 disabled:opacity-50 btn-press"
+                          className="flex items-center justify-center gap-2 rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:border-zinc-400 disabled:opacity-50 btn-press"
                         >
                           {busyId === r.id && busyAction === "contacted" && <Loader2 className="h-4 w-4 animate-spin" />}
                           Mark contacted
@@ -143,7 +143,7 @@ export default function PlanRequestsTab() {
                       <button
                         onClick={() => act(r.id, "cancel")}
                         disabled={busyId === r.id}
-                        className="flex items-center justify-center gap-2 rounded-full border border-red-800 px-3 py-1.5 text-xs font-semibold text-red-400 hover:border-red-600 disabled:opacity-50 btn-press"
+                        className="flex items-center justify-center gap-2 rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:border-red-400 disabled:opacity-50 btn-press"
                       >
                         {busyId === r.id && busyAction === "cancel" && <Loader2 className="h-4 w-4 animate-spin" />}
                         Cancel

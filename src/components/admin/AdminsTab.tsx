@@ -78,7 +78,7 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
 
   return (
     <div className="space-y-4">
-      <form onSubmit={grant} className="flex flex-wrap items-end gap-2 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+      <form onSubmit={grant} className="flex flex-wrap items-end gap-2 rounded-2xl border border-zinc-200 bg-white p-4">
         <div>
           <label className="mb-1 block text-xs text-zinc-500">Tenant slug</label>
           <input
@@ -86,7 +86,7 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
             value={tenantSlug}
             onChange={(e) => setTenantSlug(e.target.value)}
             placeholder="e.g. lemon-drugstore"
-            className="w-48 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-48 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
         <div>
@@ -96,7 +96,7 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
             placeholder="owner@example.com"
-            className="w-56 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+            className="w-56 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
           />
         </div>
         <button
@@ -109,13 +109,13 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
         </button>
       </form>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-800 text-left text-xs uppercase text-zinc-500">
+            <tr className="border-b border-zinc-200 text-left text-xs uppercase text-zinc-500">
               <th className="px-4 py-3">Admin</th>
               <th className="px-4 py-3">Tenant</th>
               <th className="px-4 py-3">Source</th>
@@ -129,19 +129,19 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
               <tr><td colSpan={4} className="px-4 py-8 text-center text-zinc-500">No platform admins yet.</td></tr>
             ) : (
               admins.map((a) => (
-                <tr key={a.email} className="border-b border-zinc-800/60 last:border-0">
+                <tr key={a.email} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-white">{a.name}</p>
+                    <p className="font-medium text-zinc-900">{a.name}</p>
                     <p className="text-xs text-zinc-500">
                       {a.email}
                       {a.email.toLowerCase() === currentAdminEmail.toLowerCase() && (
-                        <span className="ml-1.5 text-zinc-600">(you)</span>
+                        <span className="ml-1.5 text-zinc-400">(you)</span>
                       )}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-zinc-400">{a.tenantName}</td>
+                  <td className="px-4 py-3 text-zinc-500">{a.tenantName}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${a.envProtected ? "bg-blue-500/10 text-blue-400" : "bg-zinc-700/40 text-zinc-300"}`}>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${a.envProtected ? "bg-blue-100 text-blue-700" : "bg-zinc-200 text-zinc-700"}`}>
                       {a.envProtected ? "Env bootstrap" : "Granted"}
                     </span>
                   </td>
@@ -150,7 +150,7 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
                       <button
                         onClick={() => revoke(a)}
                         disabled={busyId === a.userId}
-                        className="flex items-center justify-center gap-2 rounded-full border border-red-800 px-3 py-1.5 text-xs font-semibold text-red-400 hover:border-red-600 disabled:opacity-50 btn-press"
+                        className="flex items-center justify-center gap-2 rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:border-red-400 disabled:opacity-50 btn-press"
                       >
                         {busyId === a.userId && <Loader2 className="h-4 w-4 animate-spin" />}
                         Revoke
@@ -164,7 +164,7 @@ export default function AdminsTab({ currentAdminEmail }: { currentAdminEmail: st
         </table>
         </div>
       </div>
-      <p className="text-xs text-zinc-600">
+      <p className="text-xs text-zinc-400">
         Env-bootstrap admins are set via <code className="text-zinc-500">PLATFORM_ADMIN_EMAILS</code> and can&apos;t be revoked from here — remove them from the environment variable instead.
       </p>
     </div>
