@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { formatDate, peso } from "@/lib/format";
 
+interface UsageLimit {
+  active: number;
+  total?: number;
+  max: number; // -1 = unlimited
+}
+
 interface Tenant {
   id: string;
   name: string;
@@ -14,7 +20,7 @@ interface Tenant {
   isActive: boolean;
   createdAt: string;
   plan: { code: string; name: string; status: string; billingCycle: string; expiresAt: string | null } | null;
-  counts: { users: number; products: number; sales: number; stores: number };
+  usage: { users: UsageLimit; products: UsageLimit; stores: UsageLimit; sales: number };
 }
 
 // Highlights an already-lapsed or soon-to-lapse date so admins can spot
@@ -25,6 +31,32 @@ const expiryTone = (expiresAt: string) => {
   if (daysLeft <= 7) return "text-amber-400";
   return "text-zinc-500";
 };
+
+// Active usage is what the plan limit actually enforces (see
+// src/app/api/products|users/route.ts) — color-code against that, never
+// against the lifetime total, so an archived-heavy tenant doesn't read as
+// "over limit" when they're not.
+const usageTone = (active: number, max: number) => {
+  if (max === -1) return "text-zinc-400";
+  const pct = active / max;
+  if (pct >= 1) return "text-red-400 font-semibold";
+  if (pct >= 0.8) return "text-amber-400";
+  return "text-zinc-400";
+};
+
+function UsageStat({ label, usage }: { label: string; usage: UsageLimit }) {
+  const maxLabel = usage.max === -1 ? "unlimited" : usage.max;
+  const hasArchived = usage.total !== undefined && usage.total > usage.active;
+  return (
+    <div>
+      <span className="text-zinc-500">{label} </span>
+      <span className={usageTone(usage.active, usage.max)}>
+        {usage.active} / {maxLabel}
+      </span>
+      {hasArchived && <span className="text-zinc-600"> ({usage.total} total, {usage.total! - usage.active} archived)</span>}
+    </div>
+  );
+}
 
 interface PlanOption {
   id: string;
@@ -198,6 +230,8 @@ export default function TenantsTab() {
                   <td className="px-4 py-3">
                     <p className="font-medium text-white">{t.name}</p>
                     <p className="text-xs text-zinc-500">{t.ownerEmail}</p>
+                    {t.contactNumber && <p className="text-xs text-zinc-600">{t.contactNumber}</p>}
+                    <p className="text-xs text-zinc-600">{t.slug}</p>
                   </td>
                   <td className="px-4 py-3 text-zinc-300">
                     {t.plan ? (
@@ -218,8 +252,11 @@ export default function TenantsTab() {
                       "—"
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs text-zinc-400">
-                    {t.counts.users} users · {t.counts.products} products · {t.counts.sales} sales · {t.counts.stores} stores
+                  <td className="px-4 py-3 text-xs space-y-1">
+                    <UsageStat label="Staff" usage={t.usage.users} />
+                    <UsageStat label="Products" usage={t.usage.products} />
+                    <UsageStat label="Branches" usage={t.usage.stores} />
+                    <div className="text-zinc-600">{t.usage.sales.toLocaleString()} sales (lifetime)</div>
                   </td>
                   <td className="px-4 py-3">
                     <span
