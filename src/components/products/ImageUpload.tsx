@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { ImageIcon, Loader2, Upload, X } from "lucide-react";
+import { getOptimizedImageUrl } from "@/lib/cloudinary";
 
 interface ImageUploadProps {
   currentImage?: string | null;
@@ -53,7 +54,7 @@ export default function ImageUpload({ currentImage, onImageChange }: ImageUpload
         <div className="relative">
           {currentImage ? (
             <div className="group relative">
-              <img src={currentImage} alt="Product preview" className="h-24 w-24 rounded-lg border border-zinc-300 object-cover" />
+              <img src={getOptimizedImageUrl(currentImage, { width: 192, height: 192, quality: "auto", crop: "fill" })} alt="Product preview" className="h-24 w-24 rounded-lg border border-zinc-300 object-cover" />
               <button
                 type="button"
                 onClick={() => onImageChange(null)}

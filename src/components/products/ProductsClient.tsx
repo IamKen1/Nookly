@@ -6,6 +6,7 @@ import { Plus, Search, Settings, Trash2, X, Pencil, Loader2 } from "lucide-react
 import ImageUpload from "./ImageUpload";
 import CategoryManager from "./CategoryManager";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import { getOptimizedImageUrl } from "@/lib/cloudinary";
 
 interface Category {
   id: string;
@@ -269,7 +270,15 @@ export default function ProductsClient({
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       {p.imageUrl ? (
-                        <img src={p.imageUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
+                        <img
+                          src={getOptimizedImageUrl(p.imageUrl, { width: 72, height: 72, quality: "auto", crop: "fill" })}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          width={36}
+                          height={36}
+                          className="h-9 w-9 rounded-lg object-cover"
+                        />
                       ) : (
                         <div className="h-9 w-9 rounded-lg bg-zinc-100" />
                       )}
