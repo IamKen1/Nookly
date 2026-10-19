@@ -258,7 +258,7 @@ export default function TenantsTab() {
                         )}
                         {t.plan.expiresAt && (
                           <p className={`text-xs ${expiryTone(t.plan.expiresAt)}`}>
-                            {t.plan.status === "TRIALING" ? "Trial ends" : t.plan.status === "CANCELED" ? "Ends" : "Renews"}{" "}
+                            {t.plan.status === "TRIALING" ? "Trial ends" : t.plan.status === "CANCELED" ? "Ends" : "Paid until"}{" "}
                             {formatDate(t.plan.expiresAt)}
                           </p>
                         )}

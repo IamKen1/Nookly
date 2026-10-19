@@ -216,7 +216,7 @@ export default function RevenueTab() {
                     <th className="px-4 py-3">Plan</th>
                     <th className="px-4 py-3">Billing</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Next renewal</th>
+                    <th className="px-4 py-3">Paid until</th>
                   </tr>
                 </thead>
                 <tbody>
