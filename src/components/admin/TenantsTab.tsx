@@ -19,7 +19,7 @@ interface Tenant {
   contactNumber: string | null;
   isActive: boolean;
   createdAt: string;
-  plan: { code: string; name: string; status: string; billingCycle: string; expiresAt: string | null } | null;
+  plan: { code: string; name: string; status: string; isComplimentary: boolean; billingCycle: string; expiresAt: string | null } | null;
   usage: { users: UsageLimit; products: UsageLimit; stores: UsageLimit; sales: number };
 }
 
@@ -78,6 +78,7 @@ export default function TenantsTab() {
   const [activateTarget, setActivateTarget] = useState<Tenant | null>(null);
   const [activatePlanId, setActivatePlanId] = useState("");
   const [activateBillingCycle, setActivateBillingCycle] = useState<"MONTHLY" | "YEARLY">("MONTHLY");
+  const [activateComplimentary, setActivateComplimentary] = useState(false);
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
 
@@ -113,6 +114,7 @@ export default function TenantsTab() {
     setActivateTarget(t);
     setActivatePlanId(plans.find((p) => p.code === t.plan?.code)?.id ?? plans[0]?.id ?? "");
     setActivateBillingCycle("MONTHLY");
+    setActivateComplimentary(t.plan?.isComplimentary ?? false);
     setActivateError(null);
   };
 
@@ -124,7 +126,12 @@ export default function TenantsTab() {
       const res = await fetch(`/api/nk-ops-72fq9/tenants/${activateTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "activate_plan", planId: activatePlanId, billingCycle: activateBillingCycle }),
+        body: JSON.stringify({
+          action: "activate_plan",
+          planId: activatePlanId,
+          billingCycle: activateBillingCycle,
+          complimentary: activateComplimentary,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -237,10 +244,18 @@ export default function TenantsTab() {
                     {t.plan ? (
                       <>
                         {t.plan.name}
-                        {t.plan.status !== "TRIALING" && (
+                        {t.plan.status !== "TRIALING" && !t.plan.isComplimentary && (
                           <span className="text-xs text-zinc-500"> ({t.plan.billingCycle === "YEARLY" ? "Yearly" : "Monthly"})</span>
                         )}
-                        <p className="text-xs text-zinc-500">{t.plan.status}</p>
+                        {t.plan.isComplimentary ? (
+                          <p className="mt-0.5">
+                            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">
+                              Complimentary · not paying
+                            </span>
+                          </p>
+                        ) : (
+                          <p className="text-xs text-zinc-500">{t.plan.status === "ACTIVE" ? "ACTIVE · paying" : t.plan.status}</p>
+                        )}
                         {t.plan.expiresAt && (
                           <p className={`text-xs ${expiryTone(t.plan.expiresAt)}`}>
                             {t.plan.status === "TRIALING" ? "Trial ends" : t.plan.status === "CANCELED" ? "Ends" : "Renews"}{" "}
@@ -312,8 +327,9 @@ export default function TenantsTab() {
           <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5">
             <h3 className="text-sm font-semibold text-zinc-900">Activate plan for {activateTarget.name}</h3>
             <p className="mt-1 text-xs text-zinc-500">
-              For when the tenant already paid off-band (no in-app plan request needed). This immediately switches
-              their subscription to ACTIVE and logs the payment.
+              {activateComplimentary
+                ? "Gives full access to this plan for free, with no end date. Not counted in MRR or revenue."
+                : "For when the tenant already paid off-band (no in-app plan request needed). This immediately switches their subscription to ACTIVE and logs the payment."}
             </p>
 
             <div className="mt-4 space-y-3">
@@ -331,21 +347,35 @@ export default function TenantsTab() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Billing cycle</label>
-                <select
-                  value={activateBillingCycle}
-                  onChange={(e) => setActivateBillingCycle(e.target.value as "MONTHLY" | "YEARLY")}
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                >
-                  <option value="MONTHLY">
-                    Monthly — {peso(plans.find((p) => p.id === activatePlanId)?.priceMonthly ?? 0)}
-                  </option>
-                  <option value="YEARLY">
-                    Yearly — {peso(plans.find((p) => p.id === activatePlanId)?.priceYearly ?? 0)}
-                  </option>
-                </select>
-              </div>
+              <label className="flex items-start gap-2 rounded-lg border border-zinc-200 p-3 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={activateComplimentary}
+                  onChange={(e) => setActivateComplimentary(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-zinc-900">Complimentary (free, no payment)</span>
+                  <span className="block text-xs text-zinc-500">Family, internal, or test accounts.</span>
+                </span>
+              </label>
+              {!activateComplimentary && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">Billing cycle</label>
+                  <select
+                    value={activateBillingCycle}
+                    onChange={(e) => setActivateBillingCycle(e.target.value as "MONTHLY" | "YEARLY")}
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                  >
+                    <option value="MONTHLY">
+                      Monthly — {peso(plans.find((p) => p.id === activatePlanId)?.priceMonthly ?? 0)}
+                    </option>
+                    <option value="YEARLY">
+                      Yearly — {peso(plans.find((p) => p.id === activatePlanId)?.priceYearly ?? 0)}
+                    </option>
+                  </select>
+                </div>
+              )}
 
               {activateError && <p className="text-sm text-red-600">{activateError}</p>}
 

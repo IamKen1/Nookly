@@ -9,9 +9,19 @@ interface Analytics {
   trialsEndingSoon: { tenantName: string; tenantSlug: string; ownerEmail: string; trialEndsAt: string | null }[];
   pastDueTenants: { tenantName: string; tenantSlug: string; ownerEmail: string; planName: string }[];
   canceledLast30: number;
+  mrr: number;
+  payingTenants: number;
   arpu: number;
   trialConversionRate: number | null;
-  topTenants: { id: string; name: string; slug: string; planName: string | null; saleCount: number; revenue: number }[];
+  topTenants: {
+    id: string;
+    name: string;
+    slug: string;
+    planName: string | null;
+    isComplimentary: boolean;
+    saleCount: number;
+    revenue: number;
+  }[];
 }
 
 function BarChart({ data, tone = "#34d399" }: { data: number[]; tone?: string }) {
@@ -69,19 +79,25 @@ export default function AnalyticsTab() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="MRR (paying only)" value={`${peso(data.mrr)} · ${data.payingTenants}`} tone="text-emerald-600" />
         <StatCard label="ARPU (paying)" value={peso(data.arpu)} tone="text-emerald-600" />
         <StatCard
           label="Trial → paid conversion"
           value={data.trialConversionRate === null ? "—" : `${Math.round(data.trialConversionRate * 100)}%`}
         />
-        <StatCard label="Canceled (30d)" value={String(data.canceledLast30)} tone={data.canceledLast30 > 0 ? "text-red-600" : undefined} />
         <StatCard label="New signups (30d)" value={String(signups30)} />
       </div>
+      <p className="-mt-3 text-xs text-zinc-500">
+        Complimentary tenants are excluded from MRR, ARPU and conversion. Canceled in the last 30 days: {data.canceledLast30}.
+      </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
           <div className="flex items-baseline justify-between">
-            <h3 className="text-sm font-semibold text-zinc-900">Revenue, last 30 days</h3>
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900">Tenant sales, last 30 days</h3>
+              <p className="text-xs text-zinc-500">What pharmacies sold to their customers — not Nookly income.</p>
+            </div>
             <span className="text-xs text-zinc-500">{peso(revenue30)} · {sales30} sales</span>
           </div>
           <div className="mt-3">
@@ -143,24 +159,28 @@ export default function AnalyticsTab() {
       </div>
 
       <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <h3 className="text-sm font-semibold text-zinc-900">Top tenants by all-time revenue</h3>
+        <h3 className="text-sm font-semibold text-zinc-900">Most active tenants (all-time sales)</h3>
+        <p className="mt-0.5 text-xs text-zinc-500">Sales the pharmacy rang up in Nookly — not what they paid Nookly.</p>
         <div className="overflow-x-auto">
         <table className="mt-3 w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase text-zinc-500">
               <th className="pb-2">Tenant</th>
               <th className="pb-2">Plan</th>
-              <th className="pb-2">Sales</th>
-              <th className="pb-2">Revenue</th>
+              <th className="pb-2">Transactions</th>
+              <th className="pb-2">Sales value</th>
             </tr>
           </thead>
           <tbody>
             {data.topTenants.map((t) => (
               <tr key={t.id} className="border-t border-zinc-100 text-zinc-700">
                 <td className="py-2">{t.name}</td>
-                <td className="py-2 text-zinc-500">{t.planName ?? "—"}</td>
-                <td className="py-2 text-zinc-500">{t.saleCount}</td>
-                <td className="py-2 font-medium text-emerald-600">{peso(t.revenue)}</td>
+                <td className="py-2 text-zinc-500">
+                  {t.planName ?? "—"}
+                  {t.isComplimentary && <span className="ml-1.5 text-xs text-violet-700">(complimentary)</span>}
+                </td>
+                <td className="py-2 text-zinc-500">{t.saleCount.toLocaleString()}</td>
+                <td className="py-2 font-medium text-zinc-800">{peso(t.revenue)}</td>
               </tr>
             ))}
           </tbody>

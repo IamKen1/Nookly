@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
               code: t.subscription.plan.code,
               name: t.subscription.plan.name,
               status: t.subscription.status,
+              isComplimentary: t.subscription.isComplimentary,
               billingCycle: t.subscription.billingCycle,
               // Whichever date actually matters for "when does this lapse" —
               // trial end while trialing, renewal date once on a paid cycle.

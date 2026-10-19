@@ -75,6 +75,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           planId: planRequest.requestedPlanId,
           billingCycle: planRequest.billingCycle,
           status: "ACTIVE",
+          isComplimentary: false,
           currentPeriodStart: now,
           currentPeriodEnd: periodEnd,
           cancelAtPeriodEnd: false,

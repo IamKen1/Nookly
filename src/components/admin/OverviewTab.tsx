@@ -5,7 +5,8 @@ import { peso, formatDate } from "@/lib/format";
 
 interface Overview {
   tenants: { total: number; active: number; suspended: number };
-  subscriptions: { trialing: number; active: number; pastDue: number; canceled: number };
+  subscriptions: { trialing: number; paying: number; complimentary: number; pastDue: number; canceled: number };
+  payingTenants: number;
   users: number;
   products: number;
   sales: { allTimeCount: number; allTimeRevenue: number; todayCount: number; todayRevenue: number };
@@ -45,18 +46,19 @@ export default function OverviewTab() {
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Tenants" value={`${data.tenants.active} active`} />
-        <StatCard label="Suspended" value={String(data.tenants.suspended)} tone={data.tenants.suspended > 0 ? "text-amber-600" : undefined} />
-        <StatCard label="Est. MRR" value={peso(data.estimatedMrr)} tone="text-emerald-600" />
+        <StatCard label="Paying tenants" value={String(data.payingTenants)} tone="text-emerald-600" />
+        <StatCard label="MRR (paying only)" value={peso(data.estimatedMrr)} tone="text-emerald-600" />
         <StatCard label="Pending plan requests" value={String(data.pendingPlanRequests)} tone={data.pendingPlanRequests > 0 ? "text-amber-600" : undefined} />
-        <StatCard label="Active users" value={String(data.users)} />
-        <StatCard label="Active products" value={String(data.products)} />
-        <StatCard label="Sales today" value={`${data.sales.todayCount} · ${peso(data.sales.todayRevenue)}`} />
-        <StatCard label="Sales all-time" value={`${data.sales.allTimeCount} · ${peso(data.sales.allTimeRevenue)}`} />
+        <StatCard label="Suspended" value={String(data.tenants.suspended)} tone={data.tenants.suspended > 0 ? "text-amber-600" : undefined} />
+        <StatCard label="Active users · products" value={`${data.users} · ${data.products.toLocaleString()}`} />
+        <StatCard label="Tenant sales today" value={`${data.sales.todayCount} · ${peso(data.sales.todayRevenue)}`} />
+        <StatCard label="Tenant sales all-time" value={`${data.sales.allTimeCount} · ${peso(data.sales.allTimeRevenue)}`} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
           <h3 className="text-sm font-semibold text-zinc-900">Subscription status</h3>
+          <p className="mt-0.5 text-xs text-zinc-500">Complimentary = free access we granted; never counted as paying.</p>
           <div className="mt-3 space-y-2 text-sm">
             {Object.entries(data.subscriptions).map(([key, count]) => (
               <div key={key} className="flex items-center justify-between text-zinc-500">

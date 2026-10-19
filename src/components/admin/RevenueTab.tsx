@@ -23,6 +23,7 @@ interface RevenueReport {
     billingCycle: string;
     currentPeriodEnd: string | null;
   }>;
+  complimentaryTenants: Array<{ tenantName: string; tenantSlug: string; ownerEmail: string; planName: string }>;
   payments: Array<{
     tenantName: string;
     tenantSlug: string;
@@ -249,6 +250,21 @@ export default function RevenueTab() {
               </table>
             </div>
           </div>
+
+          {data.complimentaryTenants.length > 0 && (
+            <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm">
+              <p className="font-semibold text-violet-900">
+                Complimentary — free access, excluded from everything above ({data.complimentaryTenants.length})
+              </p>
+              <ul className="mt-1.5 space-y-0.5 text-violet-800">
+                {data.complimentaryTenants.map((t) => (
+                  <li key={t.tenantSlug}>
+                    {t.tenantName} <span className="text-violet-600">· {t.planName} · {t.ownerEmail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-900">Recent payments</div>

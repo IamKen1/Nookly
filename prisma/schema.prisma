@@ -134,6 +134,9 @@ model Subscription {
   currentPeriodEnd   DateTime?
   cancelAtPeriodEnd  Boolean            @default(false)
   canceledAt         DateTime?
+  // Free account granted by Nookly (family, internal/test workspaces) — has full
+  // plan access but is never counted as paying in MRR/revenue/conversion.
+  isComplimentary    Boolean            @default(false)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)

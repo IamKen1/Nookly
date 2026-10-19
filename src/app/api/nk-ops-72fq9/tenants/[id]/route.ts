@@ -17,6 +17,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     action: Action;
     planId?: string;
     billingCycle?: "MONTHLY" | "YEARLY";
+    complimentary?: boolean;
   };
   const { action } = body;
 
@@ -50,11 +51,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const plan = await prisma.plan.findUnique({ where: { id: planId } });
     if (!plan) return NextResponse.json({ error: "Plan not found." }, { status: 404 });
 
+    const complimentary = body.complimentary === true;
     const now = new Date();
-    const periodEnd = new Date(now);
-    if (billingCycle === "YEARLY") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-    else periodEnd.setMonth(periodEnd.getMonth() + 1);
-    const amount = billingCycle === "YEARLY" ? plan.priceYearly : plan.priceMonthly;
+    // Complimentary access never lapses, so no period end and no invoice.
+    let periodEnd: Date | null = null;
+    if (!complimentary) {
+      periodEnd = new Date(now);
+      if (billingCycle === "YEARLY") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+      else periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+    const amount = complimentary ? 0 : Number(billingCycle === "YEARLY" ? plan.priceYearly : plan.priceMonthly);
 
     await prisma.$transaction([
       prisma.subscription.update({
@@ -63,22 +69,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           planId: plan.id,
           billingCycle,
           status: "ACTIVE",
+          isComplimentary: complimentary,
           currentPeriodStart: now,
           currentPeriodEnd: periodEnd,
           cancelAtPeriodEnd: false,
           canceledAt: null,
         },
       }),
-      prisma.invoice.create({
-        data: {
-          subscriptionId: tenant.subscription.id,
-          amount,
-          status: "PAID",
-          periodStart: now,
-          periodEnd,
-          paidAt: now,
-        },
-      }),
+      ...(periodEnd
+        ? [
+            prisma.invoice.create({
+              data: {
+                subscriptionId: tenant.subscription.id,
+                amount,
+                status: "PAID",
+                periodStart: now,
+                periodEnd,
+                paidAt: now,
+              },
+            }),
+          ]
+        : []),
     ]);
 
     await logAdminAction({
@@ -87,16 +98,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       action: "activate_plan_direct",
       targetType: "Tenant",
       targetId: id,
-      metadata: { tenantName: tenant.name, tenantSlug: tenant.slug, plan: plan.name, billingCycle, amount: Number(amount) },
+      metadata: { tenantName: tenant.name, tenantSlug: tenant.slug, plan: plan.name, billingCycle, amount, complimentary },
     });
 
     await sendAlertEmail({
       to: [tenant.ownerEmail],
       subject: `[Nookly] Your ${plan.name} plan is now active`,
-      text: `Hi! Your Nookly workspace "${tenant.name}" has been switched to the ${plan.name} plan (${billingCycle.toLowerCase()}). Thanks for your payment!`,
+      text: complimentary
+        ? `Hi! Your Nookly workspace "${tenant.name}" now has complimentary access to the ${plan.name} plan.`
+        : `Hi! Your Nookly workspace "${tenant.name}" has been switched to the ${plan.name} plan (${billingCycle.toLowerCase()}). Thanks for your payment!`,
     }).catch((err) => console.error("Failed to send plan-activated email:", err));
 
-    return NextResponse.json({ id, status: "ACTIVE", planName: plan.name, billingCycle, amount: Number(amount) });
+    return NextResponse.json({ id, status: "ACTIVE", planName: plan.name, billingCycle, amount, complimentary });
   }
 
   return NextResponse.json({ error: "Invalid action." }, { status: 400 });

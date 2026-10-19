@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireAdminAccessRequest } from "@/lib/platform-admin";
 import { startOfTodayPH } from "@/lib/timezone";
+import { PAYING_SUBSCRIPTION_WHERE, monthlyValue } from "@/lib/platform-revenue";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -14,7 +15,8 @@ export async function GET(request: NextRequest) {
     tenantCount,
     activeTenantCount,
     trialingCount,
-    activeSubCount,
+    payingActiveCount,
+    complimentaryCount,
     pastDueCount,
     canceledCount,
     userCount,
@@ -24,12 +26,14 @@ export async function GET(request: NextRequest) {
     pendingPlanRequests,
     plansWithCounts,
     recentTenants,
+    payingSubs,
   ] = await Promise.all([
     prisma.tenant.count(),
     prisma.tenant.count({ where: { isActive: true } }),
     prisma.subscription.count({ where: { status: "TRIALING" } }),
-    prisma.subscription.count({ where: { status: "ACTIVE" } }),
-    prisma.subscription.count({ where: { status: "PAST_DUE" } }),
+    prisma.subscription.count({ where: { status: "ACTIVE", isComplimentary: false } }),
+    prisma.subscription.count({ where: { isComplimentary: true } }),
+    prisma.subscription.count({ where: { status: "PAST_DUE", isComplimentary: false } }),
     prisma.subscription.count({ where: { status: "CANCELED" } }),
     prisma.user.count({ where: { isActive: true } }),
     prisma.product.count({ where: { isActive: true } }),
@@ -49,13 +53,21 @@ export async function GET(request: NextRequest) {
       take: 8,
       select: { id: true, name: true, slug: true, createdAt: true, subscription: { include: { plan: true } } },
     }),
+    prisma.subscription.findMany({ where: PAYING_SUBSCRIPTION_WHERE, include: { plan: true } }),
   ]);
 
-  const mrr = plansWithCounts.reduce((sum, p) => sum + Number(p.priceMonthly) * p._count.subscriptions, 0);
+  const mrr = payingSubs.reduce((sum, s) => sum + monthlyValue(s.billingCycle, s.plan), 0);
 
   return NextResponse.json({
     tenants: { total: tenantCount, active: activeTenantCount, suspended: tenantCount - activeTenantCount },
-    subscriptions: { trialing: trialingCount, active: activeSubCount, pastDue: pastDueCount, canceled: canceledCount },
+    subscriptions: {
+      trialing: trialingCount,
+      paying: payingActiveCount,
+      complimentary: complimentaryCount,
+      pastDue: pastDueCount,
+      canceled: canceledCount,
+    },
+    payingTenants: payingSubs.length,
     users: userCount,
     products: productCount,
     sales: {
@@ -73,7 +85,7 @@ export async function GET(request: NextRequest) {
       slug: t.slug,
       createdAt: t.createdAt.toISOString(),
       planName: t.subscription?.plan.name ?? null,
-      status: t.subscription?.status ?? null,
+      status: t.subscription?.isComplimentary ? "COMPLIMENTARY" : t.subscription?.status ?? null,
     })),
   });
 }

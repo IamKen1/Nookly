@@ -2,21 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireAdminAccessRequest } from "@/lib/platform-admin";
+import { startOfDatePH } from "@/lib/timezone";
+import { PAYING_SUBSCRIPTION_WHERE, monthlyValue } from "@/lib/platform-revenue";
 
 const DAYS = 30;
 
+const phDateFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" });
+
 function dateKey(d: Date) {
-  return d.toISOString().slice(0, 10);
+  return phDateFormat.format(d);
 }
 
 function lastNDays(n: number) {
   const keys: string[] = [];
-  const now = new Date();
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    keys.push(dateKey(d));
-  }
+  const now = Date.now();
+  for (let i = n - 1; i >= 0; i--) keys.push(dateKey(new Date(now - i * 86_400_000)));
   return keys;
 }
 
@@ -26,9 +26,8 @@ export async function GET(request: NextRequest) {
   const access = await requireAdminAccessRequest(request, session);
   if (!access.ok) return NextResponse.json({ error: "Forbidden", reason: access.reason }, { status: 403 });
 
-  const since = new Date();
-  since.setDate(since.getDate() - (DAYS - 1));
-  since.setHours(0, 0, 0, 0);
+  const days = lastNDays(DAYS);
+  const since = startOfDatePH(days[0]);
 
   const soon = new Date();
   soon.setDate(soon.getDate() + 7);
@@ -39,10 +38,11 @@ export async function GET(request: NextRequest) {
     trialsEndingSoon,
     pastDueSubs,
     canceledLast30,
-    activeSubCount,
+    payingSubs,
     trialingSubCount,
     everCanceledCount,
-    topTenantsRaw,
+    salesByTenant,
+    tenants,
   ] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "COMPLETED", saleDate: { gte: since } },
@@ -58,26 +58,27 @@ export async function GET(request: NextRequest) {
       orderBy: { trialEndsAt: "asc" },
     }),
     prisma.subscription.findMany({
-      where: { status: "PAST_DUE" },
+      where: { status: "PAST_DUE", isComplimentary: false },
       include: { tenant: { select: { name: true, slug: true, ownerEmail: true } }, plan: true },
     }),
-    prisma.subscription.count({ where: { canceledAt: { gte: since } } }),
-    prisma.subscription.count({ where: { status: "ACTIVE" } }),
+    prisma.subscription.count({ where: { canceledAt: { gte: since }, isComplimentary: false } }),
+    prisma.subscription.findMany({ where: PAYING_SUBSCRIPTION_WHERE, include: { plan: true } }),
     prisma.subscription.count({ where: { status: "TRIALING" } }),
-    prisma.subscription.count({ where: { status: "CANCELED" } }),
+    prisma.subscription.count({ where: { status: "CANCELED", isComplimentary: false } }),
+    prisma.sale.groupBy({
+      by: ["tenantId"],
+      where: { status: "COMPLETED" },
+      _count: true,
+      _sum: { totalAmount: true },
+    }),
     prisma.tenant.findMany({
-      include: {
-        subscription: { include: { plan: true } },
-        sales: { where: { status: "COMPLETED" }, select: { totalAmount: true } },
-      },
+      select: { id: true, name: true, slug: true, subscription: { select: { isComplimentary: true, plan: { select: { name: true } } } } },
     }),
   ]);
 
-  const days = lastNDays(DAYS);
   const salesByDay = new Map(days.map((k) => [k, { count: 0, revenue: 0 }]));
   for (const sale of recentSales) {
-    const key = dateKey(sale.saleDate);
-    const bucket = salesByDay.get(key);
+    const bucket = salesByDay.get(dateKey(sale.saleDate));
     if (bucket) {
       bucket.count += 1;
       bucket.revenue += Number(sale.totalAmount);
@@ -87,30 +88,32 @@ export async function GET(request: NextRequest) {
   const signupsByDay = new Map(days.map((k) => [k, 0]));
   for (const t of recentTenantsForGrowth) {
     const key = dateKey(t.createdAt);
-    signupsByDay.set(key, (signupsByDay.get(key) ?? 0) + 1);
+    if (signupsByDay.has(key)) signupsByDay.set(key, signupsByDay.get(key)! + 1);
   }
 
-  const topTenants = topTenantsRaw
-    .map((t) => ({
-      id: t.id,
-      name: t.name,
-      slug: t.slug,
-      planName: t.subscription?.plan.name ?? null,
-      saleCount: t.sales.length,
-      revenue: t.sales.reduce((sum, s) => sum + Number(s.totalAmount), 0),
-    }))
+  const tenantById = new Map(tenants.map((t) => [t.id, t]));
+  const topTenants = salesByTenant
+    .map((row) => {
+      const t = tenantById.get(row.tenantId);
+      return {
+        id: row.tenantId,
+        name: t?.name ?? "Unknown",
+        slug: t?.slug ?? "",
+        planName: t?.subscription?.plan.name ?? null,
+        isComplimentary: t?.subscription?.isComplimentary ?? false,
+        saleCount: row._count,
+        revenue: Number(row._sum.totalAmount ?? 0),
+      };
+    })
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
-  const payingTenants = activeSubCount + pastDueSubs.length;
-  const estimatedMrr = topTenantsRaw.reduce((sum, t) => {
-    if (!t.subscription || (t.subscription.status !== "ACTIVE" && t.subscription.status !== "PAST_DUE")) return sum;
-    return sum + Number(t.subscription.plan.priceMonthly);
-  }, 0);
-  const arpu = payingTenants > 0 ? estimatedMrr / payingTenants : 0;
+  const mrr = payingSubs.reduce((sum, s) => sum + monthlyValue(s.billingCycle, s.plan), 0);
+  const arpu = payingSubs.length > 0 ? mrr / payingSubs.length : 0;
 
-  const conversionBase = activeSubCount + trialingSubCount + everCanceledCount;
-  const trialConversionRate = conversionBase > 0 ? activeSubCount / conversionBase : null;
+  const payingActive = payingSubs.filter((s) => s.status === "ACTIVE").length;
+  const conversionBase = payingActive + trialingSubCount + everCanceledCount;
+  const trialConversionRate = conversionBase > 0 ? payingActive / conversionBase : null;
 
   return NextResponse.json({
     salesTrend: days.map((day) => ({ day, ...salesByDay.get(day)! })),
@@ -128,6 +131,8 @@ export async function GET(request: NextRequest) {
       planName: s.plan.name,
     })),
     canceledLast30,
+    mrr,
+    payingTenants: payingSubs.length,
     arpu,
     trialConversionRate,
     topTenants,
