@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { peso, formatDate } from "@/lib/format";
+import { isCompleteDate } from "@/lib/date-input";
 
 interface RevenueReport {
   filters: { startDate: string | null; endDate: string | null };
@@ -46,6 +47,7 @@ export default function RevenueTab() {
   const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("monthly");
 
   const load = useCallback(async () => {
+    if (!isCompleteDate(startDate) || !isCompleteDate(endDate)) return;
     setLoading(true);
     setError(null);
     try {

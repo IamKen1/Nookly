@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, ChevronDown, ChevronUp, Loader2, Printer, RotateCcw, Search, X } from "lucide-react";
 import { printReceipt } from "@/lib/receipt";
+import { isCompleteDate } from "@/lib/date-input";
 import type { ReceiptData } from "@/types/receipt";
 
 const PAYMENT_METHODS = ["CASH", "CREDIT_CARD", "DEBIT_CARD", "INSURANCE", "CHECK", "SPLIT"];
@@ -79,6 +80,23 @@ export default function SalesClient({
     setPrevSearchFilter(filters.search);
     setSearchInput(filters.search);
   }
+
+  // Date inputs fire onChange on every keystroke, and typing the year digit by
+  // digit yields "0002-…", "0020-…" etc. Keep a local draft and only apply the
+  // filter once the date is complete (plausible year) or cleared.
+  const [dateDraft, setDateDraft] = useState({ dateFrom: filters.dateFrom, dateTo: filters.dateTo });
+  const [prevDateFilters, setPrevDateFilters] = useState({ dateFrom: filters.dateFrom, dateTo: filters.dateTo });
+  if (filters.dateFrom !== prevDateFilters.dateFrom || filters.dateTo !== prevDateFilters.dateTo) {
+    setPrevDateFilters({ dateFrom: filters.dateFrom, dateTo: filters.dateTo });
+    setDateDraft({ dateFrom: filters.dateFrom, dateTo: filters.dateTo });
+  }
+
+  const changeDate = (key: "dateFrom" | "dateTo", value: string) => {
+    setDateDraft((d) => ({ ...d, [key]: value }));
+    if (value === "" || isCompleteDate(value)) {
+      applyFilters({ [key]: value });
+    }
+  };
 
   const applyFilters = (patch: Partial<Filters>) => {
     const next = { ...filters, ...patch };
@@ -227,8 +245,8 @@ export default function SalesClient({
           <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
           <input
             type="date"
-            value={filters.dateFrom}
-            onChange={(e) => applyFilters({ dateFrom: e.target.value })}
+            value={dateDraft.dateFrom}
+            onChange={(e) => changeDate("dateFrom", e.target.value)}
             className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
           />
         </div>
@@ -236,8 +254,8 @@ export default function SalesClient({
           <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
           <input
             type="date"
-            value={filters.dateTo}
-            onChange={(e) => applyFilters({ dateTo: e.target.value })}
+            value={dateDraft.dateTo}
+            onChange={(e) => changeDate("dateTo", e.target.value)}
             className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
           />
         </div>

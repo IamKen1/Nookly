@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { peso, formatDateTime } from "@/lib/format";
+import { isCompleteDate } from "@/lib/date-input";
 import ShiftReportsTrends from "./ShiftReportsTrends";
 
 interface DailyClosing {
@@ -58,6 +59,7 @@ function DailyClosingView() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isCompleteDate(date)) return;
     setLoading(true);
     setError(null);
     fetch(`/api/shifts/daily-closing?date=${date}`)

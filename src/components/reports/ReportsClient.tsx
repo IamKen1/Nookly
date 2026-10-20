@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import { peso, formatDate, formatDateTime } from "@/lib/format";
+import { isCompleteDate } from "@/lib/date-input";
 
 type Tab = "overview" | "income" | "expenses" | "inventory-dates" | "e-services";
 
@@ -152,6 +153,13 @@ export default function ReportsClient({ enabledReports }: { enabledReports: stri
 
   const load = useCallback(
     async (t: Tab) => {
+      const ranges: Partial<Record<Tab, string[]>> = {
+        overview: [overviewStartDate, overviewEndDate],
+        income: [incomeStartDate, incomeEndDate],
+        expenses: [expensesStartDate, expensesEndDate],
+        "e-services": [cashStartDate, cashEndDate],
+      };
+      if (ranges[t]?.some((d) => !isCompleteDate(d))) return;
       setLoading(true);
       setError(null);
       try {
