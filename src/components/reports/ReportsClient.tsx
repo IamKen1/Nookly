@@ -51,6 +51,7 @@ interface InventoryDatesReport {
     category: { name: string } | null;
     currentStock: number;
     expiryDate: string | null;
+    batchNumber: string | null;
     daysToExpiry: number | null;
     dateStatus: string;
   }>;
@@ -713,7 +714,10 @@ export default function ReportsClient({ enabledReports }: { enabledReports: stri
                       <td className="px-4 py-3 font-medium text-zinc-900">{r.name}</td>
                       <td className="px-4 py-3 text-zinc-600">{r.category?.name ?? "-"}</td>
                       <td className="px-4 py-3 text-zinc-600">{r.currentStock}</td>
-                      <td className="px-4 py-3 text-zinc-600">{r.expiryDate ? formatDate(r.expiryDate) : "-"}</td>
+                      <td className="px-4 py-3 text-zinc-600">
+                        {r.expiryDate ? formatDate(r.expiryDate) : "-"}
+                        {r.batchNumber && <p className="text-xs text-zinc-400">Batch {r.batchNumber}</p>}
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={

@@ -40,15 +40,25 @@ export async function GET(request: NextRequest) {
         expiryDate: true,
         isActive: true,
         stocks: session.storeId ? { where: { storeId: session.storeId } } : true,
+        // Soonest-expiring batch still holding stock — the same one FEFO sells first.
+        batches: {
+          where: { quantity: { gt: 0 } },
+          orderBy: { expirationDate: "asc" },
+          take: 1,
+          select: { batchNumber: true, expirationDate: true },
+        },
       },
-      orderBy: [{ expiryDate: "asc" }, { updatedAt: "desc" }],
     });
 
     const rows = products.map((product) => {
-      const hasExpiry = Boolean(product.expiryDate);
-      const expired = Boolean(product.expiryDate && product.expiryDate < today);
-      const expiringSoon = Boolean(product.expiryDate && product.expiryDate >= today && product.expiryDate <= expiryWindowEnd);
-      const daysToExpiry = product.expiryDate ? Math.ceil((startOfDay(product.expiryDate).getTime() - today.getTime()) / DAY_MS) : null;
+      const batch = product.batches[0];
+      // Batch dates are the source of truth; product.expiryDate only covers
+      // products whose expiry was set before batch tracking (legacy import/migration).
+      const expiryDate = batch?.expirationDate ?? product.expiryDate;
+      const hasExpiry = Boolean(expiryDate);
+      const expired = Boolean(expiryDate && expiryDate < today);
+      const expiringSoon = Boolean(expiryDate && expiryDate >= today && expiryDate <= expiryWindowEnd);
+      const daysToExpiry = expiryDate ? Math.ceil((startOfDay(expiryDate).getTime() - today.getTime()) / DAY_MS) : null;
       const dateStatus = expired ? "expired" : expiringSoon ? "expiring_soon" : hasExpiry ? "valid" : "no_expiry";
 
       return {
@@ -61,10 +71,17 @@ export async function GET(request: NextRequest) {
         currentStock: product.stocks[0]?.currentStock ?? 0,
         createdAt: product.createdAt.toISOString(),
         updatedAt: product.updatedAt.toISOString(),
-        expiryDate: product.expiryDate ? product.expiryDate.toISOString() : null,
+        expiryDate: expiryDate ? expiryDate.toISOString() : null,
+        batchNumber: batch?.batchNumber ?? null,
         daysToExpiry,
         dateStatus,
       };
+    });
+    rows.sort((a, b) => {
+      if (a.expiryDate === b.expiryDate) return b.updatedAt.localeCompare(a.updatedAt);
+      if (!a.expiryDate) return 1;
+      if (!b.expiryDate) return -1;
+      return a.expiryDate.localeCompare(b.expiryDate);
     });
 
     const summary = {
