@@ -143,6 +143,18 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
+    // The price always comes from the database (this branch's own price, else
+    // the product's) — never trusted from the client. A mismatch means the cart
+    // is stale or was tampered with, so refuse rather than charge a different
+    // amount than the cashier showed the customer.
+    const unitPrice = Number(product.stocks[0]?.sellingPrice ?? product.sellingPrice);
+    if (!Number.isFinite(Number(item.price)) || Math.abs(Number(item.price) - unitPrice) > 0.005) {
+      return NextResponse.json(
+        { error: `The price of ${product.name} is now ₱${unitPrice.toFixed(2)}. Remove it from the cart and add it again.` },
+        { status: 409 }
+      );
+    }
+    item.price = unitPrice;
   }
 
   const requiresPrescription = items.some((item) => productMap.get(item.productId)?.requiresPrescription);
