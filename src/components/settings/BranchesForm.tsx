@@ -83,11 +83,10 @@ export default function BranchesForm({ maxStores, planName }: { maxStores: numbe
   };
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-semibold text-zinc-900">Branches</h3>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="text-sm text-zinc-500">
             {activeCount} / {formatLimit(maxStores)} branches on the {planName} plan. Each branch has its own stock, sales, and shifts.
           </p>
         </div>
@@ -111,7 +110,7 @@ export default function BranchesForm({ maxStores, planName }: { maxStores: numbe
       {success && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p>}
 
       {showForm && (
-        <form onSubmit={add} className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5">
+        <form onSubmit={add} className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <input
             required
             placeholder="Branch name (e.g., Branch 2 – Poblacion)"
@@ -153,12 +152,12 @@ export default function BranchesForm({ maxStores, planName }: { maxStores: numbe
         </form>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         {loading ? (
           <p className="px-4 py-8 text-center text-sm text-zinc-400">Loading...</p>
         ) : (
           branches.map((b) => (
-            <div key={b.id} className="flex items-center gap-3 border-b border-zinc-100 px-4 py-3 last:border-0">
+            <div key={b.id} className="flex items-center gap-4 border-b border-zinc-100 px-6 py-4 last:border-0">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
                 <Store className="h-4 w-4" />
               </span>

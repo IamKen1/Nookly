@@ -57,7 +57,7 @@ export default function UserAccessForm() {
   };
 
   return (
-    <div className="max-w-3xl space-y-4 rounded-2xl border border-zinc-200 bg-white p-6">
+    <div className="space-y-5 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
       <div>
         <h3 className="text-sm font-semibold text-zinc-900">Who can do what</h3>
         <p className="mt-1 text-xs text-zinc-500">

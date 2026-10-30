@@ -49,7 +49,7 @@ export default function BranchSwitcher({
         value={currentStoreId ?? ""}
         onChange={(e) => switchTo(e.target.value)}
         disabled={switching}
-        className={`max-w-64 cursor-pointer truncate bg-transparent outline-none ${tone === "dark" ? "[&>option]:text-zinc-900" : ""}`}
+        className={`max-w-[40vw] sm:max-w-64 cursor-pointer truncate bg-transparent outline-none ${tone === "dark" ? "[&>option]:text-zinc-900" : ""}`}
       >
         {!currentStoreId && <option value="">Choose branch</option>}
         {stores.map((s) => (

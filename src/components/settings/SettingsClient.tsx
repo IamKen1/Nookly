@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Bell, CreditCard, KeyRound, Loader2, PlayCircle, ReceiptText, ShieldCheck, Store, type LucideIcon } from "lucide-react";
 import ReceiptSettingsForm from "./ReceiptSettingsForm";
 import NotificationSettingsForm from "./NotificationSettingsForm";
 import PlanSettingsForm from "./PlanSettingsForm";
@@ -64,81 +64,86 @@ export default function SettingsClient({
     }
   };
 
+  const sections: { key: Tab; label: string; description: string; icon: LucideIcon; visible: boolean }[] = [
+    { key: "plan", label: "Plan & billing", description: "Your subscription, usage, and plan changes", icon: CreditCard, visible: true },
+    {
+      key: "branches",
+      label: "Branches",
+      description: "Add and rename your store branches",
+      icon: Store,
+      visible: canManagePlan && Boolean(currentPlan),
+    },
+    { key: "receipt", label: "Receipt", description: "Store details and what prints on receipts", icon: ReceiptText, visible: true },
+    { key: "notifications", label: "Notifications", description: "Email alerts for sales and stock", icon: Bell, visible: canManageAlerts },
+    { key: "userAccess", label: "User access", description: "What each staff role can do", icon: ShieldCheck, visible: isOwner },
+    { key: "apiAccess", label: "API access", description: "Keys for connecting other systems", icon: KeyRound, visible: canManageApiAccess },
+  ];
+  const visibleSections = sections.filter((s) => s.visible);
+  const active = visibleSections.find((s) => s.key === tab) ?? visibleSections[0];
+
   return (
-    <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="w-full max-w-[calc(100vw-3rem)] lg:mx-auto sm:max-w-[calc(100vw-17rem)] lg:max-w-6xl">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Settings</h1>
-          <p className="mt-1 text-sm text-zinc-500">Manage your plan, receipts, and alert preferences.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Settings</h1>
+          <p className="mt-1 text-sm text-zinc-500">Manage your plan, branches, receipts, and alert preferences.</p>
         </div>
         <button
           onClick={restartTour}
           disabled={restarting}
-          className="flex items-center justify-center gap-2 rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:border-zinc-400 disabled:opacity-50 btn-press"
+          className="flex items-center justify-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:border-zinc-300 disabled:opacity-50 btn-press"
         >
-          {restarting && <Loader2 className="h-4 w-4 animate-spin" />}
+          {restarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4 text-emerald-600" />}
           {restarting ? "Starting..." : "Replay guided tour"}
         </button>
       </div>
 
-      <div className="mt-6 flex gap-2 border-b border-zinc-200">
-        <button
-          onClick={() => setTab("plan")}
-          className={`px-4 py-2 text-sm font-semibold ${tab === "plan" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
-        >
-          Plan
-        </button>
-        {canManagePlan && currentPlan && (
-          <button
-            onClick={() => setTab("branches")}
-            className={`px-4 py-2 text-sm font-semibold ${tab === "branches" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
-          >
-            Branches
-          </button>
-        )}
-        <button
-          onClick={() => setTab("receipt")}
-          className={`px-4 py-2 text-sm font-semibold ${tab === "receipt" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
-        >
-          Receipt
-        </button>
-        {canManageAlerts && (
-          <button
-            onClick={() => setTab("notifications")}
-            className={`px-4 py-2 text-sm font-semibold ${tab === "notifications" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
-          >
-            Notifications
-          </button>
-        )}
-        {isOwner && (
-          <button
-            onClick={() => setTab("userAccess")}
-            className={`px-4 py-2 text-sm font-semibold ${tab === "userAccess" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
-          >
-            User Access
-          </button>
-        )}
-        {canManageApiAccess && (
-          <button
-            onClick={() => setTab("apiAccess")}
-            className={`px-4 py-2 text-sm font-semibold ${tab === "apiAccess" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
-          >
-            API Access
-          </button>
-        )}
-      </div>
+      <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:items-start">
+        <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:sticky lg:top-6 lg:mx-0 lg:w-64 lg:shrink-0 lg:flex-col lg:gap-1 lg:overflow-visible lg:px-0">
+          {visibleSections.map(({ key, label, description, icon: Icon }) => {
+            const selected = active.key === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`flex shrink-0 items-start gap-3 rounded-xl px-3.5 py-2.5 text-left transition lg:w-full lg:py-3 ${
+                  selected
+                    ? "bg-white shadow-sm ring-1 ring-emerald-200"
+                    : "border border-zinc-200 bg-white lg:border-transparent lg:bg-transparent hover:bg-white"
+                }`}
+              >
+                <span
+                  className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    selected ? "bg-emerald-600 text-white" : "bg-zinc-100 text-zinc-500"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className={`block whitespace-nowrap text-sm font-semibold ${selected ? "text-emerald-700" : "text-zinc-800"}`}>{label}</span>
+                  <span className="hidden text-xs leading-snug text-zinc-500 lg:block">{description}</span>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
 
-      <div className="mt-6">
-        {tab === "plan" && (
-          <PlanSettingsForm canManagePlan={canManagePlan} currentPlan={currentPlan} allPlans={allPlans} usage={usage} />
-        )}
-        {tab === "branches" && canManagePlan && currentPlan && (
-          <BranchesForm maxStores={currentPlan.maxStores} planName={currentPlan.name} />
-        )}
-        {tab === "receipt" && <ReceiptSettingsForm />}
-        {tab === "notifications" && canManageAlerts && <NotificationSettingsForm />}
-        {tab === "userAccess" && isOwner && <UserAccessForm />}
-        {tab === "apiAccess" && canManageApiAccess && <ApiKeysForm />}
+        <section className="min-w-0 flex-1 lg:max-w-4xl">
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-zinc-900">{active.label}</h2>
+            <p className="mt-1 text-sm text-zinc-500">{active.description}</p>
+          </div>
+          {active.key === "plan" && (
+            <PlanSettingsForm canManagePlan={canManagePlan} currentPlan={currentPlan} allPlans={allPlans} usage={usage} />
+          )}
+          {active.key === "branches" && canManagePlan && currentPlan && (
+            <BranchesForm maxStores={currentPlan.maxStores} planName={currentPlan.name} />
+          )}
+          {active.key === "receipt" && <ReceiptSettingsForm />}
+          {active.key === "notifications" && canManageAlerts && <NotificationSettingsForm />}
+          {active.key === "userAccess" && isOwner && <UserAccessForm />}
+          {active.key === "apiAccess" && canManageApiAccess && <ApiKeysForm />}
+        </section>
       </div>
     </div>
   );

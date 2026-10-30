@@ -74,8 +74,8 @@ export default function ApiKeysForm() {
   };
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
         <h3 className="font-semibold text-zinc-900">API access</h3>
         <p className="mt-1 text-sm text-zinc-500">
           Read-only keys for pulling your products, inventory, and sales data into external tools (accounting, BI, etc).
@@ -123,7 +123,7 @@ export default function ApiKeysForm() {
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">Active keys</div>
         {loading ? (
           <p className="px-4 py-4 text-center text-sm text-zinc-400">Loading...</p>

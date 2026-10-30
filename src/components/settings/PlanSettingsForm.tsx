@@ -134,8 +134,8 @@ export default function PlanSettingsForm({
   if (!currentPlan) return <p className="text-sm text-zinc-400">No active subscription found.</p>;
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-medium text-zinc-500">Current plan</p>
@@ -186,7 +186,7 @@ export default function PlanSettingsForm({
       </div>
 
       {canManagePlan && (
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
           <h3 className="font-semibold text-zinc-900">Change plan</h3>
           <p className="mt-1 text-sm text-zinc-500">
             Nookly doesn&apos;t charge cards automatically. Submit a request, we&apos;ll contact you to arrange
@@ -245,7 +245,7 @@ export default function PlanSettingsForm({
       )}
 
       {requests.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
           <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">Request history</div>
           <table className="w-full text-sm">
             <tbody>
