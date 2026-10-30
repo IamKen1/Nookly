@@ -36,6 +36,13 @@ const getTransporter = () => {
 
 export const sendAlertEmail = async ({ to, subject, text, html }: EmailPayload) => {
   const recipients = to.map((email) => email.trim()).filter(Boolean);
+  // Kill switch for local testing: a dev server pointed at a test database
+  // still loads the real SMTP credentials from .env, so test sales would
+  // otherwise send real alert emails.
+  if (process.env.EMAIL_DISABLED === "1") {
+    console.warn("[email] skipped: EMAIL_DISABLED=1", subject);
+    return { skipped: true };
+  }
   if (!isEmailNotificationConfigured() || recipients.length === 0) {
     console.warn("[email] skipped: SMTP or recipients not configured");
     return { skipped: true };
