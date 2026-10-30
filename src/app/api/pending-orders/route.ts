@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       sellingPrice: true,
       isVatable: true,
       requiresPrescription: true,
-      stocks: { where: { storeId: session.storeId }, select: { currentStock: true } },
+      stocks: { where: { storeId: session.storeId }, select: { currentStock: true, sellingPrice: true } },
     },
   });
   const productMap = new Map(products.map((p) => [p.id, p]));
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
             name: p.name,
             strength: p.strength,
             dosageForm: p.dosageForm,
-            price: Number(p.sellingPrice),
+            price: Number(p.stocks[0]?.sellingPrice ?? p.sellingPrice),
             quantity: i.quantity,
             currentStock: p.stocks[0]?.currentStock ?? 0,
             isVatable: p.isVatable,
@@ -75,12 +75,13 @@ export async function POST(request: NextRequest) {
 
   const products = await prisma.product.findMany({
     where: { id: { in: items.map((i) => i.productId) }, tenantId: session.tenantId, isActive: true },
-    select: { id: true, name: true, stocks: { where: { storeId: session.storeId }, select: { currentStock: true } } },
+    select: { id: true, name: true, stocks: { where: { storeId: session.storeId }, select: { currentStock: true, isHidden: true } } },
   });
   const productMap = new Map(products.map((p) => [p.id, p]));
   for (const item of items) {
     const product = productMap.get(item.productId);
     if (!product) return NextResponse.json({ error: "One of the products no longer exists." }, { status: 400 });
+    if (product.stocks[0]?.isHidden) return NextResponse.json({ error: `${product.name} isn't sold at this branch.` }, { status: 400 });
     const available = product.stocks[0]?.currentStock ?? 0;
     if (item.quantity > available) {
       return NextResponse.json({ error: `Not enough stock for ${product.name}. Available: ${available}.` }, { status: 409 });

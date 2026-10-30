@@ -10,13 +10,17 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search")?.trim() ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
+  // The POS asks for only what this branch sells; management screens (Products,
+  // Inventory) still list the whole catalog.
+  const forSale = searchParams.get("forSale") === "1" && Boolean(session.storeId);
 
-  const cacheKey = `products:${session.tenantId}:${session.storeId ?? ""}:${search}:${categoryId}`;
+  const cacheKey = `products:${session.tenantId}:${session.storeId ?? ""}:${search}:${categoryId}:${forSale ? "sale" : "all"}`;
   const withStock = await getCached(cacheKey, 3000, async () => {
     const products = await prisma.product.findMany({
       where: {
         tenantId: session.tenantId,
         isActive: true,
+        ...(forSale ? { NOT: { stocks: { some: { storeId: session.storeId!, isHidden: true } } } } : {}),
         ...(categoryId ? { categoryId } : {}),
         ...(search
           ? {
@@ -52,7 +56,7 @@ export async function GET(request: NextRequest) {
         category: { select: { id: true, name: true } },
         stocks: {
           where: session.storeId ? { storeId: session.storeId } : undefined,
-          select: { currentStock: true },
+          select: { currentStock: true, sellingPrice: true },
         },
       },
       orderBy: { name: "asc" },
@@ -61,6 +65,9 @@ export async function GET(request: NextRequest) {
     return products.map((product) => ({
       ...product,
       currentStock: product.stocks[0]?.currentStock ?? 0,
+      // This branch's own price, if it has one. sellingPrice stays the base
+      // price so editing a product never overwrites it with a branch price.
+      branchPrice: session.storeId && product.stocks[0]?.sellingPrice != null ? Number(product.stocks[0].sellingPrice) : null,
     }));
   });
 

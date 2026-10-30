@@ -3,12 +3,14 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { ArrowRightLeft, Loader2, Search, Trash2, X } from "lucide-react";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import StockRequestsSection from "./StockRequestsSection";
+import BranchPricesModal from "./BranchPricesModal";
 
 interface BranchStock {
   stores: { id: string; name: string }[];
-  products: { id: string; name: string; minimumStock: number; byStore: Record<string, number> }[];
+  products: { id: string; name: string; minimumStock: number; byStore: Record<string, number>; basePrice: number; branchPrices: Record<string, number>; notSoldAt: string[] }[];
 }
 
 interface Transfer {
@@ -31,20 +33,24 @@ export default function BranchStockPanel({
   stores,
   currentStoreId,
   canTransfer,
+  canSetPrices,
 }: {
   stores: { id: string; name: string }[];
   currentStoreId: string | null;
   // False when the plan lacks multi-branch transfer or the role can't adjust stock.
   canTransfer: boolean;
+  // Owners/admins can give a product a different price at each branch.
+  canSetPrices: boolean;
 }) {
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 300);
-  const { data, isLoading } = useSWR<BranchStock>(`/api/inventory/branch-stock${debounced ? `?search=${encodeURIComponent(debounced)}` : ""}`, {
+  const { data, isLoading, mutate: refreshStock } = useSWR<BranchStock>(`/api/inventory/branch-stock${debounced ? `?search=${encodeURIComponent(debounced)}` : ""}`, {
     keepPreviousData: true,
   });
   const { data: transfers = [], mutate: refreshTransfers } = useSWR<Transfer[]>("/api/inventory/transfer");
   const [showTransfer, setShowTransfer] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pricing, setPricing] = useState<BranchStock["products"][number] | null>(null);
 
   const currentName = stores.find((s) => s.id === currentStoreId)?.name ?? "this branch";
 
@@ -86,18 +92,19 @@ export default function BranchStockPanel({
                 </th>
               ))}
               <th className="px-4 py-3 text-right">Total</th>
+              {canSetPrices && <th className="px-4 py-3" />}
             </tr>
           </thead>
           <tbody>
             {isLoading && !data ? (
               <tr>
-                <td colSpan={stores.length + 2} className="px-4 py-8 text-center text-zinc-400">
+                <td colSpan={stores.length + (canSetPrices ? 3 : 2)} className="px-4 py-8 text-center text-zinc-400">
                   Loading...
                 </td>
               </tr>
             ) : (data?.products ?? []).length === 0 ? (
               <tr>
-                <td colSpan={stores.length + 2} className="px-4 py-8 text-center text-zinc-400">
+                <td colSpan={stores.length + (canSetPrices ? 3 : 2)} className="px-4 py-8 text-center text-zinc-400">
                   No products found.
                 </td>
               </tr>
@@ -116,11 +123,23 @@ export default function BranchStockPanel({
                             qty === 0 ? "text-red-500" : qty <= p.minimumStock ? "text-amber-600" : "text-zinc-700"
                           }`}
                         >
-                          {qty}
+                          {p.notSoldAt.includes(s.id) ? <span className="text-xs font-medium text-zinc-400">not sold</span> : qty}
+                          {p.branchPrices[s.id] != null && !p.notSoldAt.includes(s.id) && (
+                            <span className="block text-[11px] font-medium text-violet-600" title="This branch's own price">
+                              {peso(p.branchPrices[s.id])}
+                            </span>
+                          )}
                         </td>
                       );
                     })}
                     <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-zinc-900">{total}</td>
+                    {canSetPrices && (
+                      <td className="px-4 py-2.5 text-right">
+                        <button onClick={() => setPricing(p)} className="text-xs font-semibold text-emerald-700 hover:text-emerald-900">
+                          Branch settings
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })
@@ -129,6 +148,17 @@ export default function BranchStockPanel({
         </table>
         {(data?.products.length ?? 0) >= 100 && <p className="px-4 py-2 text-xs text-zinc-400">Showing the first 100 — search to narrow it down.</p>}
       </div>
+
+      {canTransfer && (
+        <StockRequestsSection
+          stores={stores}
+          currentStoreId={currentStoreId}
+          onStockMoved={() => {
+            refreshStock();
+            refreshTransfers();
+          }}
+        />
+      )}
 
       <div>
         <h3 className="text-sm font-semibold text-zinc-900">Transfers involving {currentName}</h3>
@@ -153,6 +183,19 @@ export default function BranchStockPanel({
           )}
         </div>
       </div>
+
+      {pricing && (
+        <BranchPricesModal
+          product={pricing}
+          stores={data?.stores ?? stores}
+          onClose={() => setPricing(null)}
+          onSaved={() => {
+            setPricing(null);
+            setMessage(`Branch settings saved for ${pricing.name}.`);
+            refreshStock();
+          }}
+        />
+      )}
 
       {showTransfer && (
         <TransferModal

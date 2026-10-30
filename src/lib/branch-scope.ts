@@ -5,8 +5,13 @@ import { prisma } from "@/lib/prisma";
 // Where-clause for the batches physically held at a branch. A batch with no
 // branch (recorded before branches existed) belongs to the tenant's primary
 // branch — main branch first, else the oldest — matching the migration backfill.
-export async function batchesAtStore(tenantId: string, storeId: string): Promise<Prisma.ProductBatchWhereInput> {
-  const primary = await prisma.store.findFirst({
+// Pass `db` when calling inside a transaction so the lookup uses the same connection.
+export async function batchesAtStore(
+  tenantId: string,
+  storeId: string,
+  db: Prisma.TransactionClient = prisma
+): Promise<Prisma.ProductBatchWhereInput> {
+  const primary = await db.store.findFirst({
     where: { tenantId },
     orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
     select: { id: true },

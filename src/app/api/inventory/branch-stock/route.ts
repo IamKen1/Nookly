@@ -30,7 +30,13 @@ export async function GET(request: NextRequest) {
             }
           : {}),
       },
-      select: { id: true, name: true, minimumStock: true, stocks: { select: { storeId: true, currentStock: true } } },
+      select: {
+        id: true,
+        name: true,
+        minimumStock: true,
+        sellingPrice: true,
+        stocks: { select: { storeId: true, currentStock: true, sellingPrice: true, isHidden: true } },
+      },
       orderBy: { name: "asc" },
       take: 100,
     }),
@@ -43,6 +49,12 @@ export async function GET(request: NextRequest) {
       name: p.name,
       minimumStock: p.minimumStock,
       byStore: Object.fromEntries(stores.map((s) => [s.id, p.stocks.find((st) => st.storeId === s.id)?.currentStock ?? 0])),
+      basePrice: Number(p.sellingPrice),
+      // Only branches with their own price appear here; the rest sell at basePrice.
+      branchPrices: Object.fromEntries(
+        p.stocks.filter((st) => st.sellingPrice != null).map((st) => [st.storeId, Number(st.sellingPrice)])
+      ),
+      notSoldAt: p.stocks.filter((st) => st.isHidden).map((st) => st.storeId),
     })),
   });
 }

@@ -65,7 +65,7 @@ export default function InventoryClient({
 }: {
   isOwner?: boolean;
   // Present only when the workspace has more than one branch.
-  branches?: { stores: { id: string; name: string }[]; currentStoreId: string | null; canTransfer: boolean };
+  branches?: { stores: { id: string; name: string }[]; currentStoreId: string | null; canTransfer: boolean; canSetPrices: boolean };
 }) {
   const [tab, setTab] = useState<Tab>("stock");
   const [search, setSearch] = useState("");
@@ -335,6 +335,11 @@ export default function InventoryClient({
         <div>
           <h1 className="text-2xl font-bold text-zinc-900">Inventory</h1>
           <p className="mt-1 text-sm text-zinc-500">Adjust stock, review movement history, and bulk import/export.</p>
+          {branches && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Stock changes here apply to {branches.stores.find((s) => s.id === branches.currentStoreId)?.name ?? "your branch"}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <a
@@ -473,7 +478,12 @@ export default function InventoryClient({
       </div>
 
       {tab === "branches" && branches && (
-        <BranchStockPanel stores={branches.stores} currentStoreId={branches.currentStoreId} canTransfer={branches.canTransfer} />
+        <BranchStockPanel
+          stores={branches.stores}
+          currentStoreId={branches.currentStoreId}
+          canTransfer={branches.canTransfer}
+          canSetPrices={branches.canSetPrices}
+        />
       )}
 
       {tab === "stock" && (

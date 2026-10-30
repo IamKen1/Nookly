@@ -28,7 +28,11 @@ export async function GET(request: NextRequest) {
 
     const rows = products.map((product) => {
       const costPrice = Number(product.costPrice ?? 0);
-      const sellingPrice = Number(product.sellingPrice ?? 0);
+      const basePrice = Number(product.sellingPrice ?? 0);
+      const retailValue = product.stocks.reduce((sum, s) => sum + s.currentStock * Number(s.sellingPrice ?? basePrice), 0);
+      // One branch: its own price. All branches: the base price (the value column
+      // still uses each branch's price).
+      const sellingPrice = storeId && product.stocks[0]?.sellingPrice != null ? Number(product.stocks[0].sellingPrice) : basePrice;
       const quantity = product.stocks.reduce((sum, s) => sum + s.currentStock, 0);
       return {
         Product: product.name,
@@ -39,7 +43,7 @@ export async function GET(request: NextRequest) {
         "Cost Price": formatCurrency(costPrice),
         "Selling Price": formatCurrency(sellingPrice),
         "Cost Value": formatCurrency(quantity * costPrice),
-        "Retail Value": formatCurrency(quantity * sellingPrice),
+        "Retail Value": formatCurrency(retailValue),
         "Minimum Stock": product.minimumStock,
         "Reorder Point": product.reorderPoint,
       };

@@ -1,6 +1,6 @@
 import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
-import { getBranchContext } from "@/lib/branch-scope";
+import { canManageAllBranches, getBranchContext } from "@/lib/branch-scope";
 import { hasPermission } from "@/lib/permissions";
 import { hasFeature, type PlanCode } from "@/lib/plan-gating";
 import AppShell from "@/components/app/AppShell";
@@ -27,7 +27,7 @@ export default async function InventoryPage() {
         isOwner={session.role === "OWNER"}
         branches={
           branchContext.isMultiBranch
-            ? { stores: branchContext.stores.map((s) => ({ id: s.id, name: s.name })), currentStoreId: session.storeId, canTransfer }
+            ? { stores: branchContext.stores.map((s) => ({ id: s.id, name: s.name })), currentStoreId: session.storeId, canTransfer, canSetPrices: canManageAllBranches(session.role) }
             : undefined
         }
       />

@@ -130,6 +130,9 @@ export async function POST(request: NextRequest) {
     if (!product) {
       return NextResponse.json({ error: `Product ${item.productId} not found.` }, { status: 400 });
     }
+    if (product.stocks[0]?.isHidden) {
+      return NextResponse.json({ error: `${product.name} isn't sold at this branch.` }, { status: 400 });
+    }
     const available = product.stocks[0]?.currentStock ?? 0;
     if (item.quantity <= 0) {
       return NextResponse.json({ error: `Invalid quantity for ${product.name}.` }, { status: 400 });

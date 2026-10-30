@@ -120,6 +120,7 @@ model Tenant {
   rolePermissions      RolePermission[]
   shiftExpenses        ShiftExpense[]
   pendingOrders        PendingOrder[]
+  stockRequests        StockRequest[]
 
   @@map("tenants")
 }
@@ -312,6 +313,8 @@ model Store {
   cashTransactions CashTransaction[]
   pendingOrders    PendingOrder[]
   batches          ProductBatch[]
+  stockRequestsIn  StockRequest[]    @relation("StockRequestTo")
+  stockRequestsOut StockRequest[]    @relation("StockRequestFrom")
 
   @@unique([tenantId, code])
   @@map("stores")
@@ -341,6 +344,8 @@ model User {
   sales                 Sale[]                 @relation("SaleCashier")
   ordersTaken           Sale[]                 @relation("SaleOrderTaker")
   pendingOrders         PendingOrder[]
+  stockRequestsMade     StockRequest[]         @relation("StockRequestRequestedBy")
+  stockRequestsHandled  StockRequest[]         @relation("StockRequestHandledBy")
   stockMovements        StockMovement[]
   planChangeRequests    PlanChangeRequest[]
   supportTickets        SupportTicket[]
@@ -571,6 +576,12 @@ model ProductStock {
   productId    String
   storeId      String
   currentStock Int      @default(0)
+  // Price at this branch when it differs from the product's own price. Null
+  // (the default) means the branch sells at Product.sellingPrice.
+  sellingPrice Decimal? @db.Decimal(10, 2)
+  // True when this branch doesn't sell the product at all, so it's left out of
+  // that branch's POS. Every product is sold everywhere by default.
+  isHidden     Boolean  @default(false)
   updatedAt    DateTime @updatedAt
   product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -760,6 +771,36 @@ model Sale {
 // An order prepared by an order taker and waiting for a cashier to collect
 // payment. Stock isn't reserved here — it's checked and deducted only when the
 // cashier completes the sale, exactly like a normal checkout.
+// A branch asking another branch for stock. Approving it performs a normal
+// branch-to-branch transfer (same stock + batch movement), whose TR- reference
+// is kept here so the request and the transfer can be traced to each other.
+model StockRequest {
+  id                String             @id @default(cuid())
+  tenantId          String
+  requestNumber     String
+  fromStoreId       String // the branch asked to send the stock
+  toStoreId         String // the branch that needs it
+  items             Json // [{ productId, quantity }] as requested
+  notes             String?
+  status            StockRequestStatus @default(REQUESTED)
+  requestedById     String
+  handledById       String?
+  handledAt         DateTime?
+  decisionNote      String?
+  transferReference String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromStore         Store              @relation("StockRequestFrom", fields: [fromStoreId], references: [id])
+  toStore           Store              @relation("StockRequestTo", fields: [toStoreId], references: [id])
+  requestedBy       User               @relation("StockRequestRequestedBy", fields: [requestedById], references: [id])
+  handledBy         User?              @relation("StockRequestHandledBy", fields: [handledById], references: [id])
+
+  @@unique([tenantId, requestNumber])
+  @@index([tenantId, status])
+  @@map("stock_requests")
+}
+
 model PendingOrder {
   id           String             @id @default(cuid())
   tenantId     String
@@ -945,6 +986,13 @@ enum StockMovementType {
   EXPIRED
   DAMAGED
   TRANSFER
+}
+
+enum StockRequestStatus {
+  REQUESTED
+  APPROVED
+  DECLINED
+  CANCELLED
 }
 
 enum PendingOrderStatus {

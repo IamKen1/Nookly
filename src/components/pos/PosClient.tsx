@@ -55,6 +55,7 @@ interface Product {
   dosageForm: string | null;
   barcode: string | null;
   sellingPrice: string;
+  branchPrice?: number | null;
   currentStock: number;
   minimumStock: number;
   isVatable: boolean;
@@ -155,12 +156,18 @@ export default function PosClient({
   const printer = usePrinterConnection();
 
   const debouncedSearch = useDebouncedValue(search, 250);
-  const productsUrl = debouncedSearch ? `/api/products?search=${encodeURIComponent(debouncedSearch)}` : "/api/products";
+  const productsUrl = debouncedSearch ? `/api/products?forSale=1&search=${encodeURIComponent(debouncedSearch)}` : "/api/products?forSale=1";
   const {
-    data: products = [],
+    data: rawProducts,
     isLoading: loading,
     mutate: refreshProducts,
   } = useSWR<Product[]>(productsUrl, { keepPreviousData: true });
+  // The POS sells at this branch's price when it has its own; everything below
+  // reads sellingPrice, so it's swapped in once here.
+  const products = useMemo(
+    () => (rawProducts ?? []).map((p) => (p.branchPrice != null ? { ...p, sellingPrice: String(p.branchPrice) } : p)),
+    [rawProducts]
+  );
 
   const showNotification = (message: string, type: "success" | "error") => {
     setNotification({ message, type, visible: true });
