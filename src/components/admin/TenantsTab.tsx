@@ -79,6 +79,7 @@ export default function TenantsTab() {
   const [activatePlanId, setActivatePlanId] = useState("");
   const [activateBillingCycle, setActivateBillingCycle] = useState<"MONTHLY" | "YEARLY">("MONTHLY");
   const [activateComplimentary, setActivateComplimentary] = useState(false);
+  const [keepTrial, setKeepTrial] = useState(false);
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
 
@@ -115,8 +116,13 @@ export default function TenantsTab() {
     setActivatePlanId(plans.find((p) => p.code === t.plan?.code)?.id ?? plans[0]?.id ?? "");
     setActivateBillingCycle("MONTHLY");
     setActivateComplimentary(t.plan?.isComplimentary ?? false);
+    setKeepTrial(false);
     setActivateError(null);
   };
+
+  // Only a tenant whose trial hasn't run out yet can switch plans and stay on trial.
+  const onLiveTrial = (t: Tenant) =>
+    t.plan?.status === "TRIALING" && t.plan.expiresAt !== null && new Date(t.plan.expiresAt) > new Date();
 
   const submitActivate = async () => {
     if (!activateTarget || !activatePlanId) return;
@@ -126,12 +132,16 @@ export default function TenantsTab() {
       const res = await fetch(`/api/nk-ops-72fq9/tenants/${activateTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "activate_plan",
-          planId: activatePlanId,
-          billingCycle: activateBillingCycle,
-          complimentary: activateComplimentary,
-        }),
+        body: JSON.stringify(
+          keepTrial
+            ? { action: "switch_trial_plan", planId: activatePlanId }
+            : {
+                action: "activate_plan",
+                planId: activatePlanId,
+                billingCycle: activateBillingCycle,
+                complimentary: activateComplimentary,
+              }
+        ),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -325,9 +335,15 @@ export default function TenantsTab() {
       {activateTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5">
-            <h3 className="text-sm font-semibold text-zinc-900">Activate plan for {activateTarget.name}</h3>
+            <h3 className="text-sm font-semibold text-zinc-900">
+              {keepTrial ? "Switch trial plan for" : "Activate plan for"} {activateTarget.name}
+            </h3>
             <p className="mt-1 text-xs text-zinc-500">
-              {activateComplimentary
+              {keepTrial
+                ? `Lets them try this plan for the rest of their free trial. The trial still ends ${
+                    activateTarget.plan?.expiresAt ? formatDate(activateTarget.plan.expiresAt) : "on the same date"
+                  }, and no payment or invoice is recorded.`
+                : activateComplimentary
                 ? "Gives full access to this plan for free, with no end date. Not counted in MRR or revenue."
                 : "For when the tenant already paid off-band (no in-app plan request needed). This immediately switches their subscription to ACTIVE and logs the payment."}
             </p>
@@ -347,6 +363,21 @@ export default function TenantsTab() {
                   ))}
                 </select>
               </div>
+              {onLiveTrial(activateTarget) && (
+                <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={keepTrial}
+                    onChange={(e) => setKeepTrial(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-zinc-900">Switch plan, keep trial</span>
+                    <span className="block text-xs text-zinc-500">Try a different plan before paying. Trial days stay the same.</span>
+                  </span>
+                </label>
+              )}
+              {!keepTrial && (
               <label className="flex items-start gap-2 rounded-lg border border-zinc-200 p-3 text-sm text-zinc-700">
                 <input
                   type="checkbox"
@@ -359,7 +390,8 @@ export default function TenantsTab() {
                   <span className="block text-xs text-zinc-500">Family, internal, or test accounts.</span>
                 </span>
               </label>
-              {!activateComplimentary && (
+              )}
+              {!keepTrial && !activateComplimentary && (
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-500">Billing cycle</label>
                   <select
@@ -392,7 +424,7 @@ export default function TenantsTab() {
                   className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 btn-press"
                 >
                   {activating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {activating ? "Activating..." : "Activate"}
+                  {keepTrial ? (activating ? "Switching..." : "Switch plan") : activating ? "Activating..." : "Activate"}
                 </button>
               </div>
             </div>

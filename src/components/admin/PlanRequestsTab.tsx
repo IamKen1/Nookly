@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 
 interface AdminPlanRequest {
   id: string;
@@ -11,11 +11,31 @@ interface AdminPlanRequest {
   note: string | null;
   resolvedNote: string | null;
   createdAt: string;
-  tenant: { id: string; name: string; slug: string; ownerEmail: string; contactNumber: string | null };
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    ownerEmail: string;
+    contactNumber: string | null;
+    subscription: { status: string; trialEndsAt: string | null; plan: { name: string } } | null;
+  };
   currentPlan: { name: string };
   requestedPlan: { name: string };
   requestedByUser: { firstName: string; lastName: string; email: string };
 }
+
+type Action = "contacted" | "activate" | "cancel" | "trial";
+
+// Mirrors switchTrialPlan's eligibility so the button only shows when it can work.
+const canTrySwitch = (r: AdminPlanRequest) => {
+  const sub = r.tenant.subscription;
+  return (
+    sub?.status === "TRIALING" &&
+    sub.trialEndsAt !== null &&
+    new Date(sub.trialEndsAt) > new Date() &&
+    sub.plan.name !== r.requestedPlan.name
+  );
+};
 
 const STATUS_TONE: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -28,7 +48,7 @@ export default function PlanRequestsTab() {
   const [requests, setRequests] = useState<AdminPlanRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [busyAction, setBusyAction] = useState<"contacted" | "activate" | "cancel" | null>(null);
+  const [busyAction, setBusyAction] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // showLoading only applies to the initial fetch — refreshing after
@@ -45,8 +65,13 @@ export default function PlanRequestsTab() {
     load(true);
   }, []);
 
-  const act = async (id: string, action: "contacted" | "activate" | "cancel") => {
+  const act = async (id: string, action: Action) => {
     if (action === "activate" && !confirm("Activate this plan for the tenant now? Only do this after payment is confirmed.")) return;
+    if (
+      action === "trial" &&
+      !confirm("Switch this tenant to the requested plan for the rest of their free trial? The trial end date stays the same and no payment is recorded. The request stays open so you can Activate it once they pay.")
+    )
+      return;
     if (action === "cancel" && !confirm("Cancel this request?")) return;
     setError(null);
     setBusyId(id);
@@ -108,6 +133,12 @@ export default function PlanRequestsTab() {
                     {r.currentPlan.name} → {r.requestedPlan.name}
                   </p>
                   <p className="text-xs text-zinc-500">{r.billingCycle}</p>
+                  {r.tenant.subscription?.status === "TRIALING" && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Trialing {r.tenant.subscription.plan.name}
+                      {r.tenant.subscription.trialEndsAt && ` · ends ${formatDate(r.tenant.subscription.trialEndsAt)}`}
+                    </p>
+                  )}
                   {r.note && <p className="mt-1 text-xs text-zinc-500">&ldquo;{r.note}&rdquo;</p>}
                 </td>
                 <td className="px-4 py-3 text-zinc-500">
@@ -130,6 +161,17 @@ export default function PlanRequestsTab() {
                         >
                           {busyId === r.id && busyAction === "contacted" && <Loader2 className="h-4 w-4 animate-spin" />}
                           Mark contacted
+                        </button>
+                      )}
+                      {canTrySwitch(r) && (
+                        <button
+                          onClick={() => act(r.id, "trial")}
+                          disabled={busyId === r.id}
+                          title="Switch plan, keep trial"
+                          className="flex items-center justify-center gap-2 rounded-full border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:border-amber-400 disabled:opacity-50 btn-press"
+                        >
+                          {busyId === r.id && busyAction === "trial" && <Loader2 className="h-4 w-4 animate-spin" />}
+                          Try during trial
                         </button>
                       )}
                       <button

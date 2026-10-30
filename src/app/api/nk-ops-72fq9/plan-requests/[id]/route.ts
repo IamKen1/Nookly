@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireAdminAccessRequest, logAdminAction } from "@/lib/platform-admin";
 import { sendAlertEmail } from "@/lib/email";
+import { switchTrialPlan } from "@/lib/trial-plan";
 
-type Action = "contacted" | "activate" | "cancel";
+type Action = "contacted" | "activate" | "cancel" | "trial";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -55,6 +56,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       metadata: { tenantSlug: planRequest.tenant.slug },
     });
     return NextResponse.json(updated);
+  }
+
+  if (action === "trial") {
+    const result = await switchTrialPlan({
+      tenantId: planRequest.tenantId,
+      planId: planRequest.requestedPlanId,
+      actorUserId: session.userId,
+      actorEmail: access.email || "unknown",
+      planRequestId: id,
+    });
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+    return NextResponse.json(result);
   }
 
   if (action === "activate") {

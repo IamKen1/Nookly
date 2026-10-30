@@ -207,7 +207,7 @@ export default function PlanSettingsForm({
                 >
                   <option value="">Select a plan...</option>
                   {allPlans
-                    .filter((p) => p.code !== currentPlan.code)
+                    .filter((p) => p.code !== currentPlan.code || currentPlan.status === "TRIALING")
                     .map((p) => (
                       <option key={p.code} value={p.code}>
                         {p.name} — {peso(billingCycle === "YEARLY" ? p.priceYearly / 12 : p.priceMonthly)}/mo

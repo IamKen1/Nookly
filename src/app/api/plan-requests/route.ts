@@ -47,7 +47,9 @@ export async function POST(request: NextRequest) {
   if (!tenant || !subscription || !requestedPlan) {
     return NextResponse.json({ error: "Could not resolve tenant, current subscription, or requested plan." }, { status: 400 });
   }
-  if (subscription.planId === requestedPlan.id) {
+  // A tenant trialing a plan (possibly switched to it mid-trial) can still
+  // request to pay for that same plan.
+  if (subscription.planId === requestedPlan.id && subscription.status !== "TRIALING") {
     return NextResponse.json({ error: "You're already on this plan." }, { status: 400 });
   }
 

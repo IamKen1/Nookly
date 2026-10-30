@@ -11,7 +11,16 @@ export async function GET(request: NextRequest) {
 
   const requests = await prisma.planChangeRequest.findMany({
     include: {
-      tenant: { select: { id: true, name: true, slug: true, ownerEmail: true, contactNumber: true } },
+      tenant: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          ownerEmail: true,
+          contactNumber: true,
+          subscription: { select: { status: true, trialEndsAt: true, plan: { select: { name: true } } } },
+        },
+      },
       currentPlan: true,
       requestedPlan: true,
       requestedByUser: { select: { firstName: true, lastName: true, email: true } },
