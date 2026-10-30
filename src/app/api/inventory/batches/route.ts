@@ -4,6 +4,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { runInBackground } from "@/lib/background";
 import { notifyStockThresholdReached } from "@/lib/notifications";
 import { invalidateCached } from "@/lib/route-cache";
+import { batchesAtStore } from "@/lib/branch-scope";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -13,13 +14,14 @@ export async function GET(request: NextRequest) {
   const productId = searchParams.get("productId");
   const nearExpiry = searchParams.get("nearExpiry") === "true";
   const days = Math.max(1, Math.min(365, Number(searchParams.get("days") || "90")));
+  const batchWhere = session.storeId ? await batchesAtStore(session.tenantId, session.storeId) : {};
 
   if (productId) {
     const product = await prisma.product.findFirst({ where: { id: productId, tenantId: session.tenantId } });
     if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
 
     const batches = await prisma.productBatch.findMany({
-      where: { productId },
+      where: { productId, ...batchWhere },
       orderBy: { expirationDate: "asc" },
     });
     return NextResponse.json(batches);
@@ -33,6 +35,7 @@ export async function GET(request: NextRequest) {
       quantity: { gt: 0 },
       expirationDate: nearExpiry ? { lte: windowEnd } : undefined,
       product: { tenantId: session.tenantId },
+      ...batchWhere,
     },
     include: { product: { select: { id: true, name: true, barcode: true, category: { select: { name: true } } } } },
     orderBy: { expirationDate: "asc" },
@@ -81,6 +84,7 @@ export async function POST(request: NextRequest) {
       const batch = await tx.productBatch.create({
         data: {
           productId,
+          storeId: session.storeId!,
           batchNumber,
           expirationDate: new Date(expirationDate),
           quantity,
@@ -117,6 +121,7 @@ export async function POST(request: NextRequest) {
     runInBackground(`stock notification for ${product.name}`, () =>
       notifyStockThresholdReached({
         tenantId: session.tenantId,
+        storeId: session.storeId,
         productName: product.name,
         categoryName: product.category?.name,
         previousStock: result.previousStock,

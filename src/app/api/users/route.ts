@@ -41,6 +41,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "email, username, firstName, lastName and password are required." }, { status: 400 });
   }
 
+  if (storeId && !(await prisma.store.findFirst({ where: { id: storeId, tenantId: session.tenantId, isActive: true } }))) {
+    return NextResponse.json({ error: "Branch not found." }, { status: 400 });
+  }
+
   const [plan, userCount] = await Promise.all([
     prisma.subscription.findUnique({ where: { tenantId: session.tenantId }, include: { plan: true } }),
     prisma.user.count({ where: { tenantId: session.tenantId, isActive: true } }),

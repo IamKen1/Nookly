@@ -25,6 +25,8 @@ import {
   Banknote,
   Loader2,
   LifeBuoy,
+  ClipboardList,
+  Store,
 } from "lucide-react";
 import { useBarcode } from "@/hooks/useBarcode";
 import { useBarcodeAudio } from "@/hooks/useBarcodeAudio";
@@ -35,12 +37,14 @@ import { usePrinterConnection } from "@/lib/printer/usePrinterConnection";
 import { generateThermalReceiptText, printReceipt } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 import type { DiscountType } from "@/lib/vat-calculations";
-import { ALL_ROLE_LABELS, type PermissionModuleKey } from "@/lib/permissions-shared";
+import { ALL_ROLE_LABELS, canCollectPayment, type PermissionModuleKey } from "@/lib/permissions-shared";
 import CartPanel, { type CartLine } from "./CartPanel";
 import CheckoutModal, { type PrescriptionDraft } from "./CheckoutModal";
 import ShiftModal from "./ShiftModal";
 import CashTransactionModal from "./CashTransactionModal";
 import PrinterConnectButton from "./PrinterConnectButton";
+import PendingOrdersModal, { type PendingOrder } from "./PendingOrdersModal";
+import BranchSwitcher from "@/components/app/BranchSwitcher";
 
 interface Product {
   id: string;
@@ -91,12 +95,15 @@ export default function PosClient({
   planName,
   role,
   permissions,
+  branches,
 }: {
   categories: Category[];
   tenantName: string;
   planName?: string;
   role?: string;
   permissions: Record<PermissionModuleKey, boolean>;
+  // Only passed when the tenant has more than one branch.
+  branches?: { currentStoreId: string | null; currentName: string; switchable: { id: string; name: string }[] | null };
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -126,6 +133,18 @@ export default function PosClient({
   });
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [cashTxnModalOpen, setCashTxnModalOpen] = useState(false);
+  const [ordersModalOpen, setOrdersModalOpen] = useState(false);
+  const [sendingOrder, setSendingOrder] = useState(false);
+  // The pending order the cart was loaded from, so checkout records its order taker.
+  const [activeOrder, setActiveOrder] = useState<{ id: string; orderNumber: string; takerName: string } | null>(null);
+  const isOrderTaker = !canCollectPayment(role ?? "");
+
+  // Only cashiers (and up) collect orders. The list is empty for any tenant not
+  // using order takers, so nothing new appears on their POS.
+  const { data: pendingOrders = [], mutate: refreshPendingOrders } = useSWR<PendingOrder[]>(
+    isOrderTaker ? null : "/api/pending-orders",
+    { refreshInterval: 15000 }
+  );
 
   const { data: shiftData, mutate: refreshShiftStatus } = useSWR<{ openShift: { id: string } | null }>(
     "/api/shifts?mine=true"
@@ -216,7 +235,55 @@ export default function PosClient({
   };
 
   const removeLine = (productId: string) => setCart((prev) => prev.filter((l) => l.productId !== productId));
-  const clearCart = () => setCart([]);
+  const clearCart = () => {
+    setCart([]);
+    setActiveOrder(null);
+  };
+
+  const loadPendingOrder = (order: PendingOrder) => {
+    if (cart.length > 0 && !confirm("Replace the items currently in the cart with this order?")) return;
+    const lines: CartLine[] = order.items
+      .filter((i) => i.currentStock > 0)
+      .map((i) => ({
+        productId: i.productId,
+        name: i.name,
+        strength: i.strength,
+        dosageForm: i.dosageForm,
+        price: i.price,
+        quantity: Math.min(i.quantity, i.currentStock),
+        maxStock: i.currentStock,
+        isVatable: i.isVatable,
+        requiresPrescription: i.requiresPrescription,
+      }));
+    setCart(lines);
+    setActiveOrder({ id: order.id, orderNumber: order.orderNumber, takerName: order.createdBy.name });
+    setOrdersModalOpen(false);
+    const short = order.items.some((i) => i.quantity > i.currentStock);
+    showNotification(short ? `Loaded ${order.orderNumber} — some items were reduced to available stock` : `Loaded ${order.orderNumber}`, short ? "error" : "success");
+  };
+
+  const sendToCashier = async () => {
+    if (cart.length === 0 || sendingOrder) return;
+    setSendingOrder(true);
+    try {
+      const res = await fetch("/api/pending-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showNotification(data.error ?? "Failed to send the order.", "error");
+        return;
+      }
+      clearCart();
+      showNotification(`Order ${data.orderNumber} sent to the cashier`, "success");
+    } catch {
+      showNotification("Network error. The order was not sent.", "error");
+    } finally {
+      setSendingOrder(false);
+    }
+  };
 
   const filteredProducts = useMemo(
     () => products.filter((p) => !selectedCategory || p.category.id === selectedCategory),
@@ -248,6 +315,7 @@ export default function PosClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity, price: l.price })),
+        pendingOrderId: activeOrder?.id,
         ...payload,
       }),
     });
@@ -255,6 +323,7 @@ export default function PosClient({
     if (!res.ok) return { ok: false, error: data.error ?? "Checkout failed." };
     clearCart();
     refreshProducts();
+    if (activeOrder) refreshPendingOrders();
     showNotification(`Sale ${data.saleNumber} completed — total ${peso(Number(data.totalAmount))}`, "success");
 
     // Printing is a side effect, not part of "did the sale succeed" — it must
@@ -264,6 +333,9 @@ export default function PosClient({
 
     return { ok: true, saleNumber: data.saleNumber, totalAmount: Number(data.totalAmount) };
   };
+
+  const checkoutLabel = isOrderTaker ? (sendingOrder ? "Sending..." : "Send to cashier") : "Checkout";
+  const cartNotice = activeOrder ? `Order ${activeOrder.orderNumber} · taken by ${activeOrder.takerName}` : undefined;
 
   const printReceiptForSale = async (saleId: string) => {
     try {
@@ -347,26 +419,54 @@ export default function PosClient({
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-emerald-200">{planName ? `${planName} plan` : "Point of Sale"}</p>
+            <p className="text-[11px] text-emerald-200">
+              {branches ? (
+                <span className="inline-flex items-center gap-1">
+                  <Store className="h-3 w-3" />
+                  {branches.currentName}
+                </span>
+              ) : planName ? (
+                `${planName} plan`
+              ) : (
+                "Point of Sale"
+              )}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setShiftModalOpen(true)}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              hasOpenShift ? "bg-white/15 text-white hover:bg-white/25" : "text-emerald-100 hover:bg-white/10"
-            }`}
-          >
-            <Wallet className="h-4 w-4" />
-            <span className="hidden sm:inline">{hasOpenShift ? "Shift open" : "Start shift"}</span>
-          </button>
-          <button
-            onClick={() => setCashTxnModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-white/10"
-          >
-            <Banknote className="h-4 w-4" />
-            <span className="hidden sm:inline">Cash In/Out</span>
-          </button>
+          {branches?.switchable && (
+            <BranchSwitcher stores={branches.switchable} currentStoreId={branches.currentStoreId} tone="dark" />
+          )}
+          {pendingOrders.length > 0 && (
+            <button
+              onClick={() => setOrdersModalOpen(true)}
+              className="relative flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-300"
+            >
+              <ClipboardList className="h-4 w-4" />
+              <span className="hidden sm:inline">Orders</span>
+              <span className="rounded-full bg-amber-950 px-1.5 text-[11px] font-bold text-amber-50">{pendingOrders.length}</span>
+            </button>
+          )}
+          {!isOrderTaker && (
+            <>
+              <button
+                onClick={() => setShiftModalOpen(true)}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  hasOpenShift ? "bg-white/15 text-white hover:bg-white/25" : "text-emerald-100 hover:bg-white/10"
+                }`}
+              >
+                <Wallet className="h-4 w-4" />
+                <span className="hidden sm:inline">{hasOpenShift ? "Shift open" : "Start shift"}</span>
+              </button>
+              <button
+                onClick={() => setCashTxnModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-white/10"
+              >
+                <Banknote className="h-4 w-4" />
+                <span className="hidden sm:inline">Cash In/Out</span>
+              </button>
+            </>
+          )}
           <PrinterConnectButton printer={printer} />
           <Link
             href="/dashboard"
@@ -486,11 +586,13 @@ export default function PosClient({
           onSetQty={setQty}
           onRemove={removeLine}
           onClear={clearCart}
-          onOpenCheckout={() => setShowCheckout(true)}
+          onOpenCheckout={isOrderTaker ? sendToCashier : () => setShowCheckout(true)}
           subtotal={subtotal}
           vatableSales={vatableSales}
           vatAmount={vatAmount}
           nonVatableSales={nonVatableTotal}
+          checkoutLabel={checkoutLabel}
+          notice={cartNotice}
         />
       </div>
       </div>
@@ -530,12 +632,15 @@ export default function PosClient({
             onClear={clearCart}
             onOpenCheckout={() => {
               setMobileCartOpen(false);
-              setShowCheckout(true);
+              if (isOrderTaker) sendToCashier();
+              else setShowCheckout(true);
             }}
             subtotal={subtotal}
             vatableSales={vatableSales}
             vatAmount={vatAmount}
             nonVatableSales={nonVatableTotal}
+            checkoutLabel={checkoutLabel}
+            notice={cartNotice}
           />
         </div>
       </div>
@@ -546,6 +651,14 @@ export default function PosClient({
         cart={cart}
         pendingPrescriptions={pendingPrescriptions}
         onProcessSale={handleProcessSale}
+      />
+
+      <PendingOrdersModal
+        isOpen={ordersModalOpen}
+        orders={pendingOrders}
+        onClose={() => setOrdersModalOpen(false)}
+        onLoad={loadPendingOrder}
+        onCancelled={() => refreshPendingOrders()}
       />
 
       <ShiftModal

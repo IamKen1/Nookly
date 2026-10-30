@@ -1,6 +1,7 @@
 import { sendAlertEmail } from "@/lib/email";
 import { getAlertRecipients, getNotificationSettings } from "@/lib/notification-settings";
 import { peso } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
 import { formatPaymentMethodLabel, getReceiptFooterLines, getReceiptHeaderLines } from "@/types/receipt";
 import type { ReceiptStoreSettings } from "@/types/receipt";
 
@@ -12,6 +13,9 @@ interface StockNotificationInput {
   currentStock: number;
   minimumStock: number;
   reason: string;
+  // The branch whose stock changed. Named in the alert only when the tenant
+  // has several branches, so single-branch alerts read exactly as before.
+  storeId?: string | null;
 }
 
 interface SaleNotificationItem {
@@ -87,6 +91,7 @@ export const notifyStockThresholdReached = async ({
   currentStock,
   minimumStock,
   reason,
+  storeId,
 }: StockNotificationInput) => {
   const settings = await getNotificationSettings(tenantId);
   if (!settings.emailNotificationsEnabled) return;
@@ -98,13 +103,18 @@ export const notifyStockThresholdReached = async ({
   if (crossedToLowStock && !settings.lowStockNotificationsEnabled) return;
 
   const status = crossedToOutOfStock ? "OUT OF STOCK" : "LOW STOCK";
-  const recipients = await getAlertRecipients(tenantId);
+  const [recipients, branches] = await Promise.all([
+    getAlertRecipients(tenantId),
+    storeId ? prisma.store.findMany({ where: { tenantId, isActive: true }, select: { id: true, name: true } }) : [],
+  ]);
+  const branchName = branches.length > 1 ? branches.find((b) => b.id === storeId)?.name : undefined;
 
   await sendAlertEmail({
     to: recipients,
-    subject: `[Nookly] ${status}: ${productName}`,
+    subject: `[Nookly] ${status}: ${productName}${branchName ? ` (${branchName})` : ""}`,
     text: [
       `Stock alert triggered by: ${reason}`,
+      ...(branchName ? [`Branch: ${branchName}`] : []),
       `Product: ${productName}`,
       `Category: ${categoryName || "N/A"}`,
       `Previous Stock: ${previousStock}`,
@@ -117,6 +127,7 @@ export const notifyStockThresholdReached = async ({
       badgeText: status,
       badgeColor: crossedToOutOfStock ? "#dc2626" : "#d97706",
       details: [
+        ...(branchName ? [{ label: "Branch", value: branchName }] : []),
         { label: "Product", value: productName },
         { label: "Category", value: categoryName || "N/A" },
         { label: "Previous Stock", value: String(previousStock) },

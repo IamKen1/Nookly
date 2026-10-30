@@ -3,6 +3,7 @@ import { requireActiveSession } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { startOfTodayPH, startOfDatePH, endOfDatePH } from "@/lib/timezone";
 import { hasPermission } from "@/lib/permissions";
+import { getBranchContext } from "@/lib/branch-scope";
 import AppShell from "@/components/app/AppShell";
 import SalesClient from "@/components/sales/SalesClient";
 
@@ -18,6 +19,7 @@ export default async function SalesPage({
   const dateFrom = asString(params.dateFrom);
   const dateTo = asString(params.dateTo);
   const cashierId = asString(params.cashierId);
+  const storeId = asString(params.storeId);
   const paymentMethod = asString(params.paymentMethod);
   const status = asString(params.status);
   const search = asString(params.search).trim();
@@ -34,7 +36,10 @@ export default async function SalesPage({
   const where: Prisma.SaleWhereInput = { tenantId: tenant.id };
   if (dateFrom) where.saleDate = { ...(where.saleDate as object), gte: startOfDatePH(dateFrom) };
   if (dateTo) where.saleDate = { ...(where.saleDate as object), lt: endOfDatePH(dateTo) };
-  if (cashierId) where.userId = cashierId;
+  // Matches either role, so filtering by a person shows every sale they were
+  // accountable for — as cashier or as the order taker.
+  if (cashierId) where.OR = [{ userId: cashierId }, { orderTakerId: cashierId }];
+  if (storeId) where.storeId = storeId;
   if (paymentMethod) where.paymentMethod = paymentMethod as Prisma.SaleWhereInput["paymentMethod"];
   if (status) where.status = status as Prisma.SaleWhereInput["status"];
   if (search) where.saleNumber = { contains: search, mode: "insensitive" };
@@ -42,7 +47,7 @@ export default async function SalesPage({
   const [sales, todayAgg, cashiers] = await Promise.all([
     prisma.sale.findMany({
       where,
-      include: { items: { include: { product: true } }, user: true },
+      include: { items: { include: { product: true } }, user: true, orderTaker: { select: { firstName: true, lastName: true } }, store: { select: { name: true } } },
       orderBy: { saleDate: "desc" },
       take: 100,
     }),
@@ -61,6 +66,7 @@ export default async function SalesPage({
     }),
   ]);
   const todayTotal = Number(todayAgg._sum.totalAmount ?? 0);
+  const branchContext = await getBranchContext(session);
 
   return (
     <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
@@ -68,7 +74,8 @@ export default async function SalesPage({
         canVoid={canVoid}
         todayTotal={todayTotal}
         cashiers={cashiers.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`.trim() }))}
-        filters={{ dateFrom, dateTo, cashierId, paymentMethod, status, search }}
+        branches={branchContext.isMultiBranch ? branchContext.stores.map((s) => ({ id: s.id, name: s.name })) : undefined}
+        filters={{ dateFrom, dateTo, cashierId, storeId, paymentMethod, status, search }}
         sales={sales.map((s) => ({
           id: s.id,
           saleNumber: s.saleNumber,
@@ -79,6 +86,8 @@ export default async function SalesPage({
           isReturnRecord: Boolean(s.originalSaleId),
           saleDate: s.saleDate.toISOString(),
           cashierName: `${s.user.firstName} ${s.user.lastName}`,
+          branchName: s.store.name,
+          orderTakerName: s.orderTaker ? `${s.orderTaker.firstName} ${s.orderTaker.lastName}`.trim() : null,
           itemCount: s.items.length,
           items: s.items.map((i) => ({
             id: i.id,

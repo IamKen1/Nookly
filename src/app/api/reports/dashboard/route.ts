@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireReport } from "@/lib/plan-gating";
 import { generateSalesDashboardReport } from "@/lib/reporting";
+import { reportStoreId } from "@/lib/branch-scope";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
       session.tenantId,
       searchParams.get("timeZone"),
       { startDate: searchParams.get("startDate"), endDate: searchParams.get("endDate") },
-      session.storeId
+      reportStoreId(session, searchParams)
     );
     return NextResponse.json(report);
   } catch (error) {

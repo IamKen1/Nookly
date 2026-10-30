@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireReport } from "@/lib/plan-gating";
+import { reportStoreId } from "@/lib/branch-scope";
 
 const formatCurrency = (value: number) => Number(value.toFixed(2));
 
@@ -13,12 +14,14 @@ export async function GET(request: NextRequest) {
   const gate = await requireReport(session.tenantId, "inventory-valuation");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
+  const storeId = reportStoreId(session, new URL(request.url).searchParams);
+
   try {
     const products = await prisma.product.findMany({
       where: { tenantId: session.tenantId, isActive: true },
       include: {
         category: true,
-        stocks: session.storeId ? { where: { storeId: session.storeId } } : true,
+        stocks: storeId ? { where: { storeId } } : true,
       },
       orderBy: { name: "asc" },
     });
@@ -26,7 +29,7 @@ export async function GET(request: NextRequest) {
     const rows = products.map((product) => {
       const costPrice = Number(product.costPrice ?? 0);
       const sellingPrice = Number(product.sellingPrice ?? 0);
-      const quantity = product.stocks[0]?.currentStock ?? 0;
+      const quantity = product.stocks.reduce((sum, s) => sum + s.currentStock, 0);
       return {
         Product: product.name,
         "Generic Name": product.genericName ?? "",

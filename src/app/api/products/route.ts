@@ -197,6 +197,7 @@ export async function POST(request: NextRequest) {
           ? {
               batches: {
                 create: {
+                  storeId: session.storeId,
                   batchNumber: trimmedBatchNumber,
                   expirationDate: new Date(expirationDate!),
                   quantity: currentStock!,

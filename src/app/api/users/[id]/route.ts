@@ -18,6 +18,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = await request.json();
   const { email, username, firstName, lastName, role, password, storeId, isActive } = body;
 
+  if (storeId && !(await prisma.store.findFirst({ where: { id: storeId, tenantId: session.tenantId, isActive: true } }))) {
+    return NextResponse.json({ error: "Branch not found." }, { status: 400 });
+  }
+
   try {
     const user = await prisma.user.update({
       where: { id },
@@ -64,8 +68,11 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const existing = await prisma.user.findFirst({ where: { id, tenantId: session.tenantId } });
   if (!existing) return NextResponse.json({ error: "User not found." }, { status: 404 });
 
-  const salesCount = await prisma.sale.count({ where: { userId: id } });
-  if (salesCount > 0) {
+  const [salesCount, ordersTakenCount] = await Promise.all([
+    prisma.sale.count({ where: { OR: [{ userId: id }, { orderTakerId: id }] } }),
+    prisma.pendingOrder.count({ where: { createdById: id } }),
+  ]);
+  if (salesCount > 0 || ordersTakenCount > 0) {
     await prisma.user.update({ where: { id }, data: { isActive: false } });
     return NextResponse.json({ ok: true, deactivated: true, message: "User has sales history — deactivated instead of deleted." });
   }

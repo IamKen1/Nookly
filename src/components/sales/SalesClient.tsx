@@ -29,6 +29,8 @@ interface Sale {
   isReturnRecord: boolean;
   saleDate: string;
   cashierName: string;
+  orderTakerName: string | null;
+  branchName: string;
   itemCount: number;
   items: SaleItem[];
 }
@@ -39,6 +41,7 @@ interface Filters {
   dateFrom: string;
   dateTo: string;
   cashierId: string;
+  storeId: string;
   paymentMethod: string;
   status: string;
   search: string;
@@ -49,12 +52,15 @@ export default function SalesClient({
   canVoid,
   todayTotal,
   cashiers,
+  branches,
   filters,
 }: {
   sales: Sale[];
   canVoid: boolean;
   todayTotal: number;
   cashiers: { id: string; name: string }[];
+  // Only passed for workspaces with more than one branch.
+  branches?: { id: string; name: string }[];
   filters: Filters;
 }) {
   const router = useRouter();
@@ -104,6 +110,7 @@ export default function SalesClient({
     if (next.dateFrom) params.set("dateFrom", next.dateFrom);
     if (next.dateTo) params.set("dateTo", next.dateTo);
     if (next.cashierId) params.set("cashierId", next.cashierId);
+    if (next.storeId) params.set("storeId", next.storeId);
     if (next.paymentMethod) params.set("paymentMethod", next.paymentMethod);
     if (next.status) params.set("status", next.status);
     if (next.search) params.set("search", next.search);
@@ -118,7 +125,7 @@ export default function SalesClient({
   }, [searchInput]);
 
   const hasActiveFilters = Boolean(
-    filters.dateFrom || filters.dateTo || filters.cashierId || filters.paymentMethod || filters.status || filters.search
+    filters.dateFrom || filters.dateTo || filters.cashierId || filters.storeId || filters.paymentMethod || filters.status || filters.search
   );
 
   const flashSuccess = (message: string) => {
@@ -259,6 +266,21 @@ export default function SalesClient({
             className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
           />
         </div>
+        {branches && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-500">Branch</label>
+            <select
+              value={filters.storeId}
+              onChange={(e) => applyFilters({ storeId: e.target.value })}
+              className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
+            >
+              <option value="">All branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-500">Cashier</label>
           <select
@@ -344,8 +366,12 @@ export default function SalesClient({
                     </td>
                     <td className="px-4 py-3 text-zinc-600">
                       {new Date(s.saleDate).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}
+                      {branches && <p className="text-xs text-zinc-400">{s.branchName}</p>}
                     </td>
-                    <td className="px-4 py-3 text-zinc-600">{s.cashierName}</td>
+                    <td className="px-4 py-3 text-zinc-600">
+                      {s.cashierName}
+                      {s.orderTakerName && <p className="text-xs text-zinc-400">Order by {s.orderTakerName}</p>}
+                    </td>
                     <td className="px-4 py-3 text-zinc-600">{s.itemCount}</td>
                     <td className={`px-4 py-3 font-medium ${s.totalAmount < 0 ? "text-red-600" : "text-zinc-900"}`}>{peso(s.totalAmount)}</td>
                     <td className="px-4 py-3">

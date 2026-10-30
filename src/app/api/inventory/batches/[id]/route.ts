@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { invalidateCached } from "@/lib/route-cache";
+import { batchesAtStore } from "@/lib/branch-scope";
 
-async function loadOwnedBatch(id: string, tenantId: string) {
+// Only a batch held at the user's current branch can be corrected or
+// discarded here, since the matching stock change is made at that branch.
+async function loadOwnedBatch(id: string, tenantId: string, storeId: string) {
   const batch = await prisma.productBatch.findFirst({
-    where: { id, product: { tenantId } },
+    where: { id, product: { tenantId }, ...(await batchesAtStore(tenantId, storeId)) },
     include: { product: true },
   });
   return batch;
@@ -17,7 +20,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   const { id } = await params;
-  const existing = await loadOwnedBatch(id, session.tenantId);
+  const existing = await loadOwnedBatch(id, session.tenantId, session.storeId);
   if (!existing) return NextResponse.json({ error: "Batch not found." }, { status: 404 });
 
   const body = await request.json();
@@ -73,7 +76,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   const { id } = await params;
-  const existing = await loadOwnedBatch(id, session.tenantId);
+  const existing = await loadOwnedBatch(id, session.tenantId, session.storeId);
   if (!existing) return NextResponse.json({ error: "Batch not found." }, { status: 404 });
 
   const { searchParams } = new URL(request.url);

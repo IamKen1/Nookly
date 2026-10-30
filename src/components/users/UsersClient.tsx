@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import UsernameField from "@/components/shared/UsernameField";
+import { ALL_ROLE_LABELS } from "@/lib/permissions-shared";
 
 interface Store {
   id: string;
@@ -20,7 +21,7 @@ interface UserRow {
   isActive: boolean;
 }
 
-const ROLES = ["OWNER", "ADMIN", "PHARMACIST", "PHARMACY_TECH", "CASHIER", "MANAGER"];
+const ROLES = ["OWNER", "ADMIN", "PHARMACIST", "PHARMACY_TECH", "CASHIER", "MANAGER", "ORDER_TAKER"];
 
 const emptyForm = {
   email: "",
@@ -111,6 +112,31 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
     }
   };
 
+  const changeBranch = async (user: UserRow, storeId: string) => {
+    setBusyId(user.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Failed to change branch.");
+        return;
+      }
+      await load();
+      flashSuccess("Branch updated. It takes effect the next time they log in.");
+    } catch {
+      setError("Network error.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const multiBranch = stores.length > 1;
+
   const remove = async (id: string) => {
     if (!confirm("Remove this user?")) return;
     setBusyId(id);
@@ -161,6 +187,7 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Username</th>
               <th className="px-4 py-3">Role</th>
+              {multiBranch && <th className="px-4 py-3">Branch</th>}
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3" />
             </tr>
@@ -168,11 +195,11 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
+                <td colSpan={multiBranch ? 6 : 5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">No users yet.</td>
+                <td colSpan={multiBranch ? 6 : 5} className="px-4 py-8 text-center text-zinc-400">No users yet.</td>
               </tr>
             ) : (
               users.map((u) => (
@@ -182,7 +209,22 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                     <p className="text-xs text-zinc-500">{u.email}</p>
                   </td>
                   <td className="px-4 py-3 text-zinc-600">{u.username}</td>
-                  <td className="px-4 py-3 text-zinc-600">{u.role}</td>
+                  <td className="px-4 py-3 text-zinc-600">{ALL_ROLE_LABELS[u.role] ?? u.role}</td>
+                  {multiBranch && (
+                    <td className="px-4 py-3">
+                      <select
+                        value={u.storeId ?? ""}
+                        onChange={(e) => changeBranch(u, e.target.value)}
+                        disabled={busyId === u.id}
+                        className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 disabled:opacity-50"
+                      >
+                        {!u.storeId && <option value="">—</option>}
+                        {stores.map((st) => (
+                          <option key={st.id} value={st.id}>{st.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <button
                       onClick={() => toggleActive(u)}
@@ -265,7 +307,7 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                   className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 >
                   {ROLES.map((r) => (
-                    <option key={r} value={r}>{r}</option>
+                    <option key={r} value={r}>{ALL_ROLE_LABELS[r] ?? r}</option>
                   ))}
                 </select>
                 <select

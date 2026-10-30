@@ -7,8 +7,9 @@ import NotificationSettingsForm from "./NotificationSettingsForm";
 import PlanSettingsForm from "./PlanSettingsForm";
 import UserAccessForm from "./UserAccessForm";
 import ApiKeysForm from "./ApiKeysForm";
+import BranchesForm from "./BranchesForm";
 
-type Tab = "plan" | "receipt" | "notifications" | "userAccess" | "apiAccess";
+type Tab = "plan" | "branches" | "receipt" | "notifications" | "userAccess" | "apiAccess";
 
 interface CurrentPlan {
   code: string;
@@ -87,6 +88,14 @@ export default function SettingsClient({
         >
           Plan
         </button>
+        {canManagePlan && currentPlan && (
+          <button
+            onClick={() => setTab("branches")}
+            className={`px-4 py-2 text-sm font-semibold ${tab === "branches" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
+          >
+            Branches
+          </button>
+        )}
         <button
           onClick={() => setTab("receipt")}
           className={`px-4 py-2 text-sm font-semibold ${tab === "receipt" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"}`}
@@ -122,6 +131,9 @@ export default function SettingsClient({
       <div className="mt-6">
         {tab === "plan" && (
           <PlanSettingsForm canManagePlan={canManagePlan} currentPlan={currentPlan} allPlans={allPlans} usage={usage} />
+        )}
+        {tab === "branches" && canManagePlan && currentPlan && (
+          <BranchesForm maxStores={currentPlan.maxStores} planName={currentPlan.name} />
         )}
         {tab === "receipt" && <ReceiptSettingsForm />}
         {tab === "notifications" && canManageAlerts && <NotificationSettingsForm />}

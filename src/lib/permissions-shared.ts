@@ -17,7 +17,7 @@ export const PERMISSION_MODULES = [
 
 export type PermissionModuleKey = (typeof PERMISSION_MODULES)[number]["key"];
 
-export const CONFIGURABLE_ROLES = ["ADMIN", "MANAGER", "PHARMACIST", "PHARMACY_TECH", "CASHIER"] as const;
+export const CONFIGURABLE_ROLES = ["ADMIN", "MANAGER", "PHARMACIST", "PHARMACY_TECH", "CASHIER", "ORDER_TAKER"] as const;
 export type ConfigurableRole = (typeof CONFIGURABLE_ROLES)[number];
 export const isConfigurableRole = (role: string): role is ConfigurableRole => (CONFIGURABLE_ROLES as readonly string[]).includes(role);
 
@@ -27,7 +27,13 @@ export const ROLE_LABELS: Record<ConfigurableRole, string> = {
   PHARMACIST: "Pharmacist",
   PHARMACY_TECH: "Pharmacy Tech",
   CASHIER: "Cashier",
+  ORDER_TAKER: "Order Taker",
 };
+
+// Order takers prepare orders at the POS and send them to a cashier; they can
+// never collect payment themselves, so every sale has a separate person
+// accountable for taking the order and for handling the money.
+export const canCollectPayment = (role: string) => role !== "ORDER_TAKER";
 
 // Includes OWNER (not a configurable role, but still needs a display label
 // wherever the logged-in user's role is shown in the UI).
@@ -45,6 +51,8 @@ export const DEFAULT_PERMISSIONS: Record<ConfigurableRole, PermissionModuleKey[]
   // so it defaults to true even for cashier, to keep behavior unchanged
   // until the owner explicitly unchecks it.
   CASHIER: ["reports"],
+  // New role, so no legacy behavior to preserve — starts with no extra access.
+  ORDER_TAKER: [],
 };
 
 export type PermissionMatrix = Record<ConfigurableRole, Record<PermissionModuleKey, boolean>>;

@@ -27,6 +27,10 @@ interface CartPanelProps {
   vatableSales: number;
   vatAmount: number;
   nonVatableSales: number;
+  // Order takers send the cart to a cashier instead of checking out.
+  checkoutLabel?: string;
+  // Shown above the items, e.g. which pending order the cart was loaded from.
+  notice?: React.ReactNode;
 }
 
 function QtyInput({
@@ -75,6 +79,8 @@ export default function CartPanel({
   vatableSales,
   vatAmount,
   nonVatableSales,
+  checkoutLabel = "Checkout",
+  notice,
 }: CartPanelProps) {
   const itemCount = cart.reduce((sum, l) => sum + l.quantity, 0);
 
@@ -93,6 +99,8 @@ export default function CartPanel({
           </div>
         </div>
       </div>
+
+      {notice && <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{notice}</div>}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {cart.length === 0 ? (
@@ -198,7 +206,7 @@ export default function CartPanel({
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700"
                 >
                   <CreditCard className="h-4 w-4" />
-                  Checkout
+                  {checkoutLabel}
                 </button>
                 <button
                   onClick={onClear}

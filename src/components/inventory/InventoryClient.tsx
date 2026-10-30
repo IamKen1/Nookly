@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { AlertTriangle, Download, Loader2, PackagePlus, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import BranchStockPanel from "./BranchStockPanel";
 
 interface Product {
   id: string;
@@ -56,9 +57,16 @@ interface Batch {
   product: { id: string; name: string; barcode: string | null; category: { name: string } | null };
 }
 
-type Tab = "stock" | "movements" | "batches";
+type Tab = "stock" | "movements" | "batches" | "branches";
 
-export default function InventoryClient({ isOwner = false }: { isOwner?: boolean }) {
+export default function InventoryClient({
+  isOwner = false,
+  branches,
+}: {
+  isOwner?: boolean;
+  // Present only when the workspace has more than one branch.
+  branches?: { stores: { id: string; name: string }[]; currentStoreId: string | null; canTransfer: boolean };
+}) {
   const [tab, setTab] = useState<Tab>("stock");
   const [search, setSearch] = useState("");
   const [adjustTarget, setAdjustTarget] = useState<Product | null>(null);
@@ -451,7 +459,7 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
       </div>
 
       <div className="mt-6 flex gap-2 border-b border-zinc-200">
-        {(["stock", "batches", "movements"] as Tab[]).map((t) => (
+        {((branches ? ["stock", "batches", "movements", "branches"] : ["stock", "batches", "movements"]) as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -459,10 +467,14 @@ export default function InventoryClient({ isOwner = false }: { isOwner?: boolean
               tab === t ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"
             }`}
           >
-            {t === "stock" ? "Stock levels" : t === "batches" ? "Batches & expiry" : "Movement history"}
+            {t === "stock" ? "Stock levels" : t === "batches" ? "Batches & expiry" : t === "movements" ? "Movement history" : "All branches"}
           </button>
         ))}
       </div>
+
+      {tab === "branches" && branches && (
+        <BranchStockPanel stores={branches.stores} currentStoreId={branches.currentStoreId} canTransfer={branches.canTransfer} />
+      )}
 
       {tab === "stock" && (
         <>

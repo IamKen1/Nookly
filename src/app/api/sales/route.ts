@@ -7,6 +7,10 @@ import { runInBackground } from "@/lib/background";
 import { notifySaleCreated, notifyStockThresholdReached } from "@/lib/notifications";
 import { getReceiptSettings } from "@/lib/receipt-settings";
 import { invalidateCached } from "@/lib/route-cache";
+import { canCollectPayment } from "@/lib/permissions-shared";
+import { batchesAtStore } from "@/lib/branch-scope";
+
+class PendingOrderTakenError extends Error {}
 
 interface CheckoutItem {
   productId: string;
@@ -63,9 +67,13 @@ export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
+  if (!canCollectPayment(session.role)) {
+    return NextResponse.json({ error: "Order takers can't collect payment. Send the order to a cashier instead." }, { status: 403 });
+  }
 
   const body = await request.json();
   const {
+    pendingOrderId,
     items,
     paymentMethod,
     cashReceived,
@@ -77,6 +85,7 @@ export async function POST(request: NextRequest) {
     prescriptionId,
     prescriptionDraft,
   }: {
+    pendingOrderId?: string;
     items: CheckoutItem[];
     paymentMethod: string;
     cashReceived?: number;
@@ -94,6 +103,19 @@ export async function POST(request: NextRequest) {
   }
   if (!paymentMethod) {
     return NextResponse.json({ error: "paymentMethod is required." }, { status: 400 });
+  }
+
+  const pendingOrder = pendingOrderId
+    ? await prisma.pendingOrder.findFirst({
+        where: { id: pendingOrderId, tenantId: session.tenantId, storeId: session.storeId },
+        select: { id: true, status: true, createdById: true, orderRemarks: true },
+      })
+    : null;
+  if (pendingOrderId && !pendingOrder) {
+    return NextResponse.json({ error: "Order not found for this branch." }, { status: 400 });
+  }
+  if (pendingOrder && pendingOrder.status !== "OPEN") {
+    return NextResponse.json({ error: `This order was already ${pendingOrder.status.toLowerCase()}.` }, { status: 409 });
   }
 
   const productIds = items.map((item) => item.productId);
@@ -199,13 +221,15 @@ export async function POST(request: NextRequest) {
     select: { id: true },
   });
 
+  const batchWhere = await batchesAtStore(session.tenantId, session.storeId);
+
   const sale = await prisma.$transaction(async (tx) => {
     let resolvedPrescriptionId: string | null = null;
     let resolvedCustomerId = customerId || null;
 
     const batchesByProduct = new Map<string, { id: string; quantity: number }[]>();
     for (const batch of await tx.productBatch.findMany({
-      where: { productId: { in: productIds }, quantity: { gt: 0 } },
+      where: { productId: { in: productIds }, quantity: { gt: 0 }, ...batchWhere },
       orderBy: [{ expirationDate: "asc" }, { receivedDate: "asc" }],
       select: { id: true, productId: true, quantity: true },
     })) {
@@ -293,13 +317,23 @@ export async function POST(request: NextRequest) {
         paymentMethod: paymentMethod as never,
         cashReceived: cashReceived ?? null,
         changeGiven,
-        orderRemarks: orderRemarks || null,
+        orderRemarks: orderRemarks || pendingOrder?.orderRemarks || null,
         customerId: resolvedCustomerId,
         userId: session.userId,
+        orderTakerId: pendingOrder?.createdById ?? null,
         prescriptionId: resolvedPrescriptionId,
         shiftId: openShift?.id ?? null,
       },
     });
+
+    if (pendingOrder) {
+      // Conditional on OPEN so two cashiers can't both complete the same order.
+      const claimed = await tx.pendingOrder.updateMany({
+        where: { id: pendingOrder.id, status: "OPEN" },
+        data: { status: "COMPLETED", saleId: created.id },
+      });
+      if (claimed.count !== 1) throw new PendingOrderTakenError();
+    }
 
     await tx.saleItem.createMany({
       data: items.map((item) => ({
@@ -345,7 +379,13 @@ export async function POST(request: NextRequest) {
     });
 
     return created;
-  }, { timeout: 30000, maxWait: 10000 });
+  }, { timeout: 30000, maxWait: 10000 }).catch((error) => {
+    if (error instanceof PendingOrderTakenError) return null;
+    throw error;
+  });
+  if (!sale) {
+    return NextResponse.json({ error: "Another cashier already completed this order." }, { status: 409 });
+  }
 
   invalidateCached(`products:${session.tenantId}`);
 
@@ -403,6 +443,7 @@ export async function POST(request: NextRequest) {
       runInBackground(`stock notification for ${product.name}`, () =>
         notifyStockThresholdReached({
           tenantId: session.tenantId,
+          storeId: session.storeId,
           productName: product.name,
           categoryName: undefined,
           previousStock,

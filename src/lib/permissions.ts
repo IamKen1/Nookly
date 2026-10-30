@@ -66,7 +66,7 @@ export const getPermissionMatrix = async (tenantId: string): Promise<PermissionM
 
 // Replaces the tenant's entire permission matrix in one go — simplest
 // mental model for the owner ("Save" writes exactly what's checked), and
-// cheap enough given the grid is at most 5 roles x 6 modules = 30 rows.
+// cheap enough given the grid is at most 6 roles x 6 modules = 36 rows.
 export const setPermissionMatrix = async (tenantId: string, matrix: PermissionMatrix): Promise<void> => {
   const rows: { tenantId: string; role: ConfigurableRole; module: PermissionModuleKey; allowed: boolean }[] = [];
   for (const role of CONFIGURABLE_ROLES) {

@@ -31,6 +31,7 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
       orderRemarks: true,
       customer: { select: { firstName: true, lastName: true } },
       user: { select: { firstName: true, lastName: true } },
+      store: { select: { name: true, address: true, city: true, isMainBranch: true } },
       items: {
         select: {
           quantity: true,
@@ -44,7 +45,13 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
 
   if (!sale) return null;
 
-  const store = await getReceiptSettings(tenantId);
+  const settings = await getReceiptSettings(tenantId);
+  // Receipt settings are per workspace and describe the main branch. A sale at
+  // any other branch prints that branch's own name and address instead.
+  const branchAddress = [sale.store.address, sale.store.city].filter(Boolean).join(", ");
+  const store = sale.store.isMainBranch
+    ? settings
+    : { ...settings, addressLine1: branchAddress || settings.addressLine1, addressLine2: sale.store.name };
 
   // VAT-exclusive base BEFORE discount, computed exactly from the persisted
   // breakdown rather than reverse-engineered from the post-discount figure.

@@ -123,7 +123,14 @@ const ALL_TABS: [Tab, string][] = [
   ["inventory-dates", "Expiry monitor"],
 ];
 
-export default function ReportsClient({ enabledReports }: { enabledReports: string[] }) {
+export default function ReportsClient({
+  enabledReports,
+  branchScope,
+}: {
+  enabledReports: string[];
+  // Present only for owners/admins of a multi-branch workspace.
+  branchScope?: { currentBranchName: string };
+}) {
   const tabs = ALL_TABS.filter(([key]) => enabledReports.includes(key));
   const canExportValuation = enabledReports.includes("inventory-valuation");
   const [tab, setTab] = useState<Tab>(tabs[0]?.[0] ?? "overview");
@@ -150,6 +157,8 @@ export default function ReportsClient({ enabledReports }: { enabledReports: stri
   const [expensesEndDate, setExpensesEndDate] = useState(todayStr());
 
   const [expiryWindowDays, setExpiryWindowDays] = useState(90);
+  const [allBranches, setAllBranches] = useState(false);
+  const branchQuery = allBranches ? "&branch=all" : "";
 
   const load = useCallback(
     async (t: Tab) => {
@@ -165,31 +174,31 @@ export default function ReportsClient({ enabledReports }: { enabledReports: stri
       try {
         if (t === "overview") {
           const params = new URLSearchParams({ startDate: overviewStartDate, endDate: overviewEndDate, period: overviewPeriod });
-          const res = await fetch(`/api/reports/unified-dashboard?${params.toString()}`);
+          const res = await fetch(`/api/reports/unified-dashboard?${params.toString()}${branchQuery}`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
           setDashboard(data);
         } else if (t === "income") {
           const params = new URLSearchParams({ startDate: incomeStartDate, endDate: incomeEndDate });
-          const res = await fetch(`/api/reports/income?${params.toString()}`);
+          const res = await fetch(`/api/reports/income?${params.toString()}${branchQuery}`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
           setIncome(data);
         } else if (t === "expenses") {
           const params = new URLSearchParams({ startDate: expensesStartDate, endDate: expensesEndDate });
-          const res = await fetch(`/api/reports/expenses?${params.toString()}`);
+          const res = await fetch(`/api/reports/expenses?${params.toString()}${branchQuery}`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
           setExpenses(data);
         } else if (t === "e-services") {
           const params = new URLSearchParams({ startDate: cashStartDate, endDate: cashEndDate, period: cashPeriod });
-          const res = await fetch(`/api/reports/e-services?${params.toString()}`);
+          const res = await fetch(`/api/reports/e-services?${params.toString()}${branchQuery}`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
           setCashServices(data);
         } else {
           const params = new URLSearchParams({ expiryWindowDays: String(expiryWindowDays) });
-          const res = await fetch(`/api/reports/inventory-dates?${params.toString()}`);
+          const res = await fetch(`/api/reports/inventory-dates?${params.toString()}${branchQuery}`);
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
           setInventoryDates(data);
@@ -212,6 +221,7 @@ export default function ReportsClient({ enabledReports }: { enabledReports: stri
       expensesStartDate,
       expensesEndDate,
       expiryWindowDays,
+      branchQuery,
     ]
   );
 
@@ -226,9 +236,19 @@ export default function ReportsClient({ enabledReports }: { enabledReports: stri
           <h1 className="text-2xl font-bold text-zinc-900">Reports</h1>
           <p className="mt-1 text-sm text-zinc-500">Sales, profitability, and inventory insight for your business.</p>
         </div>
+        {branchScope && (
+          <select
+            value={allBranches ? "all" : "current"}
+            onChange={(e) => setAllBranches(e.target.value === "all")}
+            className="ml-auto mr-3 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700"
+          >
+            <option value="current">{branchScope.currentBranchName}</option>
+            <option value="all">All branches</option>
+          </select>
+        )}
         {canExportValuation && (
           <a
-            href="/api/reports/inventory-valuation"
+            href={`/api/reports/inventory-valuation${allBranches ? "?branch=all" : ""}`}
             className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300"
           >
             <Download className="h-4 w-4" /> Export inventory valuation

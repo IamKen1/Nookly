@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { daysUntil } from "@/lib/plans";
 import { startOfTodayPH } from "@/lib/timezone";
 import { formatDate } from "@/lib/format";
+import { getBranchContext } from "@/lib/branch-scope";
+import { peso } from "@/lib/format";
 import AppShell from "@/components/app/AppShell";
 
 export default async function DashboardPage() {
@@ -45,6 +47,40 @@ export default async function DashboardPage() {
       },
     }),
   ]);
+
+  // Per-branch breakdown of the same numbers above — only for workspaces with
+  // more than one branch, so single-branch dashboards are unchanged.
+  const branchContext = await getBranchContext(session);
+  const branchRows = branchContext.isMultiBranch
+    ? await (async () => {
+        const [salesByStore, lowByStore, staffByStore] = await Promise.all([
+          prisma.sale.groupBy({
+            by: ["storeId"],
+            where: { tenantId: tenant.id, status: "COMPLETED", saleDate: { gte: startOfTodayPH() } },
+            _sum: { totalAmount: true },
+            _count: true,
+          }),
+          prisma.productStock.groupBy({
+            by: ["storeId"],
+            where: { store: { tenantId: tenant.id }, product: { isActive: true }, currentStock: { lte: 10 } },
+            _count: true,
+          }),
+          prisma.user.groupBy({ by: ["storeId"], where: { tenantId: tenant.id, isActive: true }, _count: true }),
+        ]);
+        return branchContext.stores.map((store) => {
+          const sales = salesByStore.find((r) => r.storeId === store.id);
+          return {
+            id: store.id,
+            name: store.name,
+            isCurrent: store.id === session.storeId,
+            sales: Number(sales?._sum.totalAmount ?? 0),
+            transactions: sales?._count ?? 0,
+            lowStock: lowByStore.find((r) => r.storeId === store.id)?._count ?? 0,
+            staff: staffByStore.find((r) => r.storeId === store.id)?._count ?? 0,
+          };
+        });
+      })()
+    : null;
 
   const subscription = tenant.subscription;
   const trialEndsAt = subscription?.trialEndsAt;
@@ -122,6 +158,37 @@ export default async function DashboardPage() {
             <p className="mt-1 text-xl font-bold text-zinc-900">{tenant._count.users}</p>
           </div>
         </div>
+
+        {branchRows && (
+          <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+            <p className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">By branch · today</p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
+                  <th className="px-4 py-2.5">Branch</th>
+                  <th className="px-4 py-2.5 text-right">Sales</th>
+                  <th className="px-4 py-2.5 text-right">Transactions</th>
+                  <th className="px-4 py-2.5 text-right">Low stock</th>
+                  <th className="px-4 py-2.5 text-right">Staff</th>
+                </tr>
+              </thead>
+              <tbody>
+                {branchRows.map((b) => (
+                  <tr key={b.id} className="border-b border-zinc-50 last:border-0">
+                    <td className="px-4 py-2.5 font-medium text-zinc-900">
+                      {b.name}
+                      {b.isCurrent && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">You&apos;re here</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-zinc-900">{peso(b.sales)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{b.transactions}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-amber-600">{b.lowStock}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{b.staff}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <div className="mt-8 flex gap-3">
           <Link

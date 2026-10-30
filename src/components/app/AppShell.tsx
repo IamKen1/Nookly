@@ -4,6 +4,9 @@ import LogoutButton from "./LogoutButton";
 import OnboardingTourLoader from "@/components/onboarding/OnboardingTourLoader";
 import { getRolePermissions, type PermissionModuleKey } from "@/lib/permissions";
 import { ALL_ROLE_LABELS } from "@/lib/permissions-shared";
+import { getSession } from "@/lib/session";
+import { canManageAllBranches, getBranchContext } from "@/lib/branch-scope";
+import BranchSwitcher from "./BranchSwitcher";
 
 const navItems: { href: string; label: string; icon: typeof LayoutDashboard; module?: PermissionModuleKey }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -32,7 +35,11 @@ export default async function AppShell({
   role?: string;
   children: React.ReactNode;
 }) {
-  const permissions = role ? await getRolePermissions(tenantId, role) : null;
+  const session = await getSession();
+  const [permissions, branches] = await Promise.all([
+    role ? getRolePermissions(tenantId, role) : null,
+    session ? getBranchContext(session) : null,
+  ]);
   const visibleItems = navItems.filter((item) => !item.module || (permissions && permissions[item.module]));
 
   return (
@@ -71,6 +78,14 @@ export default async function AppShell({
                 {ALL_ROLE_LABELS[role] ?? role}
               </span>
             )}
+            {branches?.isMultiBranch &&
+              (session && canManageAllBranches(session.role) ? (
+                <BranchSwitcher stores={branches.stores} currentStoreId={session.storeId} />
+              ) : (
+                branches.current && (
+                  <span className="rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-600">{branches.current.name}</span>
+                )
+              ))}
           </div>
           <LogoutButton />
         </header>

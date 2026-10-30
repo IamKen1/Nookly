@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
     runInBackground(`stock notification for ${result.product.name}`, () =>
       notifyStockThresholdReached({
         tenantId: session.tenantId,
+        storeId: session.storeId,
         productName: result.product.name,
         categoryName: result.product.category?.name,
         previousStock: result.previousStock,

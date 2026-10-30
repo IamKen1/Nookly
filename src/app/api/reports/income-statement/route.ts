@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireReport } from "@/lib/plan-gating";
+import { reportStoreId } from "@/lib/branch-scope";
 
 type Period = "daily" | "weekly" | "monthly" | "annually";
 
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
+    const storeId = reportStoreId(session, searchParams);
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const timeZone = searchParams.get("timeZone") || "Asia/Manila";
@@ -61,7 +63,7 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId: session.tenantId,
         status: "COMPLETED",
-        ...(session.storeId ? { storeId: session.storeId } : {}),
+        ...(storeId ? { storeId } : {}),
         ...(Object.keys(dateFilter).length > 0 ? { saleDate: dateFilter } : {}),
       },
       select: {

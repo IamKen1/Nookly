@@ -424,6 +424,7 @@ async function processAddProduct(
         await tx.productBatch.create({
           data: {
             productId: product.id,
+            storeId: session.storeId!,
             batchNumber: batchNumber!,
             expirationDate: batchExpirationDate!,
             quantity: currentStock,

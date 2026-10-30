@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireReport } from "@/lib/plan-gating";
+import { batchesAtStore, reportStoreId } from "@/lib/branch-scope";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -20,6 +21,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
+    const storeId = reportStoreId(session, searchParams);
+    const batchWhere = storeId ? await batchesAtStore(session.tenantId, storeId) : {};
     const expiryWindowDays = Math.max(1, Math.min(365, Number(searchParams.get("expiryWindowDays") || "90")));
 
     const now = new Date();
@@ -39,10 +42,10 @@ export async function GET(request: NextRequest) {
         updatedAt: true,
         expiryDate: true,
         isActive: true,
-        stocks: session.storeId ? { where: { storeId: session.storeId } } : true,
+        stocks: storeId ? { where: { storeId } } : true,
         // Soonest-expiring batch still holding stock — the same one FEFO sells first.
         batches: {
-          where: { quantity: { gt: 0 } },
+          where: { quantity: { gt: 0 }, ...batchWhere },
           orderBy: { expirationDate: "asc" },
           take: 1,
           select: { batchNumber: true, expirationDate: true },
@@ -68,7 +71,7 @@ export async function GET(request: NextRequest) {
         barcode: product.barcode,
         category: product.category,
         isActive: product.isActive,
-        currentStock: product.stocks[0]?.currentStock ?? 0,
+        currentStock: product.stocks.reduce((sum, s) => sum + s.currentStock, 0),
         createdAt: product.createdAt.toISOString(),
         updatedAt: product.updatedAt.toISOString(),
         expiryDate: expiryDate ? expiryDate.toISOString() : null,
