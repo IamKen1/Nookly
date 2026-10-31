@@ -84,7 +84,7 @@ export default function UserAccessForm() {
   const toggle = (role: ConfigurableRole, key: PermissionModuleKey) =>
     update({ ...matrix, [role]: { ...matrix[role], [key]: !matrix[role][key] } });
 
-  const resetRole = (role: ConfigurableRole) => update({ ...matrix, [role]: recommended()[role] });
+  const resetAll = () => update(recommended());
 
   const handleSave = async () => {
     setSaving(true);
@@ -118,8 +118,7 @@ export default function UserAccessForm() {
         <p className="mt-1 text-sm text-zinc-500">
           Tick a module to give a role access. Untick it and that module disappears from their menu and can&apos;t be opened. The
           indented options fine-tune what they can see or do inside a module, and only apply while the module itself is ticked.
-          Changes take effect on their next page load. Hover a role&apos;s name to see what it&apos;s for, and use Reset to go back
-          to the recommended access for that role.
+          Changes take effect on their next page load. The owner always has access to everything.
         </p>
       </div>
 
@@ -131,24 +130,15 @@ export default function UserAccessForm() {
           </colgroup>
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/80">
-              <th className="sticky left-0 z-10 bg-zinc-50 px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Module</th>
-              <th className="px-1 py-4 text-center align-top" title="The owner always has access to everything">
-                <span className="flex items-center justify-center gap-1 text-xs font-semibold text-zinc-900">
+              <th className="sticky left-0 z-10 bg-zinc-50 px-5 py-4 text-left align-middle text-xs font-semibold uppercase tracking-wide text-zinc-500">Module</th>
+              <th className="px-1 py-4 text-center align-middle" title="The owner always has access to everything">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-900">
                   <Crown className="h-3.5 w-3.5 text-amber-500" /> Owner
                 </span>
-                <span className="mt-1.5 block text-[11px] font-normal text-zinc-400">Always all</span>
               </th>
               {CONFIGURABLE_ROLES.map((role) => (
-                <th key={role} className="px-1 py-4 text-center align-top" title={ROLE_DESCRIPTIONS[role]}>
-                  <span className="block text-xs font-semibold leading-tight text-zinc-900">{ROLE_LABELS[role]}</span>
-                  <button
-                    type="button"
-                    onClick={() => resetRole(role)}
-                    className="mt-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50"
-                    title={`Reset ${ROLE_LABELS[role]} to the recommended access`}
-                  >
-                    <RotateCcw className="h-3 w-3" /> Reset
-                  </button>
+                <th key={role} className="px-1 py-4 text-center align-middle text-xs font-semibold text-zinc-900" title={ROLE_DESCRIPTIONS[role]}>
+                  {ROLE_LABELS[role]}
                 </th>
               ))}
             </tr>
@@ -205,6 +195,13 @@ export default function UserAccessForm() {
         {error && <p className="mr-auto text-sm text-red-600">{error}</p>}
         {!error && dirty && <p className="mr-auto text-sm text-amber-600">You have unsaved changes.</p>}
         {!error && saved && <p className="mr-auto text-sm text-emerald-600">Saved. Staff see the change on their next page load.</p>}
+        <button
+          type="button"
+          onClick={resetAll}
+          className="flex items-center gap-1.5 rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:border-zinc-400 btn-press"
+        >
+          <RotateCcw className="h-4 w-4" /> Reset all to recommended
+        </button>
         <button
           type="button"
           onClick={handleSave}
