@@ -55,7 +55,20 @@ interface Batch {
   isExpired?: boolean;
   isExpiringSoon?: boolean;
   product: { id: string; name: string; barcode: string | null; category: { name: string } | null };
+  supplier: { id: string; name: string } | null;
 }
+
+const NEW_SUPPLIER = "__new";
+const EMPTY_BATCH_FORM = {
+  productId: "",
+  productName: "",
+  batchNumber: "",
+  expirationDate: "",
+  quantity: "",
+  costPrice: "",
+  supplierId: "",
+  newSupplierName: "",
+};
 
 type Tab = "stock" | "movements" | "batches" | "branches";
 
@@ -86,7 +99,10 @@ export default function InventoryClient({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showReceiveBatch, setShowReceiveBatch] = useState(false);
-  const [batchForm, setBatchForm] = useState({ productId: "", productName: "", batchNumber: "", expirationDate: "", quantity: "", costPrice: "" });
+  const [batchForm, setBatchForm] = useState(EMPTY_BATCH_FORM);
+  const { data: suppliers = [], mutate: refreshSuppliers } = useSWR<{ id: string; name: string }[]>(
+    showReceiveBatch ? "/api/suppliers" : null
+  );
   const [batchProductResults, setBatchProductResults] = useState<Product[]>([]);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchSaving, setBatchSaving] = useState(false);
@@ -136,8 +152,28 @@ export default function InventoryClient({
       setBatchError("Select a product first.");
       return;
     }
+    if (batchForm.supplierId === NEW_SUPPLIER && !batchForm.newSupplierName.trim()) {
+      setBatchError("Enter the new supplier's name, or choose an existing one.");
+      return;
+    }
     setBatchSaving(true);
     try {
+      // A supplier typed in here is saved first, so it's in the list next time.
+      let supplierId = batchForm.supplierId || undefined;
+      if (supplierId === NEW_SUPPLIER) {
+        const created = await fetch("/api/suppliers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: batchForm.newSupplierName }),
+        });
+        const supplier = await created.json();
+        if (!created.ok) {
+          setBatchError(supplier.error ?? "Failed to add the supplier.");
+          return;
+        }
+        supplierId = supplier.id;
+        refreshSuppliers();
+      }
       const res = await fetch("/api/inventory/batches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,6 +183,7 @@ export default function InventoryClient({
           expirationDate: batchForm.expirationDate,
           quantity: parseInt(batchForm.quantity, 10) || 0,
           costPrice: parseFloat(batchForm.costPrice) || 0,
+          supplierId,
         }),
       });
       const data = await res.json();
@@ -155,7 +192,7 @@ export default function InventoryClient({
         return;
       }
       setShowReceiveBatch(false);
-      setBatchForm({ productId: "", productName: "", batchNumber: "", expirationDate: "", quantity: "", costPrice: "" });
+      setBatchForm(EMPTY_BATCH_FORM);
       refreshBatches();
     } catch {
       setBatchError("Network error.");
@@ -585,6 +622,7 @@ export default function InventoryClient({
                 <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
                   <th className="px-4 py-3">Product</th>
                   <th className="px-4 py-3">Batch #</th>
+                  <th className="px-4 py-3">Supplier</th>
                   <th className="px-4 py-3">Expiry</th>
                   <th className="px-4 py-3">Qty</th>
                   <th className="px-4 py-3">Status</th>
@@ -594,11 +632,11 @@ export default function InventoryClient({
               <tbody>
                 {batchesLoading && batches.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
+                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
                   </tr>
                 ) : batches.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">No batches expiring soon.</td>
+                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">No batches expiring soon.</td>
                   </tr>
                 ) : (
                   batches.map((b) => (
@@ -608,6 +646,7 @@ export default function InventoryClient({
                         <p className="text-xs text-zinc-500">{b.product.category?.name}</p>
                       </td>
                       <td className="px-4 py-3 text-zinc-600">{b.batchNumber}</td>
+                      <td className="px-4 py-3 text-zinc-600">{b.supplier?.name ?? <span className="text-zinc-300">—</span>}</td>
                       <td className="px-4 py-3 text-zinc-600">{formatDate(b.expirationDate)}</td>
                       <td className="px-4 py-3 text-zinc-700">{b.quantity}</td>
                       <td className="px-4 py-3">
@@ -773,6 +812,31 @@ export default function InventoryClient({
                 onChange={(e) => setBatchForm({ ...batchForm, batchNumber: e.target.value })}
                 className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
               />
+              <div className="space-y-2">
+                <select
+                  value={batchForm.supplierId}
+                  onChange={(e) => setBatchForm({ ...batchForm, supplierId: e.target.value })}
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Supplier"
+                >
+                  <option value="">Supplier (optional)</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                  <option value={NEW_SUPPLIER}>+ Add new supplier…</option>
+                </select>
+                {batchForm.supplierId === NEW_SUPPLIER && (
+                  <input
+                    autoFocus
+                    placeholder="New supplier name"
+                    value={batchForm.newSupplierName}
+                    onChange={(e) => setBatchForm({ ...batchForm, newSupplierName: e.target.value })}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                  />
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <input
                   required

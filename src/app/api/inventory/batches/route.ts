@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
 
     const batches = await prisma.productBatch.findMany({
       where: { productId, ...batchWhere },
+      include: { supplier: { select: { id: true, name: true } } },
       orderBy: { expirationDate: "asc" },
     });
     return NextResponse.json(batches);
@@ -41,7 +42,10 @@ export async function GET(request: NextRequest) {
       product: { tenantId: session.tenantId },
       ...batchWhere,
     },
-    include: { product: { select: { id: true, name: true, barcode: true, category: { select: { name: true } } } } },
+    include: {
+      product: { select: { id: true, name: true, barcode: true, category: { select: { name: true } } } },
+      supplier: { select: { id: true, name: true } },
+    },
     orderBy: { expirationDate: "asc" },
     take: 200,
   });
@@ -64,7 +68,8 @@ export async function POST(request: NextRequest) {
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   const body = await request.json();
-  const { productId, batchNumber, expirationDate, quantity, costPrice, reason } = body as {
+  const { productId, batchNumber, expirationDate, quantity, costPrice, reason, supplierId } = body as {
+    supplierId?: string;
     productId: string;
     batchNumber: string;
     expirationDate: string;
@@ -86,12 +91,19 @@ export async function POST(request: NextRequest) {
   });
   if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
 
+  // Optional: who delivered this lot. Must be one of this tenant's suppliers.
+  const supplier = supplierId
+    ? await prisma.supplier.findFirst({ where: { id: supplierId, tenantId: session.tenantId }, select: { id: true, name: true } })
+    : null;
+  if (supplierId && !supplier) return NextResponse.json({ error: "Supplier not found." }, { status: 400 });
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const batch = await tx.productBatch.create({
         data: {
           productId,
           storeId: session.storeId!,
+          supplierId: supplier?.id ?? null,
           batchNumber,
           expirationDate: new Date(expirationDate),
           quantity,
@@ -116,7 +128,7 @@ export async function POST(request: NextRequest) {
           productId,
           type: "PURCHASE",
           quantity,
-          reason: reason || `Batch ${batchNumber} received`,
+          reason: reason || `Batch ${batchNumber} received${supplier ? ` from ${supplier.name}` : ""}`,
           reference: batchNumber,
           userId: session.userId,
         },

@@ -450,6 +450,7 @@ model Supplier {
   updatedAt     DateTime          @updatedAt
   tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   products      ProductSupplier[]
+  batches       ProductBatch[]
 
   @@unique([tenantId, name])
   @@map("suppliers")
@@ -592,21 +593,25 @@ model ProductStock {
 }
 
 model ProductBatch {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   batchNumber    String
   expirationDate DateTime
   quantity       Int
-  costPrice      Decimal  @db.Decimal(10, 2)
-  receivedDate   DateTime @default(now())
+  costPrice      Decimal   @db.Decimal(10, 2)
+  receivedDate   DateTime  @default(now())
   productId      String
   // The branch physically holding this batch. Null only for batches recorded
   // before branches existed — those belong to the tenant's primary branch.
   storeId        String?
-  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  store          Store?   @relation(fields: [storeId], references: [id])
+  // Who supplied this lot, recorded when it's received. Optional.
+  supplierId     String?
+  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store          Store?    @relation(fields: [storeId], references: [id])
+  supplier       Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   @@unique([productId, storeId, batchNumber])
   @@index([storeId])
+  @@index([supplierId])
   @@map("product_batches")
 }
 

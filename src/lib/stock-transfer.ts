@@ -90,6 +90,7 @@ export async function executeTransfer(
           batchNumber: batch.batchNumber,
           expirationDate: batch.expirationDate,
           costPrice: batch.costPrice,
+          supplierId: batch.supplierId,
           quantity: move,
         },
       });
