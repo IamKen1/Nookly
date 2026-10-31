@@ -5,10 +5,14 @@ import { sanitizeSupportAttachments } from "@/lib/support-attachments";
 import { sendAlertEmail } from "@/lib/email";
 import { platformAdminRecipients } from "@/lib/platform-admin";
 import { ADMIN_BASE_PATH } from "@/lib/admin-path";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "support"))) {
+    return NextResponse.json({ error: "You don't have access to Support." }, { status: 403 });
+  }
 
   const tickets = await prisma.supportTicket.findMany({
     where: { tenantId: session.tenantId },
@@ -25,6 +29,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "support"))) {
+    return NextResponse.json({ error: "You don't have access to Support." }, { status: 403 });
+  }
 
   const body = await request.json();
   const { message, attachments }: { message: string; attachments?: string[] } = body;

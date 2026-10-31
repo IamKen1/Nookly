@@ -1,11 +1,11 @@
-import { requireActiveSession } from "@/lib/require-session";
+import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { getRolePermissions } from "@/lib/permissions";
 import { canManageAllBranches, getBranchContext } from "@/lib/branch-scope";
 import PosClient from "@/components/pos/PosClient";
 
 export default async function PosPage() {
-  const session = await requireActiveSession();
+  const session = await requirePagePermission("pos");
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },

@@ -61,9 +61,12 @@ type Tab = "stock" | "movements" | "batches" | "branches";
 
 export default function InventoryClient({
   isOwner = false,
+  canAdjust = true,
   branches,
 }: {
   isOwner?: boolean;
+  // Without "Adjust inventory" the page is view-only: no import, adjust, receive, or discard.
+  canAdjust?: boolean;
   // Present only when the workspace has more than one branch.
   branches?: { stores: { id: string; name: string }[]; currentStoreId: string | null; canTransfer: boolean; canSetPrices: boolean };
 }) {
@@ -363,6 +366,7 @@ export default function InventoryClient({
         </div>
       </div>
 
+      {canAdjust && (
       <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-4">
         <div className="flex flex-wrap items-center gap-3">
           <select
@@ -463,6 +467,8 @@ export default function InventoryClient({
         )}
       </div>
 
+      )}
+
       <div className="mt-6 flex gap-2 border-b border-zinc-200">
         {((branches ? ["stock", "batches", "movements", "branches"] : ["stock", "batches", "movements"]) as Tab[]).map((t) => (
           <button
@@ -536,12 +542,14 @@ export default function InventoryClient({
                         </td>
                         <td className="px-4 py-3 text-zinc-500">{p.minimumStock}</td>
                         <td className="px-4 py-3 text-right">
+                          {canAdjust && (
                           <button
                             onClick={() => openAdjust(p)}
                             className="flex items-center gap-1 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:border-zinc-300"
                           >
                             <PackagePlus className="h-3.5 w-3.5" /> Adjust
                           </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -557,12 +565,14 @@ export default function InventoryClient({
         <>
           <div className="mt-4 flex items-center justify-between">
             <p className="text-sm text-zinc-500">Batches expiring within 90 days, across all expiry dates received for the same product.</p>
+            {canAdjust && (
             <button
               onClick={() => setShowReceiveBatch(true)}
               className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
             >
               <Plus className="h-4 w-4" /> Receive batch
             </button>
+            )}
           </div>
 
           {batchMessage && (
@@ -610,6 +620,7 @@ export default function InventoryClient({
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
+                        {canAdjust && (
                         <button
                           onClick={() => discardBatch(b, b.isExpired ? "expired" : "damaged")}
                           disabled={discardingId === b.id}
@@ -622,6 +633,7 @@ export default function InventoryClient({
                           )}
                           {discardingId === b.id ? "Discarding..." : "Discard"}
                         </button>
+                        )}
                       </td>
                     </tr>
                   ))

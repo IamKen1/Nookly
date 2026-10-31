@@ -1,11 +1,11 @@
-import { requireActiveSession } from "@/lib/require-session";
+import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { hasFeature, upgradeMessage, type PlanCode } from "@/lib/plan-gating";
 import AppShell from "@/components/app/AppShell";
 import PrescriptionsClient from "@/components/prescriptions/PrescriptionsClient";
 
 export default async function PrescriptionsPage() {
-  const session = await requireActiveSession();
+  const session = await requirePagePermission("prescriptions");
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },

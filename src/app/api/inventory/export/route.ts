@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 
 const formatNumber = (value: number) => Number(value.toFixed(2));
 
@@ -18,6 +19,9 @@ const calculateSuggestedSellingPrice = (costPrice: number, markup: number) => {
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "inventory"))) {
+    return NextResponse.json({ error: "You don't have access to Inventory." }, { status: 403 });
+  }
 
   try {
     const products = await prisma.product.findMany({

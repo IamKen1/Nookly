@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireReport } from "@/lib/plan-gating";
 import { batchesAtStore, reportStoreId } from "@/lib/branch-scope";
+import { hasPermission } from "@/lib/permissions";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -15,6 +16,9 @@ const startOfDay = (date: Date) => {
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "reports"))) {
+    return NextResponse.json({ error: "You don't have access to Reports." }, { status: 403 });
+  }
 
   const gate = await requireReport(session.tenantId, "inventory-dates");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });

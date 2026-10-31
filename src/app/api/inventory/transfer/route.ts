@@ -13,6 +13,9 @@ import { executeTransfer, newTransferReference, prepareTransfer, TransferError }
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "inventory"))) {
+    return NextResponse.json({ error: "You don't have access to Inventory." }, { status: 403 });
+  }
 
   const movements = await prisma.stockMovement.findMany({
     where: { tenantId: session.tenantId, type: "TRANSFER", reference: { startsWith: "TR-" } },

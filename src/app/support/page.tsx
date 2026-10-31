@@ -1,10 +1,10 @@
-import { requireSession } from "@/lib/require-session";
+import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/components/app/AppShell";
 import SupportClient from "@/components/support/SupportClient";
 
 export default async function SupportPage() {
-  const session = await requireSession();
+  const session = await requirePagePermission("support", { active: false });
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },

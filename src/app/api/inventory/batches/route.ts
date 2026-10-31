@@ -5,10 +5,14 @@ import { runInBackground } from "@/lib/background";
 import { notifyStockThresholdReached } from "@/lib/notifications";
 import { invalidateCached } from "@/lib/route-cache";
 import { batchesAtStore } from "@/lib/branch-scope";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "inventory"))) {
+    return NextResponse.json({ error: "You don't have access to Inventory." }, { status: 403 });
+  }
 
   const { searchParams } = new URL(request.url);
   const productId = searchParams.get("productId");
@@ -54,6 +58,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "inventory_adjust"))) {
+    return NextResponse.json({ error: "You don't have permission to change stock." }, { status: 403 });
+  }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   const body = await request.json();

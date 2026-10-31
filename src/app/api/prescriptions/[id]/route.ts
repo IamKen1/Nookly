@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireFeature } from "@/lib/plan-gating";
+import { hasPermission } from "@/lib/permissions";
 
 const VALID_STATUSES = ["PENDING", "FILLED", "PARTIAL", "CANCELLED", "EXPIRED"];
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "prescriptions"))) {
+    return NextResponse.json({ error: "You don't have access to Prescriptions." }, { status: 403 });
+  }
 
   const gate = await requireFeature(session.tenantId, "prescriptions");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
@@ -30,6 +34,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "prescriptions"))) {
+    return NextResponse.json({ error: "You don't have access to Prescriptions." }, { status: 403 });
+  }
 
   const gate = await requireFeature(session.tenantId, "prescriptions");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });

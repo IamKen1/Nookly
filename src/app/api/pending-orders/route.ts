@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { parsePendingItems } from "@/lib/pending-orders";
+import { hasPermission } from "@/lib/permissions";
 
 // Open orders waiting for a cashier at the current branch, with each line
 // resolved against today's product price and this branch's stock so the
@@ -66,6 +67,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "pos"))) {
+    return NextResponse.json({ error: "You don't have access to the POS." }, { status: 403 });
+  }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   const body = await request.json();

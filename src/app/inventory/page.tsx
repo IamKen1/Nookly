@@ -1,4 +1,4 @@
-import { requireActiveSession } from "@/lib/require-session";
+import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { canManageAllBranches, getBranchContext } from "@/lib/branch-scope";
 import { hasPermission } from "@/lib/permissions";
@@ -7,7 +7,7 @@ import AppShell from "@/components/app/AppShell";
 import InventoryClient from "@/components/inventory/InventoryClient";
 
 export default async function InventoryPage() {
-  const session = await requireActiveSession();
+  const session = await requirePagePermission("inventory");
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },
@@ -25,6 +25,7 @@ export default async function InventoryPage() {
     <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
       <InventoryClient
         isOwner={session.role === "OWNER"}
+        canAdjust={await hasPermission(session.tenantId, session.role, "inventory_adjust")}
         branches={
           branchContext.isMultiBranch
             ? { stores: branchContext.stores.map((s) => ({ id: s.id, name: s.name })), currentStoreId: session.storeId, canTransfer, canSetPrices: canManageAllBranches(session.role) }

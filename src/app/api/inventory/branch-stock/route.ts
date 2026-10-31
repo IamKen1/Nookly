@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 
 // Stock of each product at every branch, so staff can see which branch has
 // an item before sending a customer elsewhere or requesting a transfer.
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "inventory"))) {
+    return NextResponse.json({ error: "You don't have access to Inventory." }, { status: 403 });
+  }
 
   const search = new URL(request.url).searchParams.get("search")?.trim() ?? "";
 

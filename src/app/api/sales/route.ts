@@ -9,6 +9,7 @@ import { getReceiptSettings } from "@/lib/receipt-settings";
 import { invalidateCached } from "@/lib/route-cache";
 import { canCollectPayment } from "@/lib/permissions-shared";
 import { batchesAtStore } from "@/lib/branch-scope";
+import { hasPermission, saleVisibilityWhere } from "@/lib/permissions";
 
 class PendingOrderTakenError extends Error {}
 
@@ -32,8 +33,12 @@ export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  if (!(await hasPermission(session.tenantId, session.role, "sales"))) {
+    return NextResponse.json({ error: "You don't have access to Sales." }, { status: 403 });
+  }
+
   const sales = await prisma.sale.findMany({
-    where: { tenantId: session.tenantId },
+    where: { tenantId: session.tenantId, ...(await saleVisibilityWhere(session)) },
     select: {
       id: true,
       saleNumber: true,
@@ -66,6 +71,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "pos"))) {
+    return NextResponse.json({ error: "You don't have access to the POS." }, { status: 403 });
+  }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
   if (!canCollectPayment(session.role)) {
     return NextResponse.json({ error: "Order takers can't collect payment. Send the order to a cashier instead." }, { status: 403 });

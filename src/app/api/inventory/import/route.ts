@@ -6,6 +6,7 @@ import type { SessionPayload } from "@/lib/auth";
 import { DrugSchedule, Prisma } from "@prisma/client";
 import { invalidateCached } from "@/lib/route-cache";
 import { getMaxProducts } from "@/lib/plan-gating";
+import { hasPermission } from "@/lib/permissions";
 
 interface ImportIssue {
   row: number;
@@ -169,6 +170,9 @@ const ensureCategory = async (
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "inventory_adjust"))) {
+    return NextResponse.json({ error: "You don't have permission to change stock." }, { status: 403 });
+  }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   try {

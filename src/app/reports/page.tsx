@@ -1,4 +1,4 @@
-import { requireActiveSession } from "@/lib/require-session";
+import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { getEnabledReports, type PlanCode } from "@/lib/plan-gating";
 import { canManageAllBranches, getBranchContext } from "@/lib/branch-scope";
@@ -6,7 +6,7 @@ import AppShell from "@/components/app/AppShell";
 import ReportsClient from "@/components/reports/ReportsClient";
 
 export default async function ReportsPage() {
-  const session = await requireActiveSession();
+  const session = await requirePagePermission("reports");
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },

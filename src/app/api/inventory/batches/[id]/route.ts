@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { invalidateCached } from "@/lib/route-cache";
 import { batchesAtStore } from "@/lib/branch-scope";
+import { hasPermission } from "@/lib/permissions";
 
 // Only a batch held at the user's current branch can be corrected or
 // discarded here, since the matching stock change is made at that branch.
@@ -17,6 +18,9 @@ async function loadOwnedBatch(id: string, tenantId: string, storeId: string) {
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "inventory_adjust"))) {
+    return NextResponse.json({ error: "You don't have permission to change stock." }, { status: 403 });
+  }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   const { id } = await params;
@@ -73,6 +77,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "inventory_adjust"))) {
+    return NextResponse.json({ error: "You don't have permission to change stock." }, { status: 403 });
+  }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   const { id } = await params;

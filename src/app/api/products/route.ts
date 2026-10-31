@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { getCached, invalidateCached } from "@/lib/route-cache";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -77,6 +78,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "products_edit"))) {
+    return NextResponse.json({ error: "You don't have permission to edit products." }, { status: 403 });
+  }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 
   const body = await request.json();

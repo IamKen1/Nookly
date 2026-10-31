@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/require-session";
+import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { getSubscriptionLapse } from "@/lib/subscription-access";
 import { hasPermission } from "@/lib/permissions";
@@ -7,7 +7,7 @@ import AppShell from "@/components/app/AppShell";
 import SettingsClient from "@/components/settings/SettingsClient";
 
 export default async function SettingsPage() {
-  const session = await requireSession();
+  const session = await requirePagePermission("settings", { active: false });
 
   const [tenant, allPlans, storeCount, userCount, productCount, lapse] = await Promise.all([
     prisma.tenant.findUnique({

@@ -8,18 +8,20 @@ import { getSession } from "@/lib/session";
 import { canManageAllBranches, getBranchContext } from "@/lib/branch-scope";
 import BranchSwitcher from "./BranchSwitcher";
 
-const navItems: { href: string; label: string; icon: typeof LayoutDashboard; module?: PermissionModuleKey }[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/pos", label: "POS", icon: ShoppingCart },
-  { href: "/products", label: "Products", icon: Package },
-  { href: "/inventory", label: "Inventory", icon: Boxes },
-  { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus },
-  { href: "/sales", label: "Sales", icon: Receipt },
+// Every item is a module from Settings > User Access; a role only sees the
+// modules it's allowed.
+const navItems: { href: string; label: string; icon: typeof LayoutDashboard; module: PermissionModuleKey }[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard" },
+  { href: "/pos", label: "POS", icon: ShoppingCart, module: "pos" },
+  { href: "/products", label: "Products", icon: Package, module: "products" },
+  { href: "/inventory", label: "Inventory", icon: Boxes, module: "inventory" },
+  { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus, module: "prescriptions" },
+  { href: "/sales", label: "Sales", icon: Receipt, module: "sales" },
   { href: "/reports", label: "Reports", icon: BarChart3, module: "reports" },
   { href: "/users", label: "Users", icon: Users, module: "users" },
   { href: "/shifts", label: "Shifts", icon: Wallet, module: "shifts" },
-  { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/support", label: "Support", icon: LifeBuoy },
+  { href: "/settings", label: "Settings", icon: Settings, module: "settings" },
+  { href: "/support", label: "Support", icon: LifeBuoy, module: "support" },
 ];
 
 export default async function AppShell({
@@ -40,7 +42,7 @@ export default async function AppShell({
     role ? getRolePermissions(tenantId, role) : null,
     session ? getBranchContext(session) : null,
   ]);
-  const visibleItems = navItems.filter((item) => !item.module || (permissions && permissions[item.module]));
+  const visibleItems = navItems.filter((item) => permissions?.[item.module]);
 
   return (
     <div className="flex min-h-screen bg-zinc-50">

@@ -281,19 +281,21 @@ export default function SalesClient({
             </select>
           </div>
         )}
-        <div>
-          <label className="mb-1 block text-xs font-medium text-zinc-500">Cashier</label>
-          <select
-            value={filters.cashierId}
-            onChange={(e) => applyFilters({ cashierId: e.target.value })}
-            className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
-          >
-            <option value="">All cashiers</option>
-            {cashiers.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </div>
+        {cashiers.length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-500">Cashier</label>
+            <select
+              value={filters.cashierId}
+              onChange={(e) => applyFilters({ cashierId: e.target.value })}
+              className="rounded-lg border border-zinc-200 px-2.5 py-2 text-sm focus:border-emerald-500"
+            >
+              <option value="">All cashiers</option>
+              {cashiers.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-500">Payment</label>
           <select

@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
-import { requireActiveSession } from "@/lib/require-session";
+import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { startOfTodayPH, startOfDatePH, endOfDatePH } from "@/lib/timezone";
-import { hasPermission } from "@/lib/permissions";
+import { getRolePermissions, hasPermission, saleVisibilityWhere } from "@/lib/permissions";
 import { getBranchContext } from "@/lib/branch-scope";
 import AppShell from "@/components/app/AppShell";
 import SalesClient from "@/components/sales/SalesClient";
@@ -12,7 +12,7 @@ export default async function SalesPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const session = await requireActiveSession();
+  const session = await requirePagePermission("sales");
   const params = await searchParams;
   const asString = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || "";
 
@@ -31,9 +31,15 @@ export default async function SalesPage({
 
   if (!tenant) return null;
 
-  const canVoid = await hasPermission(session.tenantId, session.role, "sales_void");
+  const [canVoid, permissions] = await Promise.all([
+    hasPermission(session.tenantId, session.role, "sales_void"),
+    getRolePermissions(session.tenantId, session.role),
+  ]);
+  // Roles limited to their own sales or own branch never see past that, even
+  // via the URL filters below.
+  const visibility = await saleVisibilityWhere(session);
 
-  const where: Prisma.SaleWhereInput = { tenantId: tenant.id };
+  const where: Prisma.SaleWhereInput = { tenantId: tenant.id, AND: [visibility] };
   if (dateFrom) where.saleDate = { ...(where.saleDate as object), gte: startOfDatePH(dateFrom) };
   if (dateTo) where.saleDate = { ...(where.saleDate as object), lt: endOfDatePH(dateTo) };
   // Matches either role, so filtering by a person shows every sale they were
@@ -56,7 +62,7 @@ export default async function SalesPage({
     // reflects the real day, regardless of what filters are applied to the
     // table below it.
     prisma.sale.aggregate({
-      where: { tenantId: tenant.id, status: "COMPLETED", saleDate: { gte: startOfTodayPH() } },
+      where: { tenantId: tenant.id, status: "COMPLETED", saleDate: { gte: startOfTodayPH() }, ...visibility },
       _sum: { totalAmount: true },
     }),
     prisma.user.findMany({
@@ -73,8 +79,8 @@ export default async function SalesPage({
       <SalesClient
         canVoid={canVoid}
         todayTotal={todayTotal}
-        cashiers={cashiers.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`.trim() }))}
-        branches={branchContext.isMultiBranch ? branchContext.stores.map((s) => ({ id: s.id, name: s.name })) : undefined}
+        cashiers={!permissions.sales_view_all ? [] : cashiers.map((c) => ({ id: c.id, name: `${c.firstName} ${c.lastName}`.trim() }))}
+        branches={branchContext.isMultiBranch && permissions.all_branches ? branchContext.stores.map((s) => ({ id: s.id, name: s.name })) : undefined}
         filters={{ dateFrom, dateTo, cashierId, storeId, paymentMethod, status, search }}
         sales={sales.map((s) => ({
           id: s.id,

@@ -4,6 +4,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { requireReport } from "@/lib/plan-gating";
 import { getPeriodKey, getPeriodLabel, type ReportPeriod } from "@/lib/report-periods";
 import { reportStoreId } from "@/lib/branch-scope";
+import { hasPermission } from "@/lib/permissions";
 
 type Period = ReportPeriod;
 type TxnType = "CASH_IN" | "CASH_OUT" | "LOAD";
@@ -13,6 +14,9 @@ const emptyTotals = () => ({ count: 0, gross: 0, fees: 0 });
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "reports"))) {
+    return NextResponse.json({ error: "You don't have access to Reports." }, { status: 403 });
+  }
 
   const gate = await requireReport(session.tenantId, "e-services");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });

@@ -1,15 +1,16 @@
 import Link from "next/link";
-import { requireActiveSession } from "@/lib/require-session";
+import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { daysUntil } from "@/lib/plans";
 import { startOfTodayPH } from "@/lib/timezone";
 import { formatDate } from "@/lib/format";
 import { getBranchContext } from "@/lib/branch-scope";
+import { getRolePermissions, saleVisibilityWhere } from "@/lib/permissions";
 import { peso } from "@/lib/format";
 import AppShell from "@/components/app/AppShell";
 
 export default async function DashboardPage() {
-  const session = await requireActiveSession();
+  const session = await requirePagePermission("dashboard");
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },
@@ -29,12 +30,19 @@ export default async function DashboardPage() {
     return null;
   }
 
+  // Roles without "See all branches" (or "See everyone's sales") get the same
+  // numbers narrowed to what they're allowed to see.
+  const permissions = await getRolePermissions(session.tenantId, session.role);
+  const ownBranchOnly = !permissions.all_branches && Boolean(session.storeId);
+  const visibility = await saleVisibilityWhere(session);
+
   const [todaySalesAgg, lowStockCount] = await Promise.all([
     prisma.sale.aggregate({
       where: {
         tenantId: tenant.id,
         status: "COMPLETED",
         saleDate: { gte: startOfTodayPH() },
+        ...visibility,
       },
       _sum: { totalAmount: true },
       _count: true,
@@ -42,6 +50,7 @@ export default async function DashboardPage() {
     prisma.productStock.count({
       where: {
         store: { tenantId: tenant.id },
+        ...(ownBranchOnly ? { storeId: session.storeId! } : {}),
         product: { isActive: true },
         currentStock: { lte: 10 },
       },
@@ -51,7 +60,7 @@ export default async function DashboardPage() {
   // Per-branch breakdown of the same numbers above — only for workspaces with
   // more than one branch, so single-branch dashboards are unchanged.
   const branchContext = await getBranchContext(session);
-  const branchRows = branchContext.isMultiBranch
+  const branchRows = branchContext.isMultiBranch && permissions.all_branches
     ? await (async () => {
         const [salesByStore, lowByStore, staffByStore] = await Promise.all([
           prisma.sale.groupBy({
@@ -135,7 +144,9 @@ export default async function DashboardPage() {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <div className="rounded-2xl border border-zinc-200 bg-white p-6">
-            <p className="text-xs font-medium text-zinc-500">Today&apos;s sales</p>
+            <p className="text-xs font-medium text-zinc-500">
+              {!permissions.sales_view_all ? "Your sales today" : ownBranchOnly ? "Today’s sales · this branch" : "Today’s sales"}
+            </p>
             <p className="mt-1 text-xl font-bold text-zinc-900">
               ₱{Number(todaySalesAgg._sum.totalAmount ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
             </p>

@@ -3,10 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireReport } from "@/lib/plan-gating";
 import { reportStoreId } from "@/lib/branch-scope";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await hasPermission(session.tenantId, session.role, "reports"))) {
+    return NextResponse.json({ error: "You don't have access to Reports." }, { status: 403 });
+  }
 
   const gate = await requireReport(session.tenantId, "expenses");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });

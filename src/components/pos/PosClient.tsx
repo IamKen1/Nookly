@@ -77,17 +77,17 @@ interface PendingPrescription {
 
 type ViewMode = "grid" | "list";
 
-const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; module?: PermissionModuleKey }[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/products", label: "Products", icon: Package },
-  { href: "/inventory", label: "Inventory", icon: Boxes },
-  { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus },
-  { href: "/sales", label: "Sales", icon: Receipt },
+const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; module: PermissionModuleKey }[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard" },
+  { href: "/products", label: "Products", icon: Package, module: "products" },
+  { href: "/inventory", label: "Inventory", icon: Boxes, module: "inventory" },
+  { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus, module: "prescriptions" },
+  { href: "/sales", label: "Sales", icon: Receipt, module: "sales" },
   { href: "/reports", label: "Reports", icon: BarChart3, module: "reports" },
   { href: "/users", label: "Users", icon: Users, module: "users" },
   { href: "/shifts", label: "Shifts", icon: Wallet, module: "shifts" },
-  { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/support", label: "Support", icon: LifeBuoy },
+  { href: "/settings", label: "Settings", icon: Settings, module: "settings" },
+  { href: "/support", label: "Support", icon: LifeBuoy, module: "support" },
 ];
 
 export default function PosClient({
@@ -126,7 +126,7 @@ export default function PosClient({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [menuOpen]);
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => !item.module || permissions[item.module]);
+  const visibleNavItems = NAV_ITEMS.filter((item) => permissions[item.module]);
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error"; visible: boolean }>({
     message: "",
     type: "success",
@@ -475,13 +475,15 @@ export default function PosClient({
             </>
           )}
           <PrinterConnectButton printer={printer} />
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-white/10"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            <span className="hidden sm:inline">Dashboard</span>
-          </Link>
+          {permissions.dashboard && (
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-white/10"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span className="hidden sm:inline">Dashboard</span>
+            </Link>
+          )}
         </div>
       </header>
 
