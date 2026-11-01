@@ -68,6 +68,7 @@ export default function InventoryClient({
   initialTab,
   branches,
   canSeeAllBranches = false,
+  canPaySuppliers = false,
 }: {
   isOwner?: boolean;
   // Without "Adjust inventory" the page is view-only: no import, adjust, receive, or discard.
@@ -77,6 +78,8 @@ export default function InventoryClient({
   branches?: { stores: { id: string; name: string }[]; currentStoreId: string | null; canTransfer: boolean; canSetPrices: boolean };
   // Owners/admins of a multi-branch workspace can list every branch's deliveries.
   canSeeAllBranches?: boolean;
+  // "Payables & payments": see payment status and mark deliveries paid on arrival.
+  canPaySuppliers?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(
     initialTab === "receiving" || initialTab === "batches" || initialTab === "movements" || (initialTab === "branches" && branches)
@@ -445,7 +448,7 @@ export default function InventoryClient({
         ))}
       </div>
 
-      {tab === "receiving" && <ReceivingPanel canAdjust={canAdjust} canSeeAllBranches={canSeeAllBranches} />}
+      {tab === "receiving" && <ReceivingPanel canAdjust={canAdjust} canSeeAllBranches={canSeeAllBranches} canPay={canPaySuppliers} />}
 
       {tab === "branches" && branches && (
         <BranchStockPanel

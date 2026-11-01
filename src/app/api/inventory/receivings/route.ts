@@ -9,6 +9,7 @@ import { invalidateCached } from "@/lib/route-cache";
 import { runInBackground } from "@/lib/background";
 import { notifyStockThresholdReached } from "@/lib/notifications";
 import { ReceivingError, receiveDelivery, validateReceiving, type ReceivingInput } from "@/lib/receiving";
+import { PAYMENT_METHODS } from "@/lib/payables";
 
 // Deliveries received at this branch (or every branch for owners/admins with
 // ?branch=all), newest first, with their lines.
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
     ];
   }
 
+  const canPay = await hasPermission(session.tenantId, session.role, "suppliers_pay");
   const receivings = await prisma.receiving.findMany({
     where,
     orderBy: { receivedAt: "desc" },
@@ -69,6 +71,8 @@ export async function GET(request: NextRequest) {
       receivedAt: r.receivedAt.toISOString(),
       notes: r.notes,
       totalCost: Number(r.totalCost),
+      // Payment status is only shown to those who handle supplier payments.
+      ...(canPay && r.supplier ? { dueDate: r.dueDate?.toISOString() ?? null, amountPaid: Number(r.amountPaid) } : {}),
       supplier: r.supplier,
       branchName: r.store.name,
       receivedBy: `${r.receivedBy.firstName} ${r.receivedBy.lastName}`.trim(),
@@ -99,9 +103,14 @@ export async function POST(request: NextRequest) {
   try {
     const lines = await validateReceiving(session.tenantId, input);
     const supplier = input.supplierId
-      ? await prisma.supplier.findFirst({ where: { id: input.supplierId, tenantId: session.tenantId }, select: { id: true, name: true } })
+      ? await prisma.supplier.findFirst({ where: { id: input.supplierId, tenantId: session.tenantId }, select: { id: true, name: true, paymentTermsDays: true } })
       : null;
     if (input.supplierId && !supplier) throw new ReceivingError("Supplier not found.");
+    if (input.paidNow) {
+      if (!supplier) throw new ReceivingError("Choose the supplier you paid.");
+      if (!(await hasPermission(session.tenantId, session.role, "suppliers_pay"))) throw new ReceivingError("You don't have permission to record supplier payments.", 403);
+      if (!PAYMENT_METHODS.includes(input.paidNow.method as never)) throw new ReceivingError("Choose how the supplier was paid.");
+    }
 
     const { receiving, stockChanges } = await receiveDelivery({
       tenantId: session.tenantId,

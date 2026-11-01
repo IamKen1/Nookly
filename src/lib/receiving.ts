@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { allocateCredit, applyUnappliedCredits, dueDateFor } from "@/lib/payables";
 
 const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
 
@@ -17,6 +18,8 @@ export interface ReceivingInput {
   receivedDate?: string | null; // YYYY-MM-DD; today when empty
   notes?: string | null;
   items: ReceivingLineInput[];
+  // Paid when it arrived (cash on delivery): records the payment right away.
+  paidNow?: { method: string; referenceNumber?: string | null } | null;
 }
 
 export class ReceivingError extends Error {
@@ -84,7 +87,7 @@ export async function receiveDelivery(params: {
   userId: string;
   input: ReceivingInput;
   lines: Awaited<ReturnType<typeof validateReceiving>>;
-  supplier: { id: string; name: string } | null;
+  supplier: { id: string; name: string; paymentTermsDays: number } | null;
 }) {
   const { tenantId, storeId, userId, input, lines, supplier } = params;
   // A past delivery date is recorded at noon that day (Philippine time); today uses the actual time.
@@ -109,6 +112,7 @@ export async function receiveDelivery(params: {
               notes: input.notes?.trim().slice(0, 500) || null,
               totalCost: Math.round(totalCost * 100) / 100,
               receivedById: userId,
+              dueDate: dueDateFor(receivedAt, supplier?.paymentTermsDays ?? 0),
             },
           });
 
@@ -182,6 +186,26 @@ export async function receiveDelivery(params: {
             });
 
             await tx.product.update({ where: { id: line.productId }, data: { costPrice: line.unitCost } });
+          }
+
+          if (supplier) {
+            if (input.paidNow) {
+              const payment = await tx.supplierPayment.create({
+                data: {
+                  tenantId,
+                  supplierId: supplier.id,
+                  amount: receiving.totalCost,
+                  paidAt: receivedAt,
+                  method: input.paidNow.method,
+                  referenceNumber: input.paidNow.referenceNumber?.trim().slice(0, 60) || null,
+                  notes: `Paid on delivery (${receivingNumber})`,
+                  recordedById: userId,
+                },
+              });
+              await allocateCredit(tx, { tenantId, supplierId: supplier.id, amount: Number(receiving.totalCost), paymentId: payment.id, preferReceivingIds: [receiving.id] });
+            }
+            // Credit already on file with this supplier (an advance or a return) settles it.
+            await applyUnappliedCredits(tx, tenantId, supplier.id);
           }
 
           return { receiving, stockChanges };

@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
   try {
     const lines = await validateReceiving(session.tenantId, input);
     const supplier = supplierId
-      ? await prisma.supplier.findFirst({ where: { id: supplierId, tenantId: session.tenantId }, select: { id: true, name: true } })
+      ? await prisma.supplier.findFirst({ where: { id: supplierId, tenantId: session.tenantId }, select: { id: true, name: true, paymentTermsDays: true } })
       : null;
     if (supplierId && !supplier) return NextResponse.json({ error: "Supplier not found." }, { status: 400 });
     const { receiving, stockChanges } = await receiveDelivery({ tenantId: session.tenantId, storeId: session.storeId, userId: session.userId, input, lines, supplier });

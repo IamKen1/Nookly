@@ -29,6 +29,7 @@ import {
   Store,
   X,
   PauseCircle,
+  Truck,
 } from "lucide-react";
 import { useBarcode } from "@/hooks/useBarcode";
 import { useBarcodeAudio } from "@/hooks/useBarcodeAudio";
@@ -85,6 +86,7 @@ const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; mo
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard" },
   { href: "/products", label: "Products", icon: Package, module: "products" },
   { href: "/inventory", label: "Inventory", icon: Boxes, module: "inventory" },
+  { href: "/suppliers", label: "Suppliers", icon: Truck, module: "suppliers" },
   { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus, module: "prescriptions" },
   { href: "/sales", label: "Sales", icon: Receipt, module: "sales" },
   { href: "/reports", label: "Reports", icon: BarChart3, module: "reports" },

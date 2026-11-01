@@ -24,6 +24,9 @@ interface Receiving {
   receivedAt: string;
   notes: string | null;
   totalCost: number;
+  // Present for users who handle supplier payments.
+  dueDate?: string | null;
+  amountPaid?: number;
   supplier: { id: string; name: string } | null;
   branchName: string;
   receivedBy: string;
@@ -33,11 +36,12 @@ interface Receiving {
 interface Supplier {
   id: string;
   name: string;
+  paymentTermsDays?: number;
 }
 
 // Deliveries received at this branch: what came in, from whom, under which DR /
 // invoice, and who received it. Receiving a delivery is done here too.
-export default function ReceivingPanel({ canAdjust, canSeeAllBranches }: { canAdjust: boolean; canSeeAllBranches: boolean }) {
+export default function ReceivingPanel({ canAdjust, canSeeAllBranches, canPay = false }: { canAdjust: boolean; canSeeAllBranches: boolean; canPay?: boolean }) {
   const [q, setQ] = useState("");
   const query = useDebouncedValue(q.trim(), 300);
   const [supplierId, setSupplierId] = useState("");
@@ -162,7 +166,10 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches }: { canAd
                       <td className="px-4 py-3 text-right tabular-nums text-zinc-600">
                         {r.items.length} <span className="text-xs text-zinc-400">({units.toLocaleString("en-PH")} units)</span>
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">{peso(r.totalCost)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        <span className="font-semibold text-zinc-900">{peso(r.totalCost)}</span>
+                        {r.amountPaid !== undefined && <PaymentBadge total={r.totalCost} paid={r.amountPaid} dueDate={r.dueDate ?? null} />}
+                      </td>
                       <td className="px-4 py-3 text-zinc-600">{r.receivedBy}</td>
                     </tr>
                     {open && (
@@ -211,6 +218,7 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches }: { canAd
       {showReceive && (
         <ReceiveDeliveryModal
           suppliers={suppliers}
+          canPay={canPay}
           onSupplierAdded={() => refreshSuppliers()}
           onClose={() => setShowReceive(false)}
           onReceived={async (id) => {
@@ -247,15 +255,31 @@ interface DraftLine {
 }
 
 const NEW_SUPPLIER = "__new";
+
+// Paid / due / overdue under a delivery's total, for those who handle payments.
+function PaymentBadge({ total, paid, dueDate }: { total: number; paid: number; dueDate: string | null }) {
+  const open = Math.round((total - paid) * 100) / 100;
+  if (open <= 0) return <span className="block text-[11px] font-medium text-emerald-700">Paid</span>;
+  const overdue = dueDate && dueDate.slice(0, 10) < todayPH();
+  return (
+    <span className={`block text-[11px] font-medium ${overdue ? "text-red-600" : "text-amber-700"}`}>
+      {overdue ? "Overdue" : paid > 0 ? "Partly paid" : "Unpaid"}
+      {dueDate && !overdue ? ` · due ${formatDate(dueDate)}` : ""}
+    </span>
+  );
+}
 const todayPH = () => new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+const dueOn = (receivedDate: string, days: number) => new Date(new Date(`${receivedDate}T12:00:00+08:00`).getTime() + days * 86400000).toISOString();
 
 function ReceiveDeliveryModal({
   suppliers,
+  canPay,
   onSupplierAdded,
   onClose,
   onReceived,
 }: {
   suppliers: Supplier[];
+  canPay: boolean;
   onSupplierAdded: () => void;
   onClose: () => void;
   onReceived: (id: string) => void;
@@ -265,6 +289,9 @@ function ReceiveDeliveryModal({
   const [referenceNumber, setReferenceNumber] = useState("");
   const [receivedDate, setReceivedDate] = useState(todayPH());
   const [notes, setNotes] = useState("");
+  const [paidNow, setPaidNow] = useState(false);
+  const [paidMethod, setPaidMethod] = useState("CASH");
+  const [paidRef, setPaidRef] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [search, setSearch] = useState("");
   const query = useDebouncedValue(search.trim(), 250);
@@ -301,6 +328,7 @@ function ReceiveDeliveryModal({
   const update = (key: string, patch: Partial<DraftLine>) => setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const remove = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key));
 
+  const chosenSupplier = suppliers.find((s) => s.id === supplierId) ?? null;
   const totalUnits = lines.reduce((s, l) => s + (parseInt(l.quantity, 10) || 0), 0);
   const totalCost = lines.reduce((s, l) => s + (parseInt(l.quantity, 10) || 0) * (parseFloat(l.unitCost) || 0), 0);
   const incomplete = lines.some((l) => !l.batchNumber.trim() || !l.expirationDate || !(parseInt(l.quantity, 10) > 0) || l.unitCost === "");
@@ -333,6 +361,7 @@ function ReceiveDeliveryModal({
           referenceNumber,
           receivedDate,
           notes,
+          paidNow: paidNow && sid ? { method: paidMethod, referenceNumber: paidRef } : null,
           items: lines.map((l) => ({
             productId: l.productId,
             batchNumber: l.batchNumber,
@@ -507,6 +536,37 @@ function ReceiveDeliveryModal({
               </div>
             )}
           </div>
+
+          {chosenSupplier && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm">
+              <span className="text-zinc-600">
+                {(chosenSupplier.paymentTermsDays ?? 0) === 0 ? "Cash on delivery" : `Terms ${chosenSupplier.paymentTermsDays} days`}
+                {!paidNow && (chosenSupplier.paymentTermsDays ?? 0) > 0 && (
+                  <>
+                    {" "}
+                    · due <span className="font-semibold text-zinc-800">{formatDate(dueOn(receivedDate, chosenSupplier.paymentTermsDays ?? 0))}</span>
+                  </>
+                )}
+              </span>
+              {canPay && (
+                <label className="flex items-center gap-2 text-zinc-700">
+                  <input type="checkbox" checked={paidNow} onChange={(e) => setPaidNow(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
+                  Paid on delivery
+                </label>
+              )}
+              {canPay && paidNow && (
+                <>
+                  <select value={paidMethod} onChange={(e) => setPaidMethod(e.target.value)} className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm" aria-label="Paid by">
+                    <option value="CASH">Cash</option>
+                    <option value="BANK_TRANSFER">Bank transfer</option>
+                    <option value="CHECK">Check</option>
+                    <option value="E_WALLET">E-wallet</option>
+                  </select>
+                  <input value={paidRef} onChange={(e) => setPaidRef(e.target.value)} placeholder="Reference (optional)" className="w-40 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm" />
+                </>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-600">Notes (optional)</label>

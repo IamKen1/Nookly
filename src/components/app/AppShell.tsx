@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, Boxes, ClipboardPlus, LayoutDashboard, Leaf, LifeBuoy, Package, Receipt, Settings, ShoppingCart, Users, Wallet } from "lucide-react";
+import { BarChart3, Boxes, ClipboardPlus, LayoutDashboard, Leaf, LifeBuoy, Package, Receipt, Settings, ShoppingCart, Truck, Users, Wallet } from "lucide-react";
 import LogoutButton from "./LogoutButton";
 import OnboardingTourLoader from "@/components/onboarding/OnboardingTourLoader";
 import { getRolePermissions, type PermissionModuleKey } from "@/lib/permissions";
@@ -15,6 +15,7 @@ const navItems: { href: string; label: string; icon: typeof LayoutDashboard; mod
   { href: "/pos", label: "POS", icon: ShoppingCart, module: "pos" },
   { href: "/products", label: "Products", icon: Package, module: "products" },
   { href: "/inventory", label: "Inventory", icon: Boxes, module: "inventory" },
+  { href: "/suppliers", label: "Suppliers", icon: Truck, module: "suppliers" },
   { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus, module: "prescriptions" },
   { href: "/sales", label: "Sales", icon: Receipt, module: "sales" },
   { href: "/reports", label: "Reports", icon: BarChart3, module: "reports" },

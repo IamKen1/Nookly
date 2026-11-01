@@ -30,6 +30,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
         isOwner={session.role === "OWNER"}
         initialTab={tab}
         canSeeAllBranches={branchContext.isMultiBranch && canManageAllBranches(session.role)}
+        canPaySuppliers={await hasPermission(session.tenantId, session.role, "suppliers_pay")}
         canAdjust={await hasPermission(session.tenantId, session.role, "inventory_adjust")}
         branches={
           branchContext.isMultiBranch
