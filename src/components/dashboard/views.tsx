@@ -175,7 +175,7 @@ function StockOnHandCard({ value }: { value: Awaited<ReturnType<typeof getInvent
     >
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
-          <p className="text-xs font-medium text-zinc-500">At cost</p>
+          <p className="text-xs font-medium text-zinc-500">Cost of inventory</p>
           <p className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900">
             <CountUp value={value.cost} />
           </p>

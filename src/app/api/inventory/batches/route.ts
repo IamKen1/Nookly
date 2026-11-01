@@ -5,6 +5,7 @@ import { runInBackground } from "@/lib/background";
 import { notifyStockThresholdReached } from "@/lib/notifications";
 import { invalidateCached } from "@/lib/route-cache";
 import { batchesAtStore } from "@/lib/branch-scope";
+import { ReceivingError, receiveDelivery, validateReceiving } from "@/lib/receiving";
 import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
@@ -16,7 +17,9 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const productId = searchParams.get("productId");
-  const nearExpiry = searchParams.get("nearExpiry") === "true";
+  // status=expiring (within `days`), expired, or all batches with stock (default).
+  // nearExpiry=true is the older spelling of status=expiring.
+  const status = searchParams.get("status") ?? (searchParams.get("nearExpiry") === "true" ? "expiring" : "all");
   const days = Math.max(1, Math.min(365, Number(searchParams.get("days") || "90")));
   const batchWhere = session.storeId ? await batchesAtStore(session.tenantId, session.storeId) : {};
 
@@ -38,7 +41,7 @@ export async function GET(request: NextRequest) {
   const batches = await prisma.productBatch.findMany({
     where: {
       quantity: { gt: 0 },
-      expirationDate: nearExpiry ? { lte: windowEnd } : undefined,
+      expirationDate: status === "expiring" ? { lte: windowEnd } : status === "expired" ? { lt: now } : undefined,
       product: { tenantId: session.tenantId },
       ...batchWhere,
     },
@@ -47,7 +50,7 @@ export async function GET(request: NextRequest) {
       supplier: { select: { id: true, name: true } },
     },
     orderBy: { expirationDate: "asc" },
-    take: 200,
+    take: 500,
   });
 
   return NextResponse.json(
@@ -85,77 +88,40 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const product = await prisma.product.findFirst({
-    where: { id: productId, tenantId: session.tenantId },
-    include: { category: { select: { name: true } } },
-  });
-  if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
-
-  // Optional: who delivered this lot. Must be one of this tenant's suppliers.
-  const supplier = supplierId
-    ? await prisma.supplier.findFirst({ where: { id: supplierId, tenantId: session.tenantId }, select: { id: true, name: true } })
-    : null;
-  if (supplierId && !supplier) return NextResponse.json({ error: "Supplier not found." }, { status: 400 });
-
+  // Recorded as a one-line delivery, so it appears under Receiving like any other.
+  const input = {
+    supplierId: supplierId || null,
+    notes: reason || null,
+    items: [{ productId, batchNumber, expirationDate: String(expirationDate).slice(0, 10), quantity: Number(quantity), unitCost: Number(costPrice) }],
+  };
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const batch = await tx.productBatch.create({
-        data: {
-          productId,
-          storeId: session.storeId!,
-          supplierId: supplier?.id ?? null,
-          batchNumber,
-          expirationDate: new Date(expirationDate),
-          quantity,
-          costPrice,
-        },
-      });
+    const lines = await validateReceiving(session.tenantId, input);
+    const supplier = supplierId
+      ? await prisma.supplier.findFirst({ where: { id: supplierId, tenantId: session.tenantId }, select: { id: true, name: true } })
+      : null;
+    if (supplierId && !supplier) return NextResponse.json({ error: "Supplier not found." }, { status: 400 });
+    const { receiving, stockChanges } = await receiveDelivery({ tenantId: session.tenantId, storeId: session.storeId, userId: session.userId, input, lines, supplier });
 
-      const stock = await tx.productStock.findUnique({
-        where: { productId_storeId: { productId, storeId: session.storeId! } },
-      });
-      const previousStock = stock?.currentStock ?? 0;
-      const updatedStock = await tx.productStock.upsert({
-        where: { productId_storeId: { productId, storeId: session.storeId! } },
-        update: { currentStock: { increment: quantity } },
-        create: { productId, storeId: session.storeId!, currentStock: quantity },
-      });
-
-      await tx.stockMovement.create({
-        data: {
-          tenantId: session.tenantId,
-          storeId: session.storeId!,
-          productId,
-          type: "PURCHASE",
-          quantity,
-          reason: reason || `Batch ${batchNumber} received${supplier ? ` from ${supplier.name}` : ""}`,
-          reference: batchNumber,
-          userId: session.userId,
-        },
-      });
-
-      return { batch, previousStock, currentStock: updatedStock.currentStock };
-    });
-
-    runInBackground(`stock notification for ${product.name}`, () =>
+    const product = await prisma.product.findUnique({ where: { id: productId }, select: { name: true, minimumStock: true, category: { select: { name: true } } } });
+    const change = stockChanges[0];
+    runInBackground(`stock notification for ${change.name}`, () =>
       notifyStockThresholdReached({
         tenantId: session.tenantId,
         storeId: session.storeId,
-        productName: product.name,
-        categoryName: product.category?.name,
-        previousStock: result.previousStock,
-        currentStock: result.currentStock,
-        minimumStock: product.minimumStock,
+        productName: change.name,
+        categoryName: product?.category?.name,
+        previousStock: change.previousStock,
+        currentStock: change.currentStock,
+        minimumStock: product?.minimumStock ?? 0,
         reason: `Batch ${batchNumber} received`,
       })
     );
 
     invalidateCached(`products:${session.tenantId}`);
-    return NextResponse.json(result.batch, { status: 201 });
+    const batch = await prisma.productBatch.findFirst({ where: { productId, storeId: session.storeId, batchNumber } });
+    return NextResponse.json({ ...batch, receivingNumber: receiving.receivingNumber }, { status: 201 });
   } catch (error: unknown) {
-    if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {
-      return NextResponse.json({ error: "A batch with this number already exists for this product." }, { status: 409 });
-    }
+    if (error instanceof ReceivingError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error("Error creating batch", error);
     return NextResponse.json({ error: "Failed to receive batch." }, { status: 500 });
   }

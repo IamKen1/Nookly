@@ -121,6 +121,7 @@ model Tenant {
   shiftExpenses        ShiftExpense[]
   pendingOrders        PendingOrder[]
   stockRequests        StockRequest[]
+  receivings           Receiving[]
 
   @@map("tenants")
 }
@@ -315,6 +316,7 @@ model Store {
   batches          ProductBatch[]
   stockRequestsIn  StockRequest[]    @relation("StockRequestTo")
   stockRequestsOut StockRequest[]    @relation("StockRequestFrom")
+  receivings       Receiving[]
 
   @@unique([tenantId, code])
   @@map("stores")
@@ -354,6 +356,7 @@ model User {
   cashTransactions      CashTransaction[]
   passwordResetTokens   PasswordResetToken[]
   apiKeys               ApiKey[]
+  receivings            Receiving[]            @relation("ReceivingReceivedBy")
 
   @@unique([tenantId, email])
   @@map("users")
@@ -451,6 +454,7 @@ model Supplier {
   tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   products      ProductSupplier[]
   batches       ProductBatch[]
+  receivings    Receiving[]
 
   @@unique([tenantId, name])
   @@map("suppliers")
@@ -561,6 +565,7 @@ model Product {
   stockMovements       StockMovement[]
   stocks               ProductStock[]
   importBatch          ImportBatch?       @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  receivingItems       ReceivingItem[]
 
   @@unique([tenantId, barcode])
   @@unique([tenantId, ndcNumber])
@@ -593,21 +598,22 @@ model ProductStock {
 }
 
 model ProductBatch {
-  id             String    @id @default(cuid())
+  id             String          @id @default(cuid())
   batchNumber    String
   expirationDate DateTime
   quantity       Int
-  costPrice      Decimal   @db.Decimal(10, 2)
-  receivedDate   DateTime  @default(now())
+  costPrice      Decimal         @db.Decimal(10, 2)
+  receivedDate   DateTime        @default(now())
   productId      String
   // The branch physically holding this batch. Null only for batches recorded
   // before branches existed — those belong to the tenant's primary branch.
   storeId        String?
   // Who supplied this lot, recorded when it's received. Optional.
   supplierId     String?
-  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  store          Store?    @relation(fields: [storeId], references: [id])
-  supplier       Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store          Store?          @relation(fields: [storeId], references: [id])
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  receivingItems ReceivingItem[]
 
   @@unique([productId, storeId, batchNumber])
   @@index([storeId])
@@ -1046,4 +1052,50 @@ enum PlanChangeRequestStatus {
   CONTACTED
   ACTIVATED
   CANCELLED
+}
+
+// One delivery received at a branch: what came in, from whom, under which
+// supplier document (DR / invoice), and who received it. The lines stay as a
+// record even after their batches are sold out or discarded.
+model Receiving {
+  id              String          @id @default(cuid())
+  tenantId        String
+  storeId         String
+  supplierId      String?
+  receivingNumber String // RCV-yyyymmdd-0001, assigned by Nookly
+  referenceNumber String? // the supplier's DR / invoice number
+  receivedAt      DateTime        @default(now())
+  notes           String?
+  totalCost       Decimal         @db.Decimal(12, 2)
+  receivedById    String
+  createdAt       DateTime        @default(now())
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store           Store           @relation(fields: [storeId], references: [id])
+  supplier        Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  receivedBy      User            @relation("ReceivingReceivedBy", fields: [receivedById], references: [id])
+  items           ReceivingItem[]
+
+  @@unique([tenantId, receivingNumber])
+  @@index([tenantId, storeId, receivedAt])
+  @@index([supplierId])
+  @@map("receivings")
+}
+
+model ReceivingItem {
+  id             String        @id @default(cuid())
+  receivingId    String
+  productId      String
+  // The batch the units went into; kept even if that batch is later emptied.
+  batchId        String?
+  batchNumber    String
+  expirationDate DateTime
+  quantity       Int
+  unitCost       Decimal       @db.Decimal(10, 2)
+  receiving      Receiving     @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+  product        Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batch          ProductBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([receivingId])
+  @@index([productId])
+  @@map("receiving_items")
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import useSWR from "swr";
-import { AlertTriangle, Download, Loader2, PackagePlus, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Download, Loader2, PackagePlus, Search, Trash2, Upload, X } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import BranchStockPanel from "./BranchStockPanel";
+import ReceivingPanel from "./ReceivingPanel";
 
 interface Product {
   id: string;
@@ -58,25 +59,15 @@ interface Batch {
   supplier: { id: string; name: string } | null;
 }
 
-const NEW_SUPPLIER = "__new";
-const EMPTY_BATCH_FORM = {
-  productId: "",
-  productName: "",
-  batchNumber: "",
-  expirationDate: "",
-  quantity: "",
-  costPrice: "",
-  supplierId: "",
-  newSupplierName: "",
-};
-
-type Tab = "stock" | "movements" | "batches" | "branches";
+type Tab = "stock" | "receiving" | "batches" | "movements" | "branches";
+type BatchFilter = "all" | "expiring" | "expired";
 
 export default function InventoryClient({
   isOwner = false,
   canAdjust = true,
   initialTab,
   branches,
+  canSeeAllBranches = false,
 }: {
   isOwner?: boolean;
   // Without "Adjust inventory" the page is view-only: no import, adjust, receive, or discard.
@@ -84,9 +75,13 @@ export default function InventoryClient({
   initialTab?: string;
   // Present only when the workspace has more than one branch.
   branches?: { stores: { id: string; name: string }[]; currentStoreId: string | null; canTransfer: boolean; canSetPrices: boolean };
+  // Owners/admins of a multi-branch workspace can list every branch's deliveries.
+  canSeeAllBranches?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(
-    initialTab === "batches" || initialTab === "movements" || (initialTab === "branches" && branches) ? (initialTab as Tab) : "stock"
+    initialTab === "receiving" || initialTab === "batches" || initialTab === "movements" || (initialTab === "branches" && branches)
+      ? (initialTab as Tab)
+      : "stock"
   );
   const [search, setSearch] = useState("");
   const [adjustTarget, setAdjustTarget] = useState<Product | null>(null);
@@ -102,14 +97,6 @@ export default function InventoryClient({
   const [undoMessage, setUndoMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [showReceiveBatch, setShowReceiveBatch] = useState(false);
-  const [batchForm, setBatchForm] = useState(EMPTY_BATCH_FORM);
-  const { data: suppliers = [], mutate: refreshSuppliers } = useSWR<{ id: string; name: string }[]>(
-    showReceiveBatch ? "/api/suppliers" : null
-  );
-  const [batchProductResults, setBatchProductResults] = useState<Product[]>([]);
-  const [batchError, setBatchError] = useState<string | null>(null);
-  const [batchSaving, setBatchSaving] = useState(false);
 
   const [clearConfirm, setClearConfirm] = useState("");
   const [clearing, setClearing] = useState(false);
@@ -130,80 +117,12 @@ export default function InventoryClient({
     tab === "movements" ? "/api/inventory/stock-movements" : null
   );
 
+  const [batchFilter, setBatchFilter] = useState<BatchFilter>("all");
   const {
     data: batches = [],
     isLoading: batchesLoading,
     mutate: refreshBatches,
-  } = useSWR<Batch[]>(tab === "batches" ? "/api/inventory/batches?nearExpiry=true&days=90" : null);
-
-  useEffect(() => {
-    if (!showReceiveBatch || !batchForm.productName.trim()) {
-      setBatchProductResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      const res = await fetch(`/api/products?search=${encodeURIComponent(batchForm.productName)}`);
-      const data = await res.json();
-      setBatchProductResults(Array.isArray(data) ? data : []);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [batchForm.productName, showReceiveBatch]);
-
-  const submitReceiveBatch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBatchError(null);
-    if (!batchForm.productId) {
-      setBatchError("Select a product first.");
-      return;
-    }
-    if (batchForm.supplierId === NEW_SUPPLIER && !batchForm.newSupplierName.trim()) {
-      setBatchError("Enter the new supplier's name, or choose an existing one.");
-      return;
-    }
-    setBatchSaving(true);
-    try {
-      // A supplier typed in here is saved first, so it's in the list next time.
-      let supplierId = batchForm.supplierId || undefined;
-      if (supplierId === NEW_SUPPLIER) {
-        const created = await fetch("/api/suppliers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: batchForm.newSupplierName }),
-        });
-        const supplier = await created.json();
-        if (!created.ok) {
-          setBatchError(supplier.error ?? "Failed to add the supplier.");
-          return;
-        }
-        supplierId = supplier.id;
-        refreshSuppliers();
-      }
-      const res = await fetch("/api/inventory/batches", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: batchForm.productId,
-          batchNumber: batchForm.batchNumber,
-          expirationDate: batchForm.expirationDate,
-          quantity: parseInt(batchForm.quantity, 10) || 0,
-          costPrice: parseFloat(batchForm.costPrice) || 0,
-          supplierId,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setBatchError(data.error ?? "Failed to receive batch.");
-        return;
-      }
-      setShowReceiveBatch(false);
-      setBatchForm(EMPTY_BATCH_FORM);
-      refreshBatches();
-    } catch {
-      setBatchError("Network error.");
-    } finally {
-      setBatchSaving(false);
-    }
-  };
+  } = useSWR<Batch[]>(tab === "batches" ? `/api/inventory/batches?status=${batchFilter}&days=90` : null);
 
   const discardBatch = async (batch: Batch, movementReason: "expired" | "damaged") => {
     if (!confirm(`Discard batch ${batch.batchNumber} (${batch.quantity} units) as ${movementReason}?`)) return;
@@ -510,19 +429,23 @@ export default function InventoryClient({
 
       )}
 
-      <div className="mt-6 flex gap-2 border-b border-zinc-200">
-        {((branches ? ["stock", "batches", "movements", "branches"] : ["stock", "batches", "movements"]) as Tab[]).map((t) => (
+      <div className="mt-6 flex gap-1 overflow-x-auto border-b border-zinc-200">
+        {((branches ? ["stock", "receiving", "batches", "movements", "branches"] : ["stock", "receiving", "batches", "movements"]) as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-semibold ${
+            className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-semibold ${
               tab === t ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"
             }`}
           >
-            {t === "stock" ? "Stock levels" : t === "batches" ? "Batches & expiry" : t === "movements" ? "Movement history" : "All branches"}
+            {
+              { stock: "Stock levels", receiving: "Receiving", batches: "Batches & expiry", movements: "Movement history", branches: "All branches" }[t]
+            }
           </button>
         ))}
       </div>
+
+      {tab === "receiving" && <ReceivingPanel canAdjust={canAdjust} canSeeAllBranches={canSeeAllBranches} />}
 
       {tab === "branches" && branches && (
         <BranchStockPanel
@@ -604,16 +527,27 @@ export default function InventoryClient({
 
       {tab === "batches" && (
         <>
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-sm text-zinc-500">Batches expiring within 90 days, across all expiry dates received for the same product.</p>
-            {canAdjust && (
-            <button
-              onClick={() => setShowReceiveBatch(true)}
-              className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-            >
-              <Plus className="h-4 w-4" /> Receive batch
-            </button>
-            )}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-1.5">
+              {(
+                [
+                  ["all", "All batches"],
+                  ["expiring", "Expiring in 90 days"],
+                  ["expired", "Expired"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => setBatchFilter(value)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                    batchFilter === value ? "border-emerald-600 bg-emerald-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-zinc-500">Every lot on the shelf, soonest expiry first. New stock comes in under Receiving.</p>
           </div>
 
           {batchMessage && (
@@ -640,7 +574,9 @@ export default function InventoryClient({
                   </tr>
                 ) : batches.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">No batches expiring soon.</td>
+                    <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">
+                      {batchFilter === "expired" ? "No expired batches." : batchFilter === "expiring" ? "No batches expiring in the next 90 days." : "No batches with stock."}
+                    </td>
                   </tr>
                 ) : (
                   batches.map((b) => (
@@ -658,8 +594,10 @@ export default function InventoryClient({
                           <span className="flex items-center gap-1 text-xs font-semibold text-red-600">
                             <AlertTriangle className="h-3.5 w-3.5" /> Expired
                           </span>
-                        ) : (
+                        ) : b.isExpiringSoon ? (
                           <span className="text-xs font-semibold text-amber-600">Expiring soon</span>
+                        ) : (
+                          <span className="text-xs font-medium text-emerald-700">Good</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -763,121 +701,6 @@ export default function InventoryClient({
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {saving ? "Saving..." : "Save adjustment"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showReceiveBatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-zinc-900">Receive batch</h2>
-              <button onClick={() => setShowReceiveBatch(false)}>
-                <X className="h-5 w-5 text-zinc-400" />
-              </button>
-            </div>
-            <p className="mt-1 text-sm text-zinc-500">
-              Adds a new expiry-dated lot for a product without overwriting stock already on hand from other expiry dates.
-            </p>
-
-            <form onSubmit={submitReceiveBatch} className="mt-4 space-y-3">
-              <div className="relative">
-                <input
-                  required
-                  placeholder="Search product..."
-                  value={batchForm.productName}
-                  onChange={(e) => setBatchForm({ ...batchForm, productName: e.target.value, productId: "" })}
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                {batchProductResults.length > 0 && !batchForm.productId && (
-                  <div className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg">
-                    {batchProductResults.map((p) => (
-                      <button
-                        type="button"
-                        key={p.id}
-                        onClick={() => {
-                          setBatchForm({ ...batchForm, productId: p.id, productName: p.name });
-                          setBatchProductResults([]);
-                        }}
-                        className="block w-full px-3 py-2 text-left text-sm hover:bg-emerald-50"
-                      >
-                        {p.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <input
-                required
-                placeholder="Batch / lot number"
-                value={batchForm.batchNumber}
-                onChange={(e) => setBatchForm({ ...batchForm, batchNumber: e.target.value })}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-              <div className="space-y-2">
-                <select
-                  value={batchForm.supplierId}
-                  onChange={(e) => setBatchForm({ ...batchForm, supplierId: e.target.value })}
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
-                  aria-label="Supplier"
-                >
-                  <option value="">Supplier (optional)</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                  <option value={NEW_SUPPLIER}>+ Add new supplier…</option>
-                </select>
-                {batchForm.supplierId === NEW_SUPPLIER && (
-                  <input
-                    autoFocus
-                    placeholder="New supplier name"
-                    value={batchForm.newSupplierName}
-                    onChange={(e) => setBatchForm({ ...batchForm, newSupplierName: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  />
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  required
-                  type="date"
-                  value={batchForm.expirationDate}
-                  onChange={(e) => setBatchForm({ ...batchForm, expirationDate: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  required
-                  type="number"
-                  min={1}
-                  placeholder="Quantity"
-                  value={batchForm.quantity}
-                  onChange={(e) => setBatchForm({ ...batchForm, quantity: e.target.value })}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-                <input
-                  required
-                  type="number"
-                  step="0.01"
-                  placeholder="Cost price / unit"
-                  value={batchForm.costPrice}
-                  onChange={(e) => setBatchForm({ ...batchForm, costPrice: e.target.value })}
-                  className="col-span-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </div>
-
-              {batchError && <p className="text-sm text-red-600">{batchError}</p>}
-
-              <button
-                type="submit"
-                disabled={batchSaving}
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
-              >
-                {batchSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {batchSaving ? "Saving..." : "Receive batch"}
               </button>
             </form>
           </div>

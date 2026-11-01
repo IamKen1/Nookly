@@ -6,7 +6,7 @@ import { hasFeature, type PlanCode } from "@/lib/plan-gating";
 import AppShell from "@/components/app/AppShell";
 import InventoryClient from "@/components/inventory/InventoryClient";
 
-// `?tab=batches|movements|branches` opens that tab directly (e.g. from the
+// `?tab=receiving|batches|movements|branches` opens that tab directly (e.g. from the
 // dashboard's expiring or stock-request links).
 export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const session = await requirePagePermission("inventory");
@@ -29,6 +29,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       <InventoryClient
         isOwner={session.role === "OWNER"}
         initialTab={tab}
+        canSeeAllBranches={branchContext.isMultiBranch && canManageAllBranches(session.role)}
         canAdjust={await hasPermission(session.tenantId, session.role, "inventory_adjust")}
         branches={
           branchContext.isMultiBranch
