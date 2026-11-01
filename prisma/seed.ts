@@ -6,7 +6,7 @@ const plans = [
   {
     code: PlanCode.SPROUT,
     name: 'Sprout',
-    tagline: 'Perfect para sa isang sigla-simula na botika',
+    tagline: 'Perfect for a single neighborhood pharmacy',
     priceMonthly: 899,
     priceYearly: 8990,
     maxStores: 1,
@@ -32,7 +32,7 @@ const plans = [
   {
     code: PlanCode.BLOOM,
     name: 'Bloom',
-    tagline: 'Para sa lumalaking chain na may ilang branch',
+    tagline: 'For growing pharmacies with a few branches',
     priceMonthly: 2499,
     priceYearly: 24990,
     maxStores: 3,
@@ -59,7 +59,7 @@ const plans = [
   {
     code: PlanCode.EMPIRE,
     name: 'Empire',
-    tagline: 'Para sa buong drugstore empire mo, unlimited na',
+    tagline: 'For drugstore chains — unlimited branches and staff',
     priceMonthly: 4999,
     priceYearly: 49990,
     maxStores: -1,

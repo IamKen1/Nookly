@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import useSWR from "swr";
-import { ArrowRightLeft, Loader2, Search, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, ChevronRight, Loader2, Search, Trash2, X } from "lucide-react";
 import { formatDateTime, peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import StockRequestsSection from "./StockRequestsSection";
@@ -51,6 +51,19 @@ export default function BranchStockPanel({
   const [showTransfer, setShowTransfer] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [pricing, setPricing] = useState<BranchStock["products"][number] | null>(null);
+  // Accordion: one row per product (its total across branches), opened to show
+  // each branch — stays readable no matter how many branches there are.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const products = data?.products ?? [];
+  const branchList = data?.stores ?? stores;
+  const allOpen = products.length > 0 && products.every((p) => expanded.has(p.id));
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const currentName = stores.find((s) => s.id === currentStoreId)?.name ?? "this branch";
 
@@ -81,72 +94,153 @@ export default function BranchStockPanel({
 
       {message && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{message}</p>}
 
-      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-              <th className="px-4 py-3">Product</th>
-              {(data?.stores ?? stores).map((s) => (
-                <th key={s.id} className={`px-4 py-3 text-right ${s.id === currentStoreId ? "text-emerald-700" : ""}`}>
-                  {s.name}
-                </th>
-              ))}
-              <th className="px-4 py-3 text-right">Total</th>
-              {canSetPrices && <th className="px-4 py-3" />}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && !data ? (
-              <tr>
-                <td colSpan={stores.length + (canSetPrices ? 3 : 2)} className="px-4 py-8 text-center text-zinc-400">
-                  Loading...
-                </td>
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-2.5">
+          <p className="text-xs text-zinc-500">
+            {products.length} product{products.length === 1 ? "" : "s"} · {branchList.length} branches
+          </p>
+          {products.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setExpanded(allOpen ? new Set() : new Set(products.map((p) => p.id)))}
+              className="text-xs font-semibold text-emerald-700 hover:text-emerald-900"
+            >
+              {allOpen ? "Collapse all" : "Expand all"}
+            </button>
+          )}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] table-fixed text-sm">
+            <colgroup>
+              <col />
+              <col className="w-[34%]" />
+              <col className="w-24" />
+              <col className="w-36" />
+              {canSetPrices && <col className="w-36" />}
+            </colgroup>
+            <thead>
+              <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
+                <th className="px-4 py-3">Product</th>
+                <th className="px-4 py-3">Branch</th>
+                <th className="px-4 py-3 text-right">Stock</th>
+                <th className="px-4 py-3 text-right">Price</th>
+                {canSetPrices && <th className="px-4 py-3" />}
               </tr>
-            ) : (data?.products ?? []).length === 0 ? (
-              <tr>
-                <td colSpan={stores.length + (canSetPrices ? 3 : 2)} className="px-4 py-8 text-center text-zinc-400">
-                  No products found.
-                </td>
-              </tr>
-            ) : (
-              data!.products.map((p) => {
-                const total = Object.values(p.byStore).reduce((a, b) => a + b, 0);
-                return (
-                  <tr key={p.id} className="border-b border-zinc-50 last:border-0">
-                    <td className="px-4 py-2.5 text-zinc-900">{p.name}</td>
-                    {data!.stores.map((s) => {
-                      const qty = p.byStore[s.id] ?? 0;
-                      return (
-                        <td
-                          key={s.id}
-                          className={`px-4 py-2.5 text-right tabular-nums ${
-                            qty === 0 ? "text-red-500" : qty <= p.minimumStock ? "text-amber-600" : "text-zinc-700"
-                          }`}
-                        >
-                          {p.notSoldAt.includes(s.id) ? <span className="text-xs font-medium text-zinc-400">not sold</span> : qty}
-                          {p.branchPrices[s.id] != null && !p.notSoldAt.includes(s.id) && (
-                            <span className="block text-[11px] font-medium text-violet-600" title="This branch's own price">
-                              {peso(p.branchPrices[s.id])}
-                            </span>
-                          )}
+            </thead>
+            <tbody>
+              {isLoading && !data ? (
+                <tr>
+                  <td colSpan={canSetPrices ? 5 : 4} className="px-4 py-8 text-center text-zinc-400">
+                    Loading...
+                  </td>
+                </tr>
+              ) : products.length === 0 ? (
+                <tr>
+                  <td colSpan={canSetPrices ? 5 : 4} className="px-4 py-8 text-center text-zinc-400">
+                    No products found.
+                  </td>
+                </tr>
+              ) : (
+                products.map((p) => {
+                  const open = expanded.has(p.id);
+                  const sold = branchList.filter((s) => !p.notSoldAt.includes(s.id));
+                  const total = sold.reduce((sum, s) => sum + (p.byStore[s.id] ?? 0), 0);
+                  const outAt = sold.filter((s) => (p.byStore[s.id] ?? 0) <= 0).length;
+                  const lowAt = sold.filter((s) => {
+                    const q = p.byStore[s.id] ?? 0;
+                    return q > 0 && q <= p.minimumStock;
+                  }).length;
+                  const prices = sold.map((s) => p.branchPrices[s.id] ?? p.basePrice);
+                  const minP = prices.length ? Math.min(...prices) : p.basePrice;
+                  const maxP = prices.length ? Math.max(...prices) : p.basePrice;
+                  return (
+                    <Fragment key={p.id}>
+                      <tr
+                        className={`cursor-pointer border-b border-zinc-100 transition hover:bg-zinc-50 ${open ? "bg-zinc-50/70" : ""}`}
+                        onClick={() => toggle(p.id)}
+                        aria-expanded={open}
+                      >
+                        <td className="px-4 py-3">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <ChevronRight className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`} />
+                            <span className="truncate font-medium text-zinc-900">{p.name}</span>
+                          </span>
                         </td>
-                      );
-                    })}
-                    <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-zinc-900">{total}</td>
-                    {canSetPrices && (
-                      <td className="px-4 py-2.5 text-right">
-                        <button onClick={() => setPricing(p)} className="text-xs font-semibold text-emerald-700 hover:text-emerald-900">
-                          Branch settings
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-        {(data?.products.length ?? 0) >= 100 && <p className="px-4 py-2 text-xs text-zinc-400">Showing the first 100 — search to narrow it down.</p>}
+                        <td className="px-4 py-3">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Total</span>
+                            {outAt > 0 && <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">{outAt} out</span>}
+                            {lowAt > 0 && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">{lowAt} low</span>}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">{total}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-zinc-600">{minP === maxP ? peso(minP) : `${peso(minP)}–${peso(maxP)}`}</td>
+                        {canSetPrices && <td className="px-4 py-3" />}
+                      </tr>
+                      {open &&
+                        branchList.map((s) => {
+                          const notSold = p.notSoldAt.includes(s.id);
+                          const qty = p.byStore[s.id] ?? 0;
+                          const ownPrice = p.branchPrices[s.id];
+                          return (
+                            <tr key={s.id} className="border-b border-zinc-100 bg-zinc-50/40">
+                              <td className="py-2.5 pl-12 pr-4">
+                                <span className="block truncate text-zinc-500">{p.name}</span>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <span className="truncate text-zinc-800">{s.name}</span>
+                                  {s.id === currentStoreId && (
+                                    <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">You are here</span>
+                                  )}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right tabular-nums">
+                                {notSold ? (
+                                  <span className="text-xs font-medium text-zinc-400">Not sold</span>
+                                ) : (
+                                  <span className={qty <= 0 ? "font-semibold text-red-600" : qty <= p.minimumStock ? "font-semibold text-amber-700" : "text-zinc-800"}>{qty}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-right tabular-nums">
+                                {notSold ? (
+                                  <span className="text-zinc-300">—</span>
+                                ) : ownPrice != null ? (
+                                  <span className="font-medium text-violet-700" title="This branch's own price">
+                                    {peso(ownPrice)}
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-500">{peso(p.basePrice)}</span>
+                                )}
+                              </td>
+                              {canSetPrices && (
+                                <td className="px-4 py-2.5 text-right">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPricing(p);
+                                    }}
+                                    className="text-xs font-semibold text-emerald-700 hover:text-emerald-900"
+                                  >
+                                    Branch settings
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                    </Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {products.length >= 100 && <p className="px-4 py-2 text-xs text-zinc-400">Showing the first 100 — search to narrow it down.</p>}
+        <p className="border-t border-zinc-100 px-4 py-2 text-[11px] text-zinc-400">
+          Stock in <span className="font-semibold text-red-600">red</span> is out, <span className="font-semibold text-amber-700">amber</span> is at or below
+          minimum. Prices in <span className="font-medium text-violet-700">violet</span> are that branch&apos;s own price.
+        </p>
       </div>
 
       {canTransfer && (

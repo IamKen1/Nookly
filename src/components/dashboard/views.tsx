@@ -71,7 +71,7 @@ function Hero({ info, eyebrow, children, aside }: { info: HeroInfo; eyebrow: str
             {info.branchName && <span className="rounded-full bg-white/15 px-2.5 py-1 font-semibold">{info.branchName}</span>}
             {info.trialDaysLeft !== null && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-300/90 px-2.5 py-1 font-semibold text-amber-950">
-                <Sparkles className="h-3 w-3" /> {info.trialDaysLeft} days left sa free trial
+                <Sparkles className="h-3 w-3" /> {info.trialDaysLeft} {info.trialDaysLeft === 1 ? "day" : "days"} left in your free trial
               </span>
             )}
           </div>
