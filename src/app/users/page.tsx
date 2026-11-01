@@ -26,6 +26,8 @@ export default async function UsersPage() {
         stores={stores.map((s) => ({ id: s.id, name: s.name }))}
         planName={tenant.subscription?.plan.name ?? ""}
         maxUsers={tenant.subscription?.plan.maxUsers ?? -1}
+        currentUserId={session.userId}
+        currentRole={session.role}
       />
     </AppShell>
   );

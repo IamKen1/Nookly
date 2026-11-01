@@ -87,7 +87,7 @@ export function StatTile({
       </span>
       <div className="min-w-0">
         <p className="text-xs font-medium text-zinc-500">{label}</p>
-        <p className="mt-0.5 text-xl font-semibold text-zinc-900">{value}</p>
+        <p className="mt-0.5 text-lg font-semibold text-zinc-900">{value}</p>
         {hint && <p className="mt-0.5 text-xs text-zinc-400">{hint}</p>}
       </div>
     </div>

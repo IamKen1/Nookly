@@ -33,7 +33,21 @@ const emptyForm = {
   storeId: "",
 };
 
-export default function UsersClient({ stores, planName, maxUsers }: { stores: Store[]; planName: string; maxUsers: number }) {
+export default function UsersClient({
+  stores,
+  planName,
+  maxUsers,
+  currentUserId,
+  currentRole,
+}: {
+  stores: Store[];
+  planName: string;
+  maxUsers: number;
+  currentUserId: string;
+  currentRole: string;
+}) {
+  // Only an owner can create owners or change an owner's role (the API enforces this too).
+  const assignableRoles = ROLES.filter((r) => r !== "OWNER" || currentRole === "OWNER");
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -135,6 +149,32 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
     }
   };
 
+  const changeRole = async (user: UserRow, role: string) => {
+    if (role === user.role) return;
+    const label = ALL_ROLE_LABELS[role] ?? role;
+    if (!confirm(`Change ${user.firstName} ${user.lastName}'s role to ${label}? It takes effect the next time they log in.`)) return;
+    setBusyId(user.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Failed to change role.");
+        return;
+      }
+      await load();
+      flashSuccess(`Role changed to ${label}. It takes effect the next time they log in.`);
+    } catch {
+      setError("Network error.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const multiBranch = stores.length > 1;
 
   const remove = async (id: string) => {
@@ -209,7 +249,28 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                     <p className="text-xs text-zinc-500">{u.email}</p>
                   </td>
                   <td className="px-4 py-3 text-zinc-600">{u.username}</td>
-                  <td className="px-4 py-3 text-zinc-600">{ALL_ROLE_LABELS[u.role] ?? u.role}</td>
+                  <td className="px-4 py-3 text-zinc-600">
+                    {u.id === currentUserId || (u.role === "OWNER" && currentRole !== "OWNER") ? (
+                      <span title={u.id === currentUserId ? "You can't change your own role" : undefined}>
+                        {ALL_ROLE_LABELS[u.role] ?? u.role}
+                        {u.id === currentUserId && <span className="ml-1.5 text-xs text-zinc-400">(you)</span>}
+                      </span>
+                    ) : (
+                      <select
+                        value={u.role}
+                        onChange={(e) => changeRole(u, e.target.value)}
+                        disabled={busyId === u.id}
+                        aria-label={`Role for ${u.firstName} ${u.lastName}`}
+                        className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 disabled:opacity-50"
+                      >
+                        {assignableRoles.map((r) => (
+                          <option key={r} value={r}>
+                            {ALL_ROLE_LABELS[r] ?? r}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
                   {multiBranch && (
                     <td className="px-4 py-3">
                       <select
@@ -228,7 +289,8 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                   <td className="px-4 py-3">
                     <button
                       onClick={() => toggleActive(u)}
-                      disabled={busyId === u.id}
+                      disabled={busyId === u.id || u.id === currentUserId}
+                      title={u.id === currentUserId ? "You can't deactivate your own account" : undefined}
                       className={`flex items-center justify-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold disabled:opacity-50 btn-press ${u.isActive ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"}`}
                     >
                       {busyId === u.id && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -236,14 +298,16 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                     </button>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => remove(u.id)}
-                      disabled={busyId === u.id}
-                      className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-red-600 disabled:opacity-50 btn-press"
-                    >
-                      {busyId === u.id && <Loader2 className="h-3 w-3 animate-spin" />}
-                      Remove
-                    </button>
+                    {u.id !== currentUserId && (
+                      <button
+                        onClick={() => remove(u.id)}
+                        disabled={busyId === u.id}
+                        className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-red-600 disabled:opacity-50 btn-press"
+                      >
+                        {busyId === u.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                        Remove
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -306,7 +370,7 @@ export default function UsersClient({ stores, planName, maxUsers }: { stores: St
                   onChange={(e) => setForm({ ...form, role: e.target.value })}
                   className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 >
-                  {ROLES.map((r) => (
+                  {assignableRoles.map((r) => (
                     <option key={r} value={r}>{ALL_ROLE_LABELS[r] ?? r}</option>
                   ))}
                 </select>

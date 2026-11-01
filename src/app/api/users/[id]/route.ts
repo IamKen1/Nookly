@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { hashPassword } from "@/lib/auth";
+import { UserRole } from "@prisma/client";
 import { hasPermission } from "@/lib/permissions";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -20,6 +21,29 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   if (storeId && !(await prisma.store.findFirst({ where: { id: storeId, tenantId: session.tenantId, isActive: true } }))) {
     return NextResponse.json({ error: "Branch not found." }, { status: 400 });
+  }
+
+  // Role and owner safety: no one changes their own role or deactivates
+  // themselves, only an owner can touch an owner account or create another
+  // owner, and a workspace always keeps at least one active owner.
+  if (role !== undefined && !Object.values(UserRole).includes(role)) {
+    return NextResponse.json({ error: "Invalid role." }, { status: 400 });
+  }
+  const isSelf = existing.id === session.userId;
+  if (isSelf && role !== undefined && role !== existing.role) {
+    return NextResponse.json({ error: "You can't change your own role." }, { status: 403 });
+  }
+  if (isSelf && isActive === false) {
+    return NextResponse.json({ error: "You can't deactivate your own account." }, { status: 403 });
+  }
+  if ((existing.role === "OWNER" || role === "OWNER") && session.role !== "OWNER") {
+    return NextResponse.json({ error: "Only an owner can change an owner's account or make someone an owner." }, { status: 403 });
+  }
+  if (existing.role === "OWNER" && ((role !== undefined && role !== "OWNER") || isActive === false)) {
+    const otherOwners = await prisma.user.count({ where: { tenantId: session.tenantId, role: "OWNER", isActive: true, id: { not: id } } });
+    if (otherOwners === 0) {
+      return NextResponse.json({ error: "Every workspace needs at least one active owner." }, { status: 400 });
+    }
   }
 
   try {
@@ -67,6 +91,16 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { id } = await params;
   const existing = await prisma.user.findFirst({ where: { id, tenantId: session.tenantId } });
   if (!existing) return NextResponse.json({ error: "User not found." }, { status: 404 });
+  if (existing.id === session.userId) {
+    return NextResponse.json({ error: "You can't remove your own account." }, { status: 403 });
+  }
+  if (existing.role === "OWNER") {
+    if (session.role !== "OWNER") {
+      return NextResponse.json({ error: "Only an owner can remove an owner." }, { status: 403 });
+    }
+    const otherOwners = await prisma.user.count({ where: { tenantId: session.tenantId, role: "OWNER", isActive: true, id: { not: id } } });
+    if (otherOwners === 0) return NextResponse.json({ error: "Every workspace needs at least one active owner." }, { status: 400 });
+  }
 
   const [salesCount, ordersTakenCount] = await Promise.all([
     prisma.sale.count({ where: { OR: [{ userId: id }, { orderTakerId: id }] } }),

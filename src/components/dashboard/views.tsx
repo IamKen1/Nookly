@@ -56,7 +56,7 @@ function greeting() {
 function Hero({ info, eyebrow, children, aside }: { info: HeroInfo; eyebrow: string; children: React.ReactNode; aside?: React.ReactNode }) {
   const today = new Date().toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric", timeZone: "Asia/Manila" });
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-700 via-emerald-600 to-teal-600 p-6 text-white shadow-lg shadow-emerald-900/10 sm:p-8">
+    <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 via-emerald-600 to-teal-600 p-5 text-white shadow-md shadow-emerald-900/10 sm:p-6">
       <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
       <div className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-teal-300/20 blur-2xl" />
       <div className="relative flex flex-wrap items-start justify-between gap-6">
@@ -73,7 +73,7 @@ function Hero({ info, eyebrow, children, aside }: { info: HeroInfo; eyebrow: str
               </span>
             )}
           </div>
-          <p className="mt-6 text-xs font-semibold uppercase tracking-wider text-emerald-50/80">{eyebrow}</p>
+          <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-emerald-50/80">{eyebrow}</p>
           {children}
         </div>
         {aside && <div className="flex flex-wrap gap-3">{aside}</div>}
@@ -84,9 +84,9 @@ function Hero({ info, eyebrow, children, aside }: { info: HeroInfo; eyebrow: str
 
 function HeroStat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="min-w-32 rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15 backdrop-blur">
-      <p className="text-xs text-emerald-50/80">{label}</p>
-      <p className="mt-0.5 text-lg font-semibold">{value}</p>
+    <div className="min-w-28 rounded-xl bg-white/10 px-3.5 py-2.5 ring-1 ring-white/15 backdrop-blur">
+      <p className="text-[11px] text-emerald-50/80">{label}</p>
+      <p className="mt-0.5 text-base font-semibold">{value}</p>
     </div>
   );
 }
@@ -95,11 +95,11 @@ function QuickLink({ href, icon: Icon, label, primary = false }: { href: string;
   return (
     <Link
       href={href}
-      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
         primary ? "bg-white text-emerald-800 shadow hover:bg-emerald-50" : "bg-white/15 text-white ring-1 ring-white/25 hover:bg-white/25"
       }`}
     >
-      <Icon className="h-4 w-4" /> {label}
+      <Icon className="h-3.5 w-3.5" /> {label}
     </Link>
   );
 }
@@ -191,7 +191,7 @@ export async function OwnerDashboard({
           </>
         }
       >
-        <p className="mt-1 text-5xl font-semibold tracking-tight sm:text-6xl">
+        <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
           <CountUp value={today.total} />
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -202,7 +202,7 @@ export async function OwnerDashboard({
       </Hero>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile icon={Coins} label="Sales this month" value={<CountUp value={mtd.revenue} />} hint={`Since ${formatDate(mtd.monthStart)}`} tone="good" />
+        <StatTile icon={Coins} label="Sales this month" value={<CountUp value={mtd.revenue} />} hint={`Since ${new Date(mtd.monthStart).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" })}`} tone="good" />
         <StatTile
           icon={BadgePercent}
           label="Gross profit this month"
@@ -323,7 +323,7 @@ export async function ManagerDashboard({ scope, info }: { scope: DashboardScope;
           </>
         }
       >
-        <p className="mt-1 text-5xl font-semibold tracking-tight sm:text-6xl">
+        <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
           <CountUp value={today.total} />
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -408,7 +408,7 @@ export async function PharmacistDashboard({ scope, info }: { scope: DashboardSco
           </>
         }
       >
-        <p className="mt-1 text-5xl font-semibold tracking-tight sm:text-6xl">
+        <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
           <CountUp value={attention} format="int" />
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -485,11 +485,11 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
         }
       >
         {me.shift ? (
-          <p className="mt-1 text-5xl font-semibold tracking-tight sm:text-6xl">
+          <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
             <CountUp value={me.shift.total} />
           </p>
         ) : (
-          <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">No shift open yet</p>
+          <p className="mt-1 text-2xl font-semibold tracking-tight">No shift open yet</p>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {p.pos && <QuickLink href="/pos" icon={ShoppingCart} label={me.shift ? "Go to POS" : "Start shift in POS"} primary />}
@@ -542,7 +542,7 @@ export async function OrderTakerDashboard({ scope, info }: { scope: DashboardSco
   return (
     <div className="space-y-6">
       <Hero info={info} eyebrow="Orders you sent today">
-        <p className="mt-1 text-5xl font-semibold tracking-tight sm:text-6xl">
+        <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
           <CountUp value={mine.sent} format="int" />
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">

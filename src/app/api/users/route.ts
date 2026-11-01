@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { hashPassword } from "@/lib/auth";
+import { UserRole } from "@prisma/client";
 import { hasPermission } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
@@ -39,6 +40,12 @@ export async function POST(request: NextRequest) {
 
   if (!email || !username || !firstName || !lastName || !password) {
     return NextResponse.json({ error: "email, username, firstName, lastName and password are required." }, { status: 400 });
+  }
+  if (role !== undefined && role !== "" && !Object.values(UserRole).includes(role)) {
+    return NextResponse.json({ error: "Invalid role." }, { status: 400 });
+  }
+  if (role === "OWNER" && session.role !== "OWNER") {
+    return NextResponse.json({ error: "Only an owner can add another owner." }, { status: 403 });
   }
 
   if (storeId && !(await prisma.store.findFirst({ where: { id: storeId, tenantId: session.tenantId, isActive: true } }))) {
