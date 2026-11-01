@@ -69,10 +69,13 @@ export default function ProductsClient({
   categories: initialCategories,
   planName,
   maxProducts,
+  canEdit,
 }: {
   categories: Category[];
   planName: string;
   maxProducts: number;
+  // From "Edit products & prices" in User Access; without it the page is browse-only.
+  canEdit: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -208,25 +211,27 @@ export default function ProductsClient({
             {maxProducts === -1 ? "Unlimited products" : `${products.length} / ${maxProducts} products (${planName} plan)`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCategoryManager(true)}
-            className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300"
-          >
-            <Settings className="h-4 w-4" /> Categories
-          </button>
-          <button
-            onClick={() => {
-              setEditingProduct(null);
-              setForm(emptyForm);
-              setShowForm(true);
-            }}
-            disabled={atLimit}
-            className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4" /> Add product
-          </button>
-        </div>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCategoryManager(true)}
+              className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300"
+            >
+              <Settings className="h-4 w-4" /> Categories
+            </button>
+            <button
+              onClick={() => {
+                setEditingProduct(null);
+                setForm(emptyForm);
+                setShowForm(true);
+              }}
+              disabled={atLimit}
+              className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" /> Add product
+            </button>
+          </div>
+        )}
       </div>
 
       {successMessage && (
@@ -296,18 +301,20 @@ export default function ProductsClient({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => handleEditClick(p)} className="text-zinc-400 hover:text-emerald-600">
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(p.id)}
-                        disabled={deletingId === p.id}
-                        className="text-zinc-400 hover:text-red-600 disabled:opacity-40 btn-press"
-                      >
-                        {deletingId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                      </button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex items-center justify-end gap-3">
+                        <button onClick={() => handleEditClick(p)} className="text-zinc-400 hover:text-emerald-600">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.id)}
+                          disabled={deletingId === p.id}
+                          className="text-zinc-400 hover:text-red-600 disabled:opacity-40 btn-press"
+                        >
+                          {deletingId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))

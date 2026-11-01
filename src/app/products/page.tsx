@@ -1,5 +1,6 @@
 import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
+import { hasPermission } from "@/lib/permissions";
 import AppShell from "@/components/app/AppShell";
 import ProductsClient from "@/components/products/ProductsClient";
 
@@ -25,6 +26,7 @@ export default async function ProductsPage() {
         categories={categories.map((c) => ({ id: c.id, name: c.name }))}
         planName={tenant.subscription?.plan.name ?? ""}
         maxProducts={tenant.subscription?.plan.maxProducts ?? -1}
+        canEdit={await hasPermission(session.tenantId, session.role, "products_edit")}
       />
     </AppShell>
   );
