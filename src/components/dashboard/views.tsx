@@ -602,7 +602,7 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
           </Card>
         )}
         {p.pos && (
-          <Card title="Price & stock check" subtitle="Answer “magkano po?” without touching the cart">
+          <Card title="Price & stock check" subtitle="Look up a price or stock level without touching the cart">
             <PriceCheck />
           </Card>
         )}

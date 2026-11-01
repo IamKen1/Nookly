@@ -20,7 +20,7 @@ interface ProductHit {
   requiresPrescription: boolean;
 }
 
-// "Magkano po?" / "May stock pa?" — answered without touching the POS cart.
+// Quick price and stock lookup that doesn't touch the POS cart.
 // Uses the same list the POS sells from, so price and stock are this branch's.
 export function PriceCheck() {
   const [q, setQ] = useState("");
