@@ -47,7 +47,22 @@ export interface HeroInfo {
   firstName: string;
   roleLabel: string;
   branchName: string | null;
+  isMultiBranch: boolean;
   trialDaysLeft: number | null;
+}
+
+// Every role gets the lookup; with several branches it also shows where else
+// an item is in stock, so nobody has to call around.
+function PriceCheckCard({ info, className }: { info: HeroInfo; className?: string }) {
+  return (
+    <Card
+      title="Price & stock check"
+      subtitle={info.isMultiBranch ? "Price and stock here, plus which other branches have it" : "Look up a price or stock level without touching the cart"}
+      className={className}
+    >
+      <PriceCheck showBranches={info.isMultiBranch} />
+    </Card>
+  );
 }
 
 function greeting() {
@@ -338,6 +353,8 @@ export async function OwnerDashboard({
         <AttentionCard scope={scope} show={{ stock: p.inventory, expiry: p.inventory }} />
       </div>
 
+      <PriceCheckCard info={info} />
+
       {branchRows && (
         <Card title="By branch · today" subtitle="Every branch side by side">
           <div className="-mx-2 overflow-x-auto">
@@ -462,6 +479,7 @@ export async function ManagerDashboard({ scope, info }: { scope: DashboardScope;
         <AttentionCard scope={scope} show={{ stock: p.inventory, expiry: p.inventory }} />
       </div>
 
+      <PriceCheckCard info={info} />
     </div>
   );
 }
@@ -566,6 +584,8 @@ export async function PharmacistDashboard({ scope, info }: { scope: DashboardSco
           </Card>
         )}
       </div>
+
+      <PriceCheckCard info={info} />
     </div>
   );
 }
@@ -646,7 +666,7 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
           </Card>
         )}
         {shift && (
-          <Card title="Payments this shift" subtitle="Match card totals with the terminal">
+          <Card title="Payments this shift" subtitle="Match e-wallet totals with the store's wallet">
             {shift.paymentMethods.length === 0 ? (
               <p className="py-6 text-center text-sm text-zinc-400">No sales yet this shift.</p>
             ) : (
@@ -669,11 +689,7 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
             )}
           </Card>
         )}
-        {p.pos && (
-          <Card title="Price & stock check" subtitle="Look up a price or stock level without touching the cart">
-            <PriceCheck />
-          </Card>
-        )}
+        <PriceCheckCard info={info} />
         {!shift && (
           <Card title="Before you start" subtitle="Your first steps for the day">
             <ol className="space-y-2.5 text-sm text-zinc-700">
@@ -732,6 +748,7 @@ export async function OrderTakerDashboard({ scope, info }: { scope: DashboardSco
         <StatTile icon={Receipt} label="Paid" value={mine.completed} tone="good" />
         <StatTile icon={PackageX} label="Cancelled" value={mine.cancelled} />
       </div>
+      <PriceCheckCard info={info} />
     </div>
   );
 }

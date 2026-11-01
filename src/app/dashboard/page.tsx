@@ -36,6 +36,7 @@ export default async function DashboardPage() {
     firstName: user?.firstName || tenant.name,
     roleLabel: ALL_ROLE_LABELS[session.role] ?? session.role,
     branchName: branchContext.isMultiBranch ? branchContext.current?.name ?? null : null,
+    isMultiBranch: branchContext.isMultiBranch,
     trialDaysLeft: trialEndsAt && (session.role === "OWNER" || session.role === "ADMIN") ? daysUntil(trialEndsAt) : null,
   };
 

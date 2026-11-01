@@ -20,13 +20,24 @@ interface ProductHit {
   requiresPrescription: boolean;
 }
 
+interface BranchAvailability {
+  storeId: string;
+  name: string;
+  isCurrent: boolean;
+  stock: number;
+  price: number;
+}
+
 // Quick price and stock lookup that doesn't touch the POS cart.
-// Uses the same list the POS sells from, so price and stock are this branch's.
-export function PriceCheck() {
+// Uses the same list the POS sells from, so price and stock are this branch's;
+// in a multi-branch workspace it also shows which other branches have it.
+export function PriceCheck({ showBranches = false }: { showBranches?: boolean }) {
   const [q, setQ] = useState("");
   const query = useDebouncedValue(q.trim(), 250);
   const { data = [], isLoading } = useSWR<ProductHit[]>(query.length >= 2 ? `/api/products?forSale=1&search=${encodeURIComponent(query)}` : null);
   const hits = data.slice(0, 6);
+  const ids = hits.map((h) => h.id).join(",");
+  const { data: availability = {} } = useSWR<Record<string, BranchAvailability[]>>(showBranches && ids ? `/api/products/availability?ids=${ids}` : null);
 
   return (
     <div>
@@ -49,13 +60,14 @@ export function PriceCheck() {
             const out = p.currentStock <= 0;
             const low = !out && p.currentStock <= p.minimumStock;
             return (
-              <li key={p.id} className="flex items-center justify-between gap-3 py-2.5">
+              <li key={p.id} className="flex items-start justify-between gap-3 py-2.5">
                 <div className="min-w-0">
                   <p className="truncate text-sm text-zinc-800">{p.name}</p>
                   <p className="text-xs text-zinc-400">
                     {[p.strength, p.dosageForm].filter(Boolean).join(" · ")}
                     {p.requiresPrescription && <span className="ml-1 font-semibold text-violet-600">Rx</span>}
                   </p>
+                  {showBranches && availability[p.id] && <OtherBranches branches={availability[p.id].filter((b) => !b.isCurrent)} herePrice={price} />}
                 </div>
                 <div className="shrink-0 text-right">
                   <p className="text-sm font-semibold tabular-nums text-zinc-900">{peso(price)}</p>
@@ -69,6 +81,27 @@ export function PriceCheck() {
         </ul>
       )}
     </div>
+  );
+}
+
+// Where else the item is in stock, so the cashier can send the customer there
+// or ask for a transfer. Branches that have none are listed last, greyed out.
+function OtherBranches({ branches, herePrice }: { branches: BranchAvailability[]; herePrice: number }) {
+  if (branches.length === 0) return null;
+  const sorted = [...branches].sort((a, b) => Number(b.stock > 0) - Number(a.stock > 0));
+  return (
+    <ul className="mt-1.5 flex flex-wrap gap-1">
+      {sorted.map((b) => (
+        <li
+          key={b.storeId}
+          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${b.stock > 0 ? "bg-emerald-50 text-emerald-800" : "bg-zinc-100 text-zinc-400"}`}
+          title={b.price !== herePrice ? `${b.name} sells it at ${peso(b.price)}` : undefined}
+        >
+          {b.name}: {b.stock > 0 ? `${b.stock} in stock` : "none"}
+          {b.stock > 0 && b.price !== herePrice && <span className="text-emerald-600"> · {peso(b.price)}</span>}
+        </li>
+      ))}
+    </ul>
   );
 }
 

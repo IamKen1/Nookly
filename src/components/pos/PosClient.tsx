@@ -27,6 +27,7 @@ import {
   LifeBuoy,
   ClipboardList,
   Store,
+  X,
 } from "lucide-react";
 import { useBarcode } from "@/hooks/useBarcode";
 import { useBarcodeAudio } from "@/hooks/useBarcodeAudio";
@@ -45,6 +46,7 @@ import CashTransactionModal from "./CashTransactionModal";
 import PrinterConnectButton from "./PrinterConnectButton";
 import PendingOrdersModal, { type PendingOrder } from "./PendingOrdersModal";
 import BranchSwitcher from "@/components/app/BranchSwitcher";
+import { PriceCheck } from "@/components/dashboard/cashier-tools";
 
 interface Product {
   id: string;
@@ -151,6 +153,7 @@ export default function PosClient({
   // the tab is hidden and checks again the moment the cashier comes back.
   const seenOrderIds = useRef<Set<string> | null>(null);
   const [newOrderPulse, setNewOrderPulse] = useState(false);
+  const [stockCheckOpen, setStockCheckOpen] = useState(false);
   const { data: pendingOrders = [], mutate: refreshPendingOrders } = useSWR<PendingOrder[]>(
     isOrderTaker || !pollOrders ? null : "/api/pending-orders",
     {
@@ -505,6 +508,16 @@ export default function PosClient({
               </button>
             </>
           )}
+          {branches && (
+            // Any user at the counter can see which branch has an item.
+            <button
+              onClick={() => setStockCheckOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-white/10"
+            >
+              <Store className="h-4 w-4" />
+              <span className="hidden sm:inline">Stock check</span>
+            </button>
+          )}
           <PrinterConnectButton printer={printer} />
           {permissions.dashboard && (
             <Link
@@ -693,6 +706,23 @@ export default function PosClient({
         canRecordPrescriptions={canRecordPrescriptions}
         onProcessSale={handleProcessSale}
       />
+
+      {stockCheckOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh]" onClick={() => setStockCheckOpen(false)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Stock check</h2>
+                <p className="text-xs text-gray-500">Price and stock here, plus which other branches have it</p>
+              </div>
+              <button onClick={() => setStockCheckOpen(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <PriceCheck showBranches />
+          </div>
+        </div>
+      )}
 
       <PendingOrdersModal
         isOpen={ordersModalOpen}
