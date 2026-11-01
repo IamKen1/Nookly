@@ -42,3 +42,12 @@ export function reportStoreId(session: SessionPayload, searchParams: URLSearchPa
   if (searchParams.get("branch") === "all" && canManageAllBranches(session.role)) return undefined;
   return session.storeId ?? undefined;
 }
+
+// Whether anyone at this branch takes orders for a cashier. Only then do
+// cashier screens poll for waiting orders — every poll is a database read,
+// and most workspaces have no order takers at all.
+export async function branchHasOrderTakers(tenantId: string, storeId: string | null): Promise<boolean> {
+  if (!storeId) return false;
+  const count = await prisma.user.count({ where: { tenantId, storeId, role: "ORDER_TAKER", isActive: true } });
+  return count > 0;
+}

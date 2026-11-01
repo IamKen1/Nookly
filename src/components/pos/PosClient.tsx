@@ -97,6 +97,7 @@ export default function PosClient({
   role,
   permissions,
   branches,
+  pollOrders = false,
 }: {
   categories: Category[];
   tenantName: string;
@@ -105,6 +106,8 @@ export default function PosClient({
   permissions: Record<PermissionModuleKey, boolean>;
   // Only passed when the tenant has more than one branch.
   branches?: { currentStoreId: string | null; currentName: string; switchable: { id: string; name: string }[] | null };
+  // True when this branch has active order takers; only then does the POS watch for their orders.
+  pollOrders?: boolean;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -140,11 +143,32 @@ export default function PosClient({
   const [activeOrder, setActiveOrder] = useState<{ id: string; orderNumber: string; takerName: string } | null>(null);
   const isOrderTaker = !canCollectPayment(role ?? "");
 
-  // Only cashiers (and up) collect orders. The list is empty for any tenant not
-  // using order takers, so nothing new appears on their POS.
+  // Cashiers watch for orders sent by order takers — but only at branches that
+  // have order takers, since every check is a database read. SWR pauses while
+  // the tab is hidden and checks again the moment the cashier comes back.
+  const seenOrderIds = useRef<Set<string> | null>(null);
+  const [newOrderPulse, setNewOrderPulse] = useState(false);
   const { data: pendingOrders = [], mutate: refreshPendingOrders } = useSWR<PendingOrder[]>(
-    isOrderTaker ? null : "/api/pending-orders",
-    { refreshInterval: 15000 }
+    isOrderTaker || !pollOrders ? null : "/api/pending-orders",
+    {
+      refreshInterval: 4000,
+      revalidateOnFocus: true,
+      onSuccess: (orders) => {
+        const seen = seenOrderIds.current;
+        seenOrderIds.current = new Set(orders.map((o) => o.id));
+        // The first load only records what's already waiting — no alert for those.
+        if (!seen) return;
+        const fresh = orders.filter((o) => !seen.has(o.id));
+        if (fresh.length === 0) return;
+        playSuccessBeep();
+        showNotification(
+          fresh.length === 1 ? `New order ${fresh[0].orderNumber} from ${fresh[0].createdBy.name}` : `${fresh.length} new orders waiting`,
+          "success"
+        );
+        setNewOrderPulse(true);
+        setTimeout(() => setNewOrderPulse(false), 6000);
+      },
+    }
   );
 
   const { data: shiftData, mutate: refreshShiftStatus } = useSWR<{ openShift: { id: string } | null }>(
@@ -447,7 +471,9 @@ export default function PosClient({
           {pendingOrders.length > 0 && (
             <button
               onClick={() => setOrdersModalOpen(true)}
-              className="relative flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-300"
+              className={`relative flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-300 ${
+                newOrderPulse ? "animate-pulse ring-4 ring-amber-200" : ""
+              }`}
             >
               <ClipboardList className="h-4 w-4" />
               <span className="hidden sm:inline">Orders</span>

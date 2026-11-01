@@ -103,3 +103,76 @@ export function ReprintButton({ saleId }: { saleId: string }) {
     </button>
   );
 }
+
+interface WaitingOrder {
+  id: string;
+  orderNumber: string;
+  createdAt: string;
+  takenBy: string;
+  itemCount: number;
+  total: number;
+}
+
+interface PendingOrderResponse {
+  id: string;
+  orderNumber: string;
+  createdAt: string;
+  createdBy: { name: string };
+  items: { quantity: number; price: number }[];
+}
+
+const timePH = (iso: string) => new Date(iso).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" });
+
+// Orders from order takers, kept current without a reload. Only rendered for
+// branches that have order takers, so other workspaces never poll.
+export function LiveWaitingOrders({ initial, canOpenPos }: { initial: WaitingOrder[]; canOpenPos: boolean }) {
+  const { data } = useSWR<PendingOrderResponse[]>("/api/pending-orders", { refreshInterval: 4000, revalidateOnFocus: true });
+  const orders: WaitingOrder[] = data
+    ? data.map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        createdAt: o.createdAt,
+        takenBy: o.createdBy.name,
+        itemCount: o.items.reduce((s, i) => s + i.quantity, 0),
+        total: o.items.reduce((s, i) => s + i.quantity * i.price, 0),
+      }))
+    : initial;
+
+  return (
+    <section className="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+            Orders waiting for you
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> Live
+            </span>
+          </h2>
+          <p className="mt-0.5 text-xs text-zinc-500">Open Orders in the POS to load one into the cart</p>
+        </div>
+        {canOpenPos && (
+          <a href="/pos" className="shrink-0 text-xs font-semibold text-emerald-700 hover:text-emerald-900">
+            Open POS →
+          </a>
+        )}
+      </div>
+      {orders.length === 0 ? (
+        <p className="py-4 text-center text-sm text-zinc-400">No orders waiting. New ones appear here automatically.</p>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {orders.map((o) => (
+            <li key={o.id} className="flex items-center justify-between gap-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-800">{o.orderNumber}</p>
+                <p className="text-xs text-zinc-400">
+                  From {o.takenBy} · {timePH(o.createdAt)} · {o.itemCount} item{o.itemCount === 1 ? "" : "s"}
+                </p>
+              </div>
+              <p className="shrink-0 text-sm font-semibold tabular-nums text-zinc-900">{peso(o.total)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}

@@ -35,7 +35,8 @@ import {
 } from "@/lib/dashboard-data";
 import { CountUp, DailySalesBars, HourlySalesLine } from "./charts";
 import { AlertRow, Card, DeltaChip, PaymentMix, RankBars, StatTile } from "./widgets";
-import { PriceCheck, ReprintButton } from "./cashier-tools";
+import { LiveWaitingOrders, PriceCheck, ReprintButton } from "./cashier-tools";
+import { branchHasOrderTakers } from "@/lib/branch-scope";
 
 const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
 const phHourNow = () => new Date(Date.now() + PH_OFFSET_MS).getUTCHours();
@@ -493,7 +494,11 @@ const methodLabel = (m: string) =>
 
 export async function CashierDashboard({ scope, info }: { scope: DashboardScope; info: HeroInfo }) {
   const p = scope.permissions;
-  const [me, orders] = await Promise.all([getMyCounter(scope.session), getWaitingOrders(scope.session)]);
+  const [me, orders, hasOrderTakers] = await Promise.all([
+    getMyCounter(scope.session),
+    getWaitingOrders(scope.session),
+    branchHasOrderTakers(scope.session.tenantId, scope.session.storeId),
+  ]);
   const shift = me.shift;
   // Same parts the shift close adds up, so the total matches end-of-shift.
   const drawerRows = shift
@@ -537,27 +542,8 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
         </div>
       </Hero>
 
-      {orders.length > 0 && (
-        <Card
-          title={`${orders.length} order${orders.length > 1 ? "s" : ""} waiting for you`}
-          subtitle="Open Orders in the POS to load one into the cart"
-          action={p.pos ? { href: "/pos", label: "Open POS" } : undefined}
-        >
-          <ul className="divide-y divide-zinc-100">
-            {orders.map((o) => (
-              <li key={o.id} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-zinc-800">{o.orderNumber}</p>
-                  <p className="text-xs text-zinc-400">
-                    From {o.takenBy} · {timePH(o.createdAt)} · {o.itemCount} item{o.itemCount === 1 ? "" : "s"}
-                  </p>
-                </div>
-                <p className="shrink-0 text-sm font-semibold tabular-nums text-zinc-900">{peso(o.total)}</p>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      {/* Live list where order takers work; elsewhere there are never orders to show. */}
+      {hasOrderTakers && <LiveWaitingOrders initial={orders} canOpenPos={p.pos} />}
 
       <div className={`grid gap-6 ${shift ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
         {shift && (
