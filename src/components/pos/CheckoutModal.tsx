@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { X, CreditCard, Calculator } from "lucide-react";
-import { calculateVatInclusiveTotals, getComputationLines, type DiscountType } from "@/lib/vat-calculations";
+import { calculateVatInclusiveTotals, getComputationLines } from "@/lib/vat-calculations";
+import { discountCalcInput, discountDisplay } from "@/lib/discount-math";
+import type { DiscountDTO } from "@/lib/discounts";
 import { peso } from "@/lib/format";
 import { E_WALLET_PROVIDERS } from "@/lib/payment-methods";
 import type { CartLine } from "./CartPanel";
@@ -27,7 +30,8 @@ interface CheckoutModalProps {
     cashReceived?: number;
     paymentProvider?: string;
     paymentReference?: string;
-    discountType?: DiscountType;
+    discountId?: string;
+    discountType?: string;
     discountIdNumber?: string;
     discountHolderName?: string;
     orderRemarks?: string;
@@ -36,22 +40,20 @@ interface CheckoutModalProps {
   }) => Promise<{ ok: boolean; error?: string; saleNumber?: string; totalAmount?: number }>;
 }
 
-const DISCOUNTS: { value: DiscountType; label: string; percent: number }[] = [
-  { value: "NONE", label: "None", percent: 0 },
-  { value: "SENIOR", label: "Senior", percent: 20 },
-  { value: "PWD", label: "PWD", percent: 20 },
-  { value: "STUDENT", label: "Student", percent: 10 },
-  { value: "EMPLOYEE", label: "Employee", percent: 15 },
-];
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
+
+// "20%", "₱50 off", "10% · max ₱100" — compact, for the discount buttons.
+const discountRateLabel = (d: DiscountDTO) =>
+  d.kind === "FIXED" ? `${peso(d.value)} off` : `${Number(d.value.toFixed(2))}%${d.maxAmount != null ? ` · max ${peso(d.maxAmount)}` : ""}`;
 
 export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescriptions, canRecordPrescriptions, onProcessSale }: CheckoutModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "E_WALLET">("CASH");
   const [cashReceived, setCashReceived] = useState("");
   const [walletProvider, setWalletProvider] = useState<string>("GCash");
   const [walletReference, setWalletReference] = useState("");
-  const [discountType, setDiscountType] = useState<DiscountType>("NONE");
+  // Discounts come from Settings › Discounts; "" means no discount.
+  const [discountId, setDiscountId] = useState("");
   const [discountIdNumber, setDiscountIdNumber] = useState("");
   const [discountHolderName, setDiscountHolderName] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -66,7 +68,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
       setCashReceived("");
       setWalletProvider("GCash");
       setWalletReference("");
-      setDiscountType("NONE");
+      setDiscountId("");
       setDiscountIdNumber("");
       setDiscountHolderName("");
       setRemarks("");
@@ -79,11 +81,15 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
 
   const vatableTotal = cart.filter((i) => i.isVatable).reduce((sum, i) => sum + i.price * i.quantity, 0);
   const nonVatableTotal = cart.filter((i) => !i.isVatable).reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const discountPercent = DISCOUNTS.find((d) => d.value === discountType)?.percent ?? 0;
+  const { data: discounts = [] } = useSWR<DiscountDTO[]>(isOpen ? "/api/discounts?forSale=1" : null);
+  const discount = discounts.find((d) => d.id === discountId) ?? null;
+  const discountInput = discount ? discountCalcInput(discount) : { discountType: "NONE", discountPercent: 0 };
+  const discountType = discountInput.discountType;
+  const isScPwd = discountType === "SENIOR" || discountType === "PWD";
 
-  const totals = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, discountType, discountPercent });
+  const totals = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, ...discountInput });
   const finalTotal = totals.finalTotal;
-  const computationLines = getComputationLines(totals, discountType, discountPercent);
+  const computationLines = getComputationLines(totals, discountType, discountInput.discountPercent, discount ? discountDisplay(discount) : undefined);
 
   const cashAmount = parseFloat(cashReceived) || 0;
   const changeAmount = cashAmount - finalTotal;
@@ -108,9 +114,10 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
         cashReceived: paymentMethod === "CASH" ? cashAmount : undefined,
         paymentProvider: paymentMethod === "E_WALLET" ? walletProvider : undefined,
         paymentReference: paymentMethod === "E_WALLET" ? walletReference.trim() : undefined,
-        discountType: discountType !== "NONE" ? discountType : undefined,
-        discountIdNumber: discountType !== "NONE" ? discountIdNumber.trim() || undefined : undefined,
-        discountHolderName: discountType !== "NONE" ? discountHolderName.trim() || undefined : undefined,
+        discountId: discount?.id,
+        discountType: discount?.code,
+        discountIdNumber: discount?.asksForId ? discountIdNumber.trim() || undefined : undefined,
+        discountHolderName: discount?.asksForId ? discountHolderName.trim() || undefined : undefined,
         orderRemarks: remarks.trim() || undefined,
         ...(prescriptionSelection ?? {}),
       });
@@ -161,21 +168,21 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                 </div>
                 {totals.vatRemovedFromVatable > 0 && (
                   <div className="flex justify-between text-sm text-gray-600">
-                    <span>Less: 12% VAT (SC/PWD exemption):</span>
+                    <span>Less: 12% VAT ({isScPwd ? "SC/PWD exemption" : "VAT exemption"}):</span>
                     <span>-{peso(totals.vatRemovedFromVatable)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm font-medium text-green-600">
-                  <span>Less: Discount (SC/PWD/NAAC/MOV/SP):</span>
+                  <span>Less: Discount ({discount && !isScPwd ? discount.name : "SC/PWD/NAAC/MOV/SP"}):</span>
                   <span>-{peso(totals.discountAmount)}</span>
                 </div>
-                {discountType !== "NONE" && discountHolderName.trim() && (
+                {discount?.asksForId && discountHolderName.trim() && (
                   <div className="flex justify-between text-xs text-gray-500">
                     <span>Name:</span>
                     <span>{discountHolderName.trim()}</span>
                   </div>
                 )}
-                {discountType !== "NONE" && discountIdNumber.trim() && (
+                {discount?.asksForId && discountIdNumber.trim() && (
                   <div className="flex justify-between text-xs text-gray-500">
                     <span>ID No.:</span>
                     <span>{discountIdNumber.trim()}</span>
@@ -241,36 +248,40 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
           <div>
             <h3 className="mb-2 text-sm font-semibold text-gray-900">Discounts</h3>
             <div className="grid grid-cols-3 gap-2">
-              {DISCOUNTS.map((d) => (
+              {[{ id: "", name: "None", rate: "" }, ...discounts.map((d) => ({ id: d.id, name: d.name, rate: discountRateLabel(d) }))].map((d) => (
                 <button
-                  key={d.value}
-                  onClick={() => setDiscountType(d.value)}
+                  key={d.id || "none"}
+                  onClick={() => setDiscountId(d.id)}
                   className={`rounded-lg border p-2 text-xs font-medium transition-colors ${
-                    discountType === d.value ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-gray-300 hover:border-gray-400"
+                    discountId === d.id ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-gray-300 hover:border-gray-400"
                   }`}
                 >
-                  {d.label}
-                  {d.percent > 0 && <div className="text-xs text-gray-500">{d.percent}%</div>}
+                  {d.name}
+                  {d.rate && <div className="text-xs text-gray-500">{d.rate}</div>}
                 </button>
               ))}
             </div>
-            {discountType !== "NONE" && (
+            {discount && (
               <div className="mt-3 space-y-2 rounded-lg border border-green-200 bg-green-50 p-3">
                 <div className="text-sm font-medium text-green-800">
-                  {discountType} Discount: {discountPercent}% (Save {peso(totals.discountAmount)})
+                  {discount.name} Discount: {discountRateLabel(discount)} (Save {peso(totals.discountAmount)})
                 </div>
-                <input
-                  value={discountHolderName}
-                  onChange={(e) => setDiscountHolderName(e.target.value)}
-                  placeholder="Name of SC/PWD ID holder — optional"
-                  className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm focus:border-emerald-500"
-                />
-                <input
-                  value={discountIdNumber}
-                  onChange={(e) => setDiscountIdNumber(e.target.value)}
-                  placeholder="ID Number (e.g. SC/OSCA ID) — optional"
-                  className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm focus:border-emerald-500"
-                />
+                {discount.asksForId && (
+                  <>
+                    <input
+                      value={discountHolderName}
+                      onChange={(e) => setDiscountHolderName(e.target.value)}
+                      placeholder={isScPwd ? "Name of SC/PWD ID holder — optional" : "Name of ID holder — optional"}
+                      className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm focus:border-emerald-500"
+                    />
+                    <input
+                      value={discountIdNumber}
+                      onChange={(e) => setDiscountIdNumber(e.target.value)}
+                      placeholder={isScPwd ? "ID Number (e.g. SC/OSCA ID) — optional" : "ID Number — optional"}
+                      className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm focus:border-emerald-500"
+                    />
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -1,10 +1,17 @@
-export type DiscountType = 'NONE' | 'SENIOR' | 'PWD' | 'STUDENT' | 'EMPLOYEE'
+// 'NONE', the built-in SENIOR / PWD / STUDENT / EMPLOYEE, or a workspace's own discount code.
+export type DiscountType = string
 
 export interface VatCalculationInput {
   vatableTotal: number
   nonVatableTotal: number
   discountType?: DiscountType
   discountPercent?: number
+  // Remove VAT first, then discount (the SC/PWD rule). Defaults to true for SENIOR/PWD.
+  vatExempt?: boolean
+  // A peso amount off instead of a percentage.
+  fixedAmount?: number | null
+  // Most the discount can take off, in pesos.
+  maxAmount?: number | null
 }
 
 export interface VatCalculationResult {
@@ -29,22 +36,61 @@ const VAT_INCLUSIVE_FACTOR = 1.12
 
 const roundMoney = (value: number) => Number(value.toFixed(2))
 
+const isSeniorOrPwd = (discountType?: string) => discountType === 'SENIOR' || discountType === 'PWD'
+
+// Splits a peso discount across the VATable and non-VAT parts in proportion
+// to each part's base, so the receipt breakdown stays consistent.
+const splitDiscount = (total: number, vatableBase: number, nonVatableBase: number) => {
+  const base = vatableBase + nonVatableBase
+  const amount = roundMoney(Math.min(Math.max(total, 0), base))
+  if (base <= 0 || amount <= 0) return { vatable: 0, nonVatable: 0 }
+  const vatable = roundMoney((amount * vatableBase) / base)
+  return { vatable, nonVatable: roundMoney(amount - vatable) }
+}
+
+// Percent discounts are computed per part exactly as before; a fixed amount
+// or a cap re-splits the peso total across the parts.
+const discountParts = (
+  vatableBase: number,
+  nonVatableBase: number,
+  percent: number,
+  fixedAmount?: number | null,
+  maxAmount?: number | null
+) => {
+  let vatable = roundMoney(vatableBase * (percent / 100))
+  let nonVatable = roundMoney(nonVatableBase * (percent / 100))
+  if (fixedAmount != null) ({ vatable, nonVatable } = splitDiscount(fixedAmount, vatableBase, nonVatableBase))
+  if (maxAmount != null && maxAmount >= 0 && vatable + nonVatable > maxAmount) {
+    ;({ vatable, nonVatable } = splitDiscount(maxAmount, vatableBase, nonVatableBase))
+  }
+  return { vatable, nonVatable }
+}
+
 export const calculateVatInclusiveTotals = ({
   vatableTotal,
   nonVatableTotal,
   discountType = 'NONE',
   discountPercent = 0,
+  vatExempt,
+  fixedAmount,
+  maxAmount,
 }: VatCalculationInput): VatCalculationResult => {
   const subtotal = roundMoney(vatableTotal + nonVatableTotal)
+  const hasDiscount = discountType !== 'NONE'
 
-  if (discountType === 'SENIOR' || discountType === 'PWD') {
-    const appliedDiscountPercent = discountPercent > 0 ? discountPercent : 20
+  if (hasDiscount && (vatExempt ?? isSeniorOrPwd(discountType))) {
+    const appliedDiscountPercent = discountPercent > 0 ? discountPercent : isSeniorOrPwd(discountType) ? 20 : 0
     // For vattable items: remove VAT first, then apply discount
     const vatExclusiveVatableTotal = roundMoney(vatableTotal / VAT_INCLUSIVE_FACTOR)
-    const vatableDiscountAmount = roundMoney(vatExclusiveVatableTotal * (appliedDiscountPercent / 100))
-    const vatableSalesAfterDiscount = roundMoney(vatExclusiveVatableTotal - vatableDiscountAmount)
     // For non-vattable items: apply discount directly
-    const nonVatableDiscountAmount = roundMoney(nonVatableTotal * (appliedDiscountPercent / 100))
+    const { vatable: vatableDiscountAmount, nonVatable: nonVatableDiscountAmount } = discountParts(
+      vatExclusiveVatableTotal,
+      nonVatableTotal,
+      appliedDiscountPercent,
+      fixedAmount,
+      maxAmount
+    )
+    const vatableSalesAfterDiscount = roundMoney(vatExclusiveVatableTotal - vatableDiscountAmount)
     const nonVatableSalesAfterDiscount = roundMoney(nonVatableTotal - nonVatableDiscountAmount)
     // VAT is zero for the discounted vatable portion
     const vatAmount = 0
@@ -67,8 +113,9 @@ export const calculateVatInclusiveTotals = ({
     }
   }
 
-  const vatableDiscountAmount = roundMoney(vatableTotal * (discountPercent / 100))
-  const nonVatableDiscountAmount = roundMoney(nonVatableTotal * (discountPercent / 100))
+  const { vatable: vatableDiscountAmount, nonVatable: nonVatableDiscountAmount } = hasDiscount
+    ? discountParts(vatableTotal, nonVatableTotal, discountPercent, fixedAmount, maxAmount)
+    : { vatable: 0, nonVatable: 0 }
   const discountedVatableGross = vatableTotal - vatableDiscountAmount
   const discountedNonVatableTotal = nonVatableTotal - nonVatableDiscountAmount
   const vatAmount = roundMoney(discountedVatableGross * (12 / 112))
@@ -100,15 +147,18 @@ export interface ComputationLine {
 
 // Renders the exact arithmetic behind calculateVatInclusiveTotals as a flat list of
 // +/- lines, so a receipt can show its own derivation instead of just the endpoints.
+// `display` names the discount and its rate for workspace discounts (e.g.
+// "Promo", "₱50.00"); without it the label is the code and percent, as always.
 export const getComputationLines = (
   result: VatCalculationResult,
   discountType: DiscountType = 'NONE',
-  discountPercent = 0
+  discountPercent = 0,
+  display?: { label?: string; rate?: string; vatExempt?: boolean }
 ): ComputationLine[] => {
   const lines: ComputationLine[] = []
-  const isSeniorPwd = discountType === 'SENIOR' || discountType === 'PWD'
-  const appliedPercent = discountType === 'NONE' ? 0 : discountPercent > 0 ? discountPercent : isSeniorPwd ? 20 : discountPercent
-  const discountLabel = `Less: ${discountType} Discount (${appliedPercent}%)`
+  const isSeniorPwd = display?.vatExempt ?? isSeniorOrPwd(discountType)
+  const appliedPercent = discountType === 'NONE' ? 0 : discountPercent > 0 ? discountPercent : isSeniorOrPwd(discountType) ? 20 : discountPercent
+  const discountLabel = `Less: ${display?.label ?? discountType} Discount (${display?.rate ?? `${appliedPercent}%`})`
 
   if (result.vatableGross > 0) {
     lines.push({ label: 'VATable Sales', amount: result.vatableGross, kind: 'base' })

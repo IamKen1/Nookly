@@ -3,6 +3,7 @@ import { E_WALLET_PROVIDERS, normalizeReference } from "@/lib/payment-methods";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { calculateVatInclusiveTotals, type DiscountType } from "@/lib/vat-calculations";
+import { discountCalcInput, discountRateText, ensureDefaultDiscounts, isDiscountAvailable } from "@/lib/discounts";
 import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
 import { runInBackground } from "@/lib/background";
 import { notifySaleCreated, notifyStockThresholdReached } from "@/lib/notifications";
@@ -88,6 +89,7 @@ export async function POST(request: NextRequest) {
     cashReceived,
     paymentProvider,
     paymentReference,
+    discountId,
     discountType,
     discountIdNumber,
     discountHolderName,
@@ -102,6 +104,7 @@ export async function POST(request: NextRequest) {
     cashReceived?: number;
     paymentProvider?: string;
     paymentReference?: string;
+    discountId?: string;
     discountType?: DiscountType;
     discountIdNumber?: string;
     discountHolderName?: string;
@@ -230,25 +233,28 @@ export async function POST(request: NextRequest) {
     else nonVatableSubtotal += lineTotal;
   }
 
-  const normalizedDiscountType: DiscountType = ["SENIOR", "PWD", "STUDENT", "EMPLOYEE"].includes(
-    discountType ?? ""
-  )
-    ? (discountType as DiscountType)
-    : "NONE";
-  const discountPercent =
-    normalizedDiscountType === "SENIOR" || normalizedDiscountType === "PWD"
-      ? 20
-      : normalizedDiscountType === "STUDENT"
-      ? 10
-      : normalizedDiscountType === "EMPLOYEE"
-      ? 15
-      : 0;
+  // The discount comes from the workspace's own list (Settings › Discounts).
+  // Older checkouts send only the code (SENIOR, PWD, ...), which maps to the
+  // same entry, so a sale rung up mid-deploy still gets the right discount.
+  let discount = null as Awaited<ReturnType<typeof prisma.discount.findFirst>>;
+  if (discountId || (discountType && discountType !== "NONE")) {
+    await ensureDefaultDiscounts(session.tenantId);
+    discount = await prisma.discount.findFirst({
+      where: { tenantId: session.tenantId, ...(discountId ? { id: discountId } : { code: discountType }) },
+    });
+    if (!discount || !isDiscountAvailable(discount, session.storeId)) {
+      return NextResponse.json({ error: "That discount isn't available right now. Choose another one." }, { status: 400 });
+    }
+  }
+  const appliedDiscount = discount
+    ? { code: discount.code, name: discount.name, kind: discount.kind, value: Number(discount.value), maxAmount: discount.maxAmount != null ? Number(discount.maxAmount) : null, vatExempt: discount.vatExempt }
+    : null;
+  const normalizedDiscountType: DiscountType = appliedDiscount?.code ?? "NONE";
 
   const vatTotals = calculateVatInclusiveTotals({
     vatableTotal: vatableSubtotal,
     nonVatableTotal: nonVatableSubtotal,
-    discountType: normalizedDiscountType,
-    discountPercent,
+    ...(appliedDiscount ? discountCalcInput(appliedDiscount) : { discountType: "NONE", discountPercent: 0 }),
   });
 
   const totalAmount = vatTotals.finalTotal;
@@ -373,8 +379,12 @@ export async function POST(request: NextRequest) {
         taxAmount: vatTotals.vatAmount,
         discountType: normalizedDiscountType,
         discountAmount: vatTotals.discountAmount,
-        discountIdNumber: normalizedDiscountType !== "NONE" ? discountIdNumber?.trim() || null : null,
-        discountHolderName: normalizedDiscountType !== "NONE" ? discountHolderName?.trim() || null : null,
+        discountIdNumber: discount ? discountIdNumber?.trim() || null : null,
+        discountHolderName: discount ? discountHolderName?.trim() || null : null,
+        discountId: discount?.id ?? null,
+        discountName: appliedDiscount?.name ?? null,
+        discountRate: appliedDiscount ? discountRateText(appliedDiscount) : null,
+        discountVatExempt: appliedDiscount?.vatExempt ?? false,
         vatableGross: vatTotals.vatableGross,
         nonVatableGross: vatTotals.nonVatableGross,
         vatableDiscountAmount: vatTotals.vatableDiscountAmount,
@@ -487,7 +497,7 @@ export async function POST(request: NextRequest) {
     runInBackground("sale notification", async () => {
       const store = await getReceiptSettings(session.tenantId);
       let vatExemptSales: number | undefined;
-      if (completeSale.discountType === "SENIOR" || completeSale.discountType === "PWD") {
+      if (completeSale.discountVatExempt) {
         const vatableTotal = Number(completeSale.vatableSales) + Number(completeSale.discountAmount);
         vatExemptSales = Number((vatableTotal / 1.12).toFixed(2));
       }

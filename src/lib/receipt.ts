@@ -20,7 +20,15 @@ const isSeniorOrPwd = (discountType?: string) => discountType === "SENIOR" || di
 // on the Sale at checkout time, so a reprint always matches the original.
 const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
   const discountType = (r.discountType ?? "NONE") as DiscountType;
-  const discountPercent = DISCOUNT_PERCENT[discountType] ?? 0;
+  // The rate saved on the sale wins (it may have been edited since); older
+  // sales fall back to the fixed percentages they were made with.
+  const savedPercent = r.discountRate && /^[\d.]+%$/.test(r.discountRate) ? parseFloat(r.discountRate) : null;
+  const discountPercent = savedPercent ?? DISCOUNT_PERCENT[discountType] ?? 0;
+  const isBuiltIn = discountType in DISCOUNT_PERCENT;
+  const display =
+    r.discountName && (!isBuiltIn || savedPercent === null)
+      ? { label: r.discountName, rate: r.discountRate ?? undefined, vatExempt: r.discountVatExempt }
+      : { vatExempt: r.discountVatExempt ?? isSeniorOrPwd(discountType) };
   const result: VatCalculationResult = {
     subtotal: r.subtotal,
     vatableSales: r.vatableSales ?? 0,
@@ -35,7 +43,7 @@ const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
     nonVatableDiscountAmount: r.nonVatableDiscountAmount ?? 0,
     vatRemovedFromVatable: r.vatRemovedFromVatable ?? 0,
   };
-  return getComputationLines(result, discountType, discountPercent).filter((line) => line.kind !== "total");
+  return getComputationLines(result, discountType, discountPercent, display).filter((line) => line.kind !== "total");
 };
 
 export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPrint?: boolean } = {}): string => {

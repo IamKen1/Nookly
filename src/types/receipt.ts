@@ -30,6 +30,10 @@ export interface ReceiptData {
   items: ReceiptItem[];
   subtotal: number;
   discountType?: string;
+  // As saved on the sale; absent on sales made before discounts were configurable.
+  discountName?: string | null;
+  discountRate?: string | null;
+  discountVatExempt?: boolean;
   discountAmount?: number;
   discountIdNumber?: string;
   discountHolderName?: string;

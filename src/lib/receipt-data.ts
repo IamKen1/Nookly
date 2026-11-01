@@ -13,6 +13,9 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
       saleDate: true,
       subtotal: true,
       discountType: true,
+      discountName: true,
+      discountRate: true,
+      discountVatExempt: true,
       discountAmount: true,
       discountIdNumber: true,
       discountHolderName: true,
@@ -58,7 +61,7 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
   // VAT-exclusive base BEFORE discount, computed exactly from the persisted
   // breakdown rather than reverse-engineered from the post-discount figure.
   const vatExemptSales =
-    sale.discountType === "SENIOR" || sale.discountType === "PWD"
+    sale.discountVatExempt || sale.discountType === "SENIOR" || sale.discountType === "PWD"
       ? Number((toNumber(sale.vatableGross) - toNumber(sale.vatRemovedFromVatable)).toFixed(2))
       : undefined;
 
@@ -75,6 +78,9 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
     })),
     subtotal: toNumber(sale.subtotal),
     discountType: sale.discountType ?? "NONE",
+    discountName: sale.discountName,
+    discountRate: sale.discountRate,
+    discountVatExempt: sale.discountVatExempt,
     discountAmount: toNumber(sale.discountAmount),
     discountIdNumber: sale.discountIdNumber ?? undefined,
     discountHolderName: sale.discountHolderName ?? undefined,

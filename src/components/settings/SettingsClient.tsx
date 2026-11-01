@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, CreditCard, KeyRound, Loader2, PlayCircle, ReceiptText, ShieldCheck, Store, type LucideIcon } from "lucide-react";
+import { BadgePercent, Bell, CreditCard, KeyRound, Loader2, PlayCircle, ReceiptText, ShieldCheck, Store, type LucideIcon } from "lucide-react";
 import ReceiptSettingsForm from "./ReceiptSettingsForm";
 import NotificationSettingsForm from "./NotificationSettingsForm";
 import PlanSettingsForm from "./PlanSettingsForm";
 import UserAccessForm from "./UserAccessForm";
 import ApiKeysForm from "./ApiKeysForm";
 import BranchesForm from "./BranchesForm";
+import DiscountsForm from "./DiscountsForm";
 
-type Tab = "plan" | "branches" | "receipt" | "notifications" | "userAccess" | "apiAccess";
+type Tab = "plan" | "branches" | "discounts" | "receipt" | "notifications" | "userAccess" | "apiAccess";
 
 interface CurrentPlan {
   code: string;
@@ -73,6 +74,7 @@ export default function SettingsClient({
       icon: Store,
       visible: canManagePlan && Boolean(currentPlan),
     },
+    { key: "discounts", label: "Discounts", description: "Discounts the counter can give at checkout", icon: BadgePercent, visible: true },
     { key: "receipt", label: "Receipt", description: "Store details and what prints on receipts", icon: ReceiptText, visible: true },
     { key: "notifications", label: "Notifications", description: "Email alerts for sales and stock", icon: Bell, visible: canManageAlerts },
     { key: "userAccess", label: "User access", description: "What each staff role can do", icon: ShieldCheck, visible: isOwner },
@@ -86,7 +88,7 @@ export default function SettingsClient({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Settings</h1>
-          <p className="mt-1 text-sm text-zinc-500">Manage your plan, branches, receipts, and alert preferences.</p>
+          <p className="mt-1 text-sm text-zinc-500">Manage your plan, branches, discounts, receipts, and alert preferences.</p>
         </div>
         <button
           onClick={restartTour}
@@ -139,6 +141,7 @@ export default function SettingsClient({
           {active.key === "branches" && canManagePlan && currentPlan && (
             <BranchesForm maxStores={currentPlan.maxStores} planName={currentPlan.name} />
           )}
+          {active.key === "discounts" && <DiscountsForm />}
           {active.key === "receipt" && <ReceiptSettingsForm />}
           {active.key === "notifications" && canManageAlerts && <NotificationSettingsForm />}
           {active.key === "userAccess" && isOwner && <UserAccessForm />}

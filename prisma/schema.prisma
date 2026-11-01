@@ -122,6 +122,7 @@ model Tenant {
   pendingOrders        PendingOrder[]
   stockRequests        StockRequest[]
   receivings           Receiving[]
+  discounts            Discount[]
 
   @@map("tenants")
 }
@@ -734,6 +735,12 @@ model Sale {
   discountAmount           Decimal       @default(0) @db.Decimal(10, 2)
   discountIdNumber         String? // SC/PWD/etc ID number — optional, captured for audit if the cashier has it
   discountHolderName       String? // Name of the SC/PWD ID holder — printed on the signature block for discount sales
+  // The discount as it was when the sale was made, so receipts and reprints
+  // stay right even if the discount is edited or removed later.
+  discountId               String?
+  discountName             String?
+  discountRate             String? // e.g. "20%" or "₱50.00"
+  discountVatExempt        Boolean       @default(false)
   // Split-out computation breakdown, persisted so a reprinted receipt can show
   // the exact original +/- derivation instead of reverse-engineering it later.
   vatableGross             Decimal       @default(0) @db.Decimal(10, 2)
@@ -772,6 +779,7 @@ model Sale {
   prescription             Prescription? @relation(fields: [prescriptionId], references: [id])
   user                     User          @relation("SaleCashier", fields: [userId], references: [id])
   orderTaker               User?         @relation("SaleOrderTaker", fields: [orderTakerId], references: [id])
+  discount                 Discount?     @relation(fields: [discountId], references: [id], onDelete: SetNull)
   pendingOrder             PendingOrder?
   originalSale             Sale?         @relation("SaleReturns", fields: [originalSaleId], references: [id])
   returns                  Sale[]        @relation("SaleReturns")
@@ -1098,4 +1106,31 @@ model ReceivingItem {
   @@index([receivingId])
   @@index([productId])
   @@map("receiving_items")
+}
+
+// Discounts the counter can apply, set up per workspace in Settings.
+// Senior citizen and PWD are fixed by law (20%, VAT-exempt) and can't be edited.
+model Discount {
+  id        String    @id @default(cuid())
+  tenantId  String
+  code      String // short label stored on sales: SENIOR, PWD, or derived from the name
+  name      String
+  kind      String    @default("PERCENT") // PERCENT or FIXED
+  value     Decimal   @db.Decimal(10, 2) // percent (0-100) or peso amount
+  maxAmount Decimal?  @db.Decimal(10, 2) // optional cap on the peso discount
+  vatExempt Boolean   @default(false) // remove VAT first, then discount (SC/PWD rule)
+  asksForId Boolean   @default(false) // show ID number and holder name at checkout
+  isSystem  Boolean   @default(false)
+  isActive  Boolean   @default(true)
+  startsOn  DateTime? // first day it can be used (inclusive), Philippine date
+  endsOn    DateTime? // last day it can be used (inclusive)
+  storeIds  String[]  @default([]) // branches that offer it; empty = every branch
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sales     Sale[]
+
+  @@unique([tenantId, code])
+  @@map("discounts")
 }

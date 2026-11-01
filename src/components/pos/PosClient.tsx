@@ -342,6 +342,7 @@ export default function PosClient({
     cashReceived?: number;
     paymentProvider?: string;
     paymentReference?: string;
+    discountId?: string;
     discountType?: DiscountType;
     discountIdNumber?: string;
     discountHolderName?: string;
