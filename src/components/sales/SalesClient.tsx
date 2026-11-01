@@ -1,13 +1,15 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import { paymentMethodLabel } from "@/lib/payment-methods";
 import { useRouter } from "next/navigation";
 import { Ban, ChevronDown, ChevronUp, Loader2, Printer, RotateCcw, Search, X } from "lucide-react";
 import { printReceipt } from "@/lib/receipt";
 import { isCompleteDate } from "@/lib/date-input";
 import type { ReceiptData } from "@/types/receipt";
 
-const PAYMENT_METHODS = ["CASH", "CREDIT_CARD", "DEBIT_CARD", "INSURANCE", "CHECK", "SPLIT"];
+// Card methods stay listed so older sales can still be found.
+const PAYMENT_METHODS = ["CASH", "E_WALLET", "CREDIT_CARD", "DEBIT_CARD"];
 const STATUSES = ["COMPLETED", "CANCELLED", "RETURNED"];
 
 interface SaleItem {
@@ -24,6 +26,8 @@ interface Sale {
   saleNumber: string;
   totalAmount: number;
   paymentMethod: string;
+  paymentProvider: string | null;
+  paymentReference: string | null;
   discountType: string | null;
   status: string;
   isReturnRecord: boolean;
@@ -244,7 +248,7 @@ export default function SalesClient({
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search AR #..."
+            placeholder="Search AR # or e-wallet ref..."
             className="w-full rounded-lg border border-zinc-200 py-2 pl-9 pr-3 text-sm focus:border-emerald-500"
           />
         </div>
@@ -305,7 +309,7 @@ export default function SalesClient({
           >
             <option value="">All methods</option>
             {PAYMENT_METHODS.map((m) => (
-              <option key={m} value={m}>{m.replace("_", " ")}</option>
+              <option key={m} value={m}>{paymentMethodLabel(m)}</option>
             ))}
           </select>
         </div>
@@ -443,7 +447,10 @@ export default function SalesClient({
                             </div>
                           ))}
                           <div className="flex justify-between border-t border-zinc-200 pt-1 text-xs text-zinc-400">
-                            <span>Payment: {s.paymentMethod}</span>
+                            <span>
+                              Payment: {s.paymentMethod === "E_WALLET" ? s.paymentProvider ?? "E-wallet" : paymentMethodLabel(s.paymentMethod)}
+                              {s.paymentReference && ` · Ref ${s.paymentReference}`}
+                            </span>
                             {s.discountType && s.discountType !== "NONE" && <span>Discount: {s.discountType}</span>}
                           </div>
                         </div>

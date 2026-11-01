@@ -160,7 +160,8 @@ export function LiveWaitingOrders({ initial, canOpenPos }: { initial: WaitingOrd
         <p className="py-4 text-center text-sm text-zinc-400">No orders waiting. New ones appear here automatically.</p>
       ) : (
         <ul className="divide-y divide-zinc-100">
-          {orders.map((o) => (
+          {/* Oldest first; the full queue lives in the POS so the card stays short. */}
+          {orders.slice(0, 5).map((o) => (
             <li key={o.id} className="flex items-center justify-between gap-3 py-2.5">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-zinc-800">{o.orderNumber}</p>
@@ -171,6 +172,11 @@ export function LiveWaitingOrders({ initial, canOpenPos }: { initial: WaitingOrd
               <p className="shrink-0 text-sm font-semibold tabular-nums text-zinc-900">{peso(o.total)}</p>
             </li>
           ))}
+          {orders.length > 5 && (
+            <li className="pt-2.5 text-xs font-medium text-zinc-500">
+              +{orders.length - 5} more waiting{canOpenPos ? " — open Orders in the POS to see all" : ""}
+            </li>
+          )}
         </ul>
       )}
     </section>

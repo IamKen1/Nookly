@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X, CreditCard, Calculator } from "lucide-react";
 import { calculateVatInclusiveTotals, getComputationLines, type DiscountType } from "@/lib/vat-calculations";
 import { peso } from "@/lib/format";
+import { E_WALLET_PROVIDERS } from "@/lib/payment-methods";
 import type { CartLine } from "./CartPanel";
 import PrescriptionFields, { type PrescriptionDraft, type PrescriptionSelection } from "./PrescriptionFields";
 
@@ -23,6 +24,8 @@ interface CheckoutModalProps {
   onProcessSale: (payload: {
     paymentMethod: string;
     cashReceived?: number;
+    paymentProvider?: string;
+    paymentReference?: string;
     discountType?: DiscountType;
     discountIdNumber?: string;
     discountHolderName?: string;
@@ -43,8 +46,10 @@ const DISCOUNTS: { value: DiscountType; label: string; percent: number }[] = [
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
 export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescriptions, onProcessSale }: CheckoutModalProps) {
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CREDIT_CARD" | "DEBIT_CARD">("CASH");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "E_WALLET">("CASH");
   const [cashReceived, setCashReceived] = useState("");
+  const [walletProvider, setWalletProvider] = useState<string>("GCash");
+  const [walletReference, setWalletReference] = useState("");
   const [discountType, setDiscountType] = useState<DiscountType>("NONE");
   const [discountIdNumber, setDiscountIdNumber] = useState("");
   const [discountHolderName, setDiscountHolderName] = useState("");
@@ -58,6 +63,8 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
     if (isOpen) {
       setPaymentMethod("CASH");
       setCashReceived("");
+      setWalletProvider("GCash");
+      setWalletReference("");
       setDiscountType("NONE");
       setDiscountIdNumber("");
       setDiscountHolderName("");
@@ -79,7 +86,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
 
   const cashAmount = parseFloat(cashReceived) || 0;
   const changeAmount = cashAmount - finalTotal;
-  const isValidPayment = paymentMethod !== "CASH" || cashAmount >= finalTotal;
+  const isValidPayment = paymentMethod === "CASH" ? cashAmount >= finalTotal : walletReference.trim().length >= 4;
 
   const handleCashInput = (value: string) => {
     const sanitized = value.replace(/[^\d.]/g, "");
@@ -90,7 +97,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
   const handleProcess = async () => {
     setError(null);
     if (!isValidPayment) {
-      setError("Insufficient cash amount.");
+      setError(paymentMethod === "CASH" ? "Insufficient cash amount." : "Enter the e-wallet reference number.");
       return;
     }
     setIsProcessing(true);
@@ -98,6 +105,8 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
       const result = await onProcessSale({
         paymentMethod,
         cashReceived: paymentMethod === "CASH" ? cashAmount : undefined,
+        paymentProvider: paymentMethod === "E_WALLET" ? walletProvider : undefined,
+        paymentReference: paymentMethod === "E_WALLET" ? walletReference.trim() : undefined,
         discountType: discountType !== "NONE" ? discountType : undefined,
         discountIdNumber: discountType !== "NONE" ? discountIdNumber.trim() || undefined : undefined,
         discountHolderName: discountType !== "NONE" ? discountHolderName.trim() || undefined : undefined,
@@ -267,8 +276,8 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
 
           <div>
             <h3 className="mb-2 text-sm font-semibold text-gray-900">Payment Method</h3>
-            <div className="grid grid-cols-3 gap-2">
-              {(["CASH", "CREDIT_CARD", "DEBIT_CARD"] as const).map((method) => (
+            <div className="grid grid-cols-2 gap-2">
+              {(["CASH", "E_WALLET"] as const).map((method) => (
                 <button
                   key={method}
                   onClick={() => setPaymentMethod(method)}
@@ -276,7 +285,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                     paymentMethod === method ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-gray-300 hover:border-gray-400"
                   }`}
                 >
-                  {method === "CASH" ? "Cash" : method === "CREDIT_CARD" ? "Credit" : "Debit"}
+                  {method === "CASH" ? "Cash" : "E-wallet (GCash, Maya)"}
                 </button>
               ))}
             </div>
@@ -345,6 +354,41 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {paymentMethod === "E_WALLET" && (
+            <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/60 p-3">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">Paid with</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {E_WALLET_PROVIDERS.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setWalletProvider(p)}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                        walletProvider === p ? "border-sky-500 bg-sky-600 text-white" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">Reference number</label>
+                <input
+                  value={walletReference}
+                  onChange={(e) => setWalletReference(e.target.value.replace(/[^A-Za-z0-9 -]/g, "").slice(0, 40))}
+                  placeholder="From the customer's payment confirmation"
+                  inputMode="numeric"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Check that {peso(finalTotal)} arrived in the store&apos;s {walletProvider === "Other" ? "e-wallet" : walletProvider} before completing the sale.
+                </p>
+              </div>
             </div>
           )}
 

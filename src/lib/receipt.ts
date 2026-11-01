@@ -40,7 +40,7 @@ const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
 
 export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPrint?: boolean } = {}): string => {
   const { autoPrint = true } = options;
-  const { saleNumber, date, items, totalAmount, paymentMethod, cashReceived, changeGiven, customer, cashier, orderRemarks, store } = receiptData;
+  const { saleNumber, date, items, totalAmount, paymentMethod, paymentProvider, paymentReference, cashReceived, changeGiven, customer, cashier, orderRemarks, store } = receiptData;
 
   const headerLines = getReceiptHeaderLines(store);
   const footerLines = getReceiptFooterLines(store).filter((line) => line !== NOT_BIR_ACCREDITED_NOTICE);
@@ -147,7 +147,8 @@ export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPri
       }
 
       <div class="payment-info">
-        <div class="total-line"><span>Payment:</span><span>${formatPaymentMethodLabel(paymentMethod)}</span></div>
+        <div class="total-line"><span>Payment:</span><span>${formatPaymentMethodLabel(paymentMethod, paymentProvider)}</span></div>
+        ${paymentReference ? `<div class="total-line"><span>Ref No:</span><span>${paymentReference}</span></div>` : ""}
         ${cashReceived ? `<div class="total-line"><span>Cash:</span><span>${peso(cashReceived)}</span></div>` : ""}
         ${changeGiven && changeGiven > 0 ? `<div class="total-line"><span>Change:</span><span>${peso(changeGiven)}</span></div>` : ""}
       </div>
@@ -238,7 +239,7 @@ export const downloadReceiptHTML = (receiptData: ReceiptData) => {
 };
 
 export const generateThermalReceiptText = (receiptData: ReceiptData): string => {
-  const { saleNumber, date, items, totalAmount, paymentMethod, cashReceived, changeGiven, customer, cashier, orderRemarks, store } = receiptData;
+  const { saleNumber, date, items, totalAmount, paymentMethod, paymentProvider, paymentReference, cashReceived, changeGiven, customer, cashier, orderRemarks, store } = receiptData;
 
   const ESC = "\x1B";
   const GS = "\x1D";
@@ -326,7 +327,8 @@ export const generateThermalReceiptText = (receiptData: ReceiptData): string => 
     receipt += SEPARATOR + NEWLINE;
   }
 
-  receipt += `Payment: ${formatPaymentMethodLabel(paymentMethod)}` + NEWLINE;
+  receipt += `Payment: ${formatPaymentMethodLabel(paymentMethod, paymentProvider)}` + NEWLINE;
+  if (paymentReference) receipt += `Ref No: ${paymentReference}` + NEWLINE;
   if (cashReceived) addTotalLine("Cash:", cashReceived);
   if (changeGiven && changeGiven > 0) addTotalLine("Change:", changeGiven);
   receipt += SEPARATOR + NEWLINE;

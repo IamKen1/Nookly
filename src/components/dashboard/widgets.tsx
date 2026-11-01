@@ -179,7 +179,7 @@ export function PaymentMix({ rows }: { rows: { method: string; total: number }[]
   const total = rows.reduce((s, r) => s + r.total, 0);
   // Sequential greens by share — a single "how much" scale, not categories of meaning.
   const shades = ["#047857", "#10b981", "#6ee7b7", "#a7f3d0", "#d1fae5", "#ecfdf5"];
-  const label = (m: string) => ({ CASH: "Cash", CREDIT_CARD: "Credit card", DEBIT_CARD: "Debit card", INSURANCE: "Insurance", CHECK: "Check", SPLIT: "Split" })[m] ?? m;
+  const label = (m: string) => ({ CASH: "Cash", E_WALLET: "E-wallet", CREDIT_CARD: "Credit card", DEBIT_CARD: "Debit card", INSURANCE: "Insurance", CHECK: "Check", SPLIT: "Split" })[m] ?? m;
   return (
     <div>
       <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full" role="img" aria-label="Payment methods share">

@@ -43,6 +43,7 @@ interface DailyClosing {
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: "Cash",
+  E_WALLET: "E-wallet",
   CREDIT_CARD: "Credit Card",
   DEBIT_CARD: "Debit Card",
   INSURANCE: "Insurance",

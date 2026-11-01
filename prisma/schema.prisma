@@ -739,6 +739,10 @@ model Sale {
   paymentMethod            PaymentMethod
   cashReceived             Decimal?      @db.Decimal(10, 2)
   changeGiven              Decimal?      @db.Decimal(10, 2)
+  // E-wallet payments: which wallet (GCash, Maya, ...) and its reference number,
+  // so the cashier can match the sale to the transfer the store received.
+  paymentProvider          String?
+  paymentReference         String?
   insuranceClaim           Boolean       @default(false)
   copayAmount              Decimal?      @db.Decimal(10, 2)
   insurancePaid            Decimal?      @db.Decimal(10, 2)
@@ -770,6 +774,7 @@ model Sale {
   @@unique([tenantId, saleNumber])
   @@index([tenantId, storeId, saleDate])
   @@index([shiftId])
+  @@index([tenantId, paymentReference])
   @@map("sales")
 }
 
@@ -1016,6 +1021,7 @@ enum PrescriptionStatus {
 
 enum PaymentMethod {
   CASH
+  E_WALLET
   CREDIT_CARD
   DEBIT_CARD
   INSURANCE

@@ -48,7 +48,12 @@ export default async function SalesPage({
   if (storeId) where.storeId = storeId;
   if (paymentMethod) where.paymentMethod = paymentMethod as Prisma.SaleWhereInput["paymentMethod"];
   if (status) where.status = status as Prisma.SaleWhereInput["status"];
-  if (search) where.saleNumber = { contains: search, mode: "insensitive" };
+  // Sale number, or an e-wallet reference number when matching a transfer.
+  if (search)
+    where.AND = [
+      ...(where.AND as Prisma.SaleWhereInput[]),
+      { OR: [{ saleNumber: { contains: search, mode: "insensitive" } }, { paymentReference: { contains: search, mode: "insensitive" } }] },
+    ];
 
   const [sales, todayAgg, cashiers] = await Promise.all([
     prisma.sale.findMany({
@@ -87,6 +92,8 @@ export default async function SalesPage({
           saleNumber: s.saleNumber,
           totalAmount: Number(s.totalAmount),
           paymentMethod: s.paymentMethod,
+          paymentProvider: s.paymentProvider,
+          paymentReference: s.paymentReference,
           discountType: s.discountType,
           status: s.status,
           isReturnRecord: Boolean(s.originalSaleId),

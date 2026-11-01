@@ -334,6 +334,8 @@ export default function PosClient({
   const handleProcessSale = async (payload: {
     paymentMethod: string;
     cashReceived?: number;
+    paymentProvider?: string;
+    paymentReference?: string;
     discountType?: DiscountType;
     discountIdNumber?: string;
     discountHolderName?: string;

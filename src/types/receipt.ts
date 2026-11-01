@@ -47,6 +47,8 @@ export interface ReceiptData {
   vatRemovedFromVatable?: number;
   totalAmount: number;
   paymentMethod: string;
+  paymentProvider?: string | null;
+  paymentReference?: string | null;
   cashReceived?: number;
   changeGiven?: number;
   customer?: { firstName: string; lastName: string };
@@ -78,4 +80,6 @@ export const NOT_BIR_ACCREDITED_NOTICE = "This receipt is not a BIR-accredited O
 export const getReceiptFooterLines = (store: ReceiptStoreSettings) =>
   [store.footerMessage, NOT_BIR_ACCREDITED_NOTICE].map((line) => line?.trim()).filter(Boolean) as string[];
 
-export const formatPaymentMethodLabel = (paymentMethod: string) => paymentMethod.replace(/_/g, " ");
+// E-wallet sales print the wallet name (GCASH, MAYA) since that is what the customer used.
+export const formatPaymentMethodLabel = (paymentMethod: string, provider?: string | null) =>
+  paymentMethod === "E_WALLET" ? (provider ? provider.toUpperCase() : "E-WALLET") : paymentMethod.replace(/_/g, " ");

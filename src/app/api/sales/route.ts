@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { E_WALLET_PROVIDERS, normalizeReference } from "@/lib/payment-methods";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { calculateVatInclusiveTotals, type DiscountType } from "@/lib/vat-calculations";
@@ -85,6 +86,8 @@ export async function POST(request: NextRequest) {
     items,
     paymentMethod,
     cashReceived,
+    paymentProvider,
+    paymentReference,
     discountType,
     discountIdNumber,
     discountHolderName,
@@ -97,6 +100,8 @@ export async function POST(request: NextRequest) {
     items: CheckoutItem[];
     paymentMethod: string;
     cashReceived?: number;
+    paymentProvider?: string;
+    paymentReference?: string;
     discountType?: DiscountType;
     discountIdNumber?: string;
     discountHolderName?: string;
@@ -111,6 +116,29 @@ export async function POST(request: NextRequest) {
   }
   if (!paymentMethod) {
     return NextResponse.json({ error: "paymentMethod is required." }, { status: 400 });
+  }
+  if (!["CASH", "E_WALLET"].includes(paymentMethod)) {
+    return NextResponse.json({ error: "Payment must be cash or e-wallet." }, { status: 400 });
+  }
+  const isEWallet = paymentMethod === "E_WALLET";
+  const walletProvider = isEWallet && E_WALLET_PROVIDERS.includes(paymentProvider as never) ? paymentProvider! : null;
+  const walletReference = isEWallet ? normalizeReference(paymentReference) : "";
+  if (isEWallet && !walletProvider) {
+    return NextResponse.json({ error: "Choose which e-wallet the customer paid with." }, { status: 400 });
+  }
+  if (isEWallet && walletReference.length < 4) {
+    return NextResponse.json({ error: "Enter the e-wallet reference number from the customer's receipt." }, { status: 400 });
+  }
+  // The same transfer can't pay for two sales — catches a double-tapped
+  // checkout or a customer showing an old payment screenshot.
+  if (isEWallet) {
+    const used = await prisma.sale.findFirst({
+      where: { tenantId: session.tenantId, paymentMethod: "E_WALLET", paymentProvider: walletProvider, paymentReference: walletReference },
+      select: { saleNumber: true },
+    });
+    if (used) {
+      return NextResponse.json({ error: `Reference ${walletReference} was already used for sale ${used.saleNumber}.` }, { status: 409 });
+    }
   }
 
   const pendingOrder = pendingOrderId
@@ -229,15 +257,14 @@ export async function POST(request: NextRequest) {
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const todayCount = await prisma.sale.count({
-    where: { tenantId: session.tenantId, saleDate: { gte: todayStart } },
-  });
   const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
     now.getDate()
   ).padStart(2, "0")}`;
   // "AR" (Acknowledgment Receipt), not "OR" (Official Receipt) — Nookly isn't
   // BIR-accredited, so the receipt can't claim to be an official tax document.
-  const saleNumber = `AR-${dateKey}-${String(todayCount + 1).padStart(4, "0")}`;
+  const saleNumberPrefix = `AR-${dateKey}-`;
+  // Assigned inside the transaction (last number today + 1); see the retry below.
+  let saleNumber = "";
 
   const openShift = await prisma.shift.findFirst({
     where: { tenantId: session.tenantId, storeId: session.storeId, userId: session.userId, closedAt: null },
@@ -246,7 +273,15 @@ export async function POST(request: NextRequest) {
 
   const batchWhere = await batchesAtStore(session.tenantId, session.storeId);
 
-  const sale = await prisma.$transaction(async (tx) => {
+  const placeSale = () => prisma.$transaction(async (tx) => {
+    const lastToday = await tx.sale.findFirst({
+      where: { tenantId: session.tenantId, saleNumber: { startsWith: saleNumberPrefix } },
+      orderBy: { saleNumber: "desc" },
+      select: { saleNumber: true },
+    });
+    const lastSeq = lastToday ? parseInt(lastToday.saleNumber.slice(saleNumberPrefix.length), 10) || 0 : 0;
+    saleNumber = `${saleNumberPrefix}${String(lastSeq + 1).padStart(4, "0")}`;
+
     let resolvedPrescriptionId: string | null = null;
     let resolvedCustomerId = customerId || null;
 
@@ -338,7 +373,9 @@ export async function POST(request: NextRequest) {
         vatRemovedFromVatable: vatTotals.vatRemovedFromVatable,
         totalAmount,
         paymentMethod: paymentMethod as never,
-        cashReceived: cashReceived ?? null,
+        cashReceived: isEWallet ? null : cashReceived ?? null,
+        paymentProvider: walletProvider,
+        paymentReference: isEWallet ? walletReference : null,
         changeGiven,
         orderRemarks: orderRemarks || pendingOrder?.orderRemarks || null,
         customerId: resolvedCustomerId,
@@ -406,6 +443,22 @@ export async function POST(request: NextRequest) {
     if (error instanceof PendingOrderTakenError) return null;
     throw error;
   });
+
+  // Two cashiers (or two branches) checking out at the same moment can pick the
+  // same next number; the unique index rejects the second one, so it simply
+  // takes the following number instead of failing the sale.
+  let sale: Awaited<ReturnType<typeof placeSale>> = null;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      sale = await placeSale();
+      break;
+    } catch (error) {
+      const target = (error as { code?: string; meta?: { target?: unknown } }).meta?.target;
+      const isNumberClash = (error as { code?: string }).code === "P2002" && String(target).includes("saleNumber");
+      if (isNumberClash && attempt < 5) continue;
+      throw error;
+    }
+  }
   if (!sale) {
     return NextResponse.json({ error: "Another cashier already completed this order." }, { status: 409 });
   }
