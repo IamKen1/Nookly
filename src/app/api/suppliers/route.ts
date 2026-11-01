@@ -6,8 +6,12 @@ import { hasPermission } from "@/lib/permissions";
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await hasPermission(session.tenantId, session.role, "inventory"))) {
-    return NextResponse.json({ error: "You don't have access to Inventory." }, { status: 403 });
+  const [canInventory, canProducts] = await Promise.all([
+    hasPermission(session.tenantId, session.role, "inventory"),
+    hasPermission(session.tenantId, session.role, "products"),
+  ]);
+  if (!canInventory && !canProducts) {
+    return NextResponse.json({ error: "You don't have access to suppliers." }, { status: 403 });
   }
 
   const suppliers = await prisma.supplier.findMany({
@@ -23,8 +27,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await hasPermission(session.tenantId, session.role, "inventory_adjust"))) {
-    return NextResponse.json({ error: "You don't have permission to change stock." }, { status: 403 });
+  const [canAdjust, canEditProducts] = await Promise.all([
+    hasPermission(session.tenantId, session.role, "inventory_adjust"),
+    hasPermission(session.tenantId, session.role, "products_edit"),
+  ]);
+  if (!canAdjust && !canEditProducts) {
+    return NextResponse.json({ error: "You don't have permission to add suppliers." }, { status: 403 });
   }
 
   const body = await request.json();

@@ -16,6 +16,7 @@ export type { PrescriptionDraft };
 interface PendingPrescription {
   id: string;
   prescriptionNumber: string;
+  status?: string;
   customer: { firstName: string; lastName: string };
 }
 
@@ -25,6 +26,8 @@ interface CheckoutModalProps {
   cart: CartLine[];
   pendingPrescriptions: PendingPrescription[];
   canRecordPrescriptions: boolean;
+  // A prescription this cart continues (from Reorder); preselected at checkout.
+  linkedPrescriptionId?: string;
   onProcessSale: (payload: {
     paymentMethod: string;
     cashReceived?: number;
@@ -47,7 +50,7 @@ const QUICK_AMOUNTS = [100, 200, 500, 1000];
 const discountRateLabel = (d: DiscountDTO) =>
   d.kind === "FIXED" ? `${peso(d.value)} off` : `${Number(d.value.toFixed(2))}%${d.maxAmount != null ? ` · max ${peso(d.maxAmount)}` : ""}`;
 
-export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescriptions, canRecordPrescriptions, onProcessSale }: CheckoutModalProps) {
+export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescriptions, canRecordPrescriptions, linkedPrescriptionId, onProcessSale }: CheckoutModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "E_WALLET">("CASH");
   const [cashReceived, setCashReceived] = useState("");
   const [walletProvider, setWalletProvider] = useState<string>("GCash");
@@ -58,6 +61,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
   const [discountHolderName, setDiscountHolderName] = useState("");
   const [remarks, setRemarks] = useState("");
   const [prescriptionSelection, setPrescriptionSelection] = useState<PrescriptionSelection | null>(null);
+  const [prescriptionIncomplete, setPrescriptionIncomplete] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -73,6 +77,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
       setDiscountHolderName("");
       setRemarks("");
       setPrescriptionSelection(null);
+      setPrescriptionIncomplete(null);
       setIsProcessing(false);
       setError(null);
       setSuccess(null);
@@ -103,6 +108,10 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
 
   const handleProcess = async () => {
     setError(null);
+    if (prescriptionIncomplete) {
+      setError(prescriptionIncomplete);
+      return;
+    }
     if (!isValidPayment) {
       setError(paymentMethod === "CASH" ? "Insufficient cash amount." : "Enter the e-wallet reference number.");
       return;
@@ -232,7 +241,14 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
             </div>
           </div>
 
-          {canRecordPrescriptions && <PrescriptionFields pendingPrescriptions={pendingPrescriptions} onChange={setPrescriptionSelection} />}
+          {canRecordPrescriptions && <PrescriptionFields
+              key={linkedPrescriptionId ?? "new"}
+              pendingPrescriptions={pendingPrescriptions}
+              cart={cart}
+              initialExistingId={linkedPrescriptionId}
+              onChange={setPrescriptionSelection}
+              onIncompleteChange={setPrescriptionIncomplete}
+            />}
 
           <div>
             <h3 className="mb-2 text-sm font-semibold text-gray-900">Order Notes</h3>
@@ -404,6 +420,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
             </div>
           )}
 
+          {prescriptionIncomplete && !error && <p className="text-sm text-amber-700">{prescriptionIncomplete}</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
           {success && <p className="text-sm font-medium text-emerald-600">{success}</p>}
         </div>

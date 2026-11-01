@@ -29,6 +29,8 @@ interface PrescriptionDraft {
   writtenDate: string;
   instructions?: string;
   refillsAllowed?: number;
+  // Prescribed quantity per product when more was prescribed than is bought now.
+  prescribedQuantities?: Record<string, number>;
 }
 
 export async function GET(request: NextRequest) {
@@ -306,8 +308,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (prescriptionsGated && prescriptionId) {
+      // Continuing a prescription: what's bought now counts toward each prescribed item.
       resolvedPrescriptionId = prescriptionId;
-      await tx.prescription.update({ where: { id: prescriptionId }, data: { status: "FILLED" } });
+      const rxItemsNow = await tx.prescriptionItem.findMany({ where: { prescriptionId } });
+      for (const rxItem of rxItemsNow) {
+        const bought = items.filter((i) => i.productId === rxItem.productId).reduce((sum, i) => sum + i.quantity, 0);
+        if (bought > 0) {
+          rxItem.servedQuantity += bought;
+          await tx.prescriptionItem.update({ where: { id: rxItem.id }, data: { servedQuantity: rxItem.servedQuantity } });
+        }
+      }
+      const fullyServed = rxItemsNow.every((i) => i.servedQuantity >= i.quantity);
+      await tx.prescription.update({ where: { id: prescriptionId }, data: { status: fullyServed ? "FILLED" : "PARTIAL" } });
     } else if (prescriptionsGated && prescriptionDraft) {
       const draftCustomerId = prescriptionDraft.customerId
         ?? (
@@ -346,6 +358,11 @@ export async function POST(request: NextRequest) {
       // The Rx-flagged items when there are any; otherwise everything prescribed in this sale.
       const flaggedItems = items.filter((item) => productMap.get(item.productId)?.requiresPrescription);
       const rxItems = flaggedItems.length > 0 ? flaggedItems : items;
+      // Prescribed can be more than what's bought today (partially served), never less.
+      const rxLines = rxItems.map((item) => {
+        const prescribed = Math.trunc(Number(prescriptionDraft.prescribedQuantities?.[item.productId] ?? 0));
+        return { productId: item.productId, quantity: Math.max(item.quantity, Number.isFinite(prescribed) ? prescribed : 0), servedQuantity: item.quantity };
+      });
 
       const createdPrescription = await tx.prescription.create({
         data: {
@@ -357,10 +374,8 @@ export async function POST(request: NextRequest) {
           writtenDate: new Date(prescriptionDraft.writtenDate),
           instructions: prescriptionDraft.instructions || null,
           refillsAllowed: prescriptionDraft.refillsAllowed ?? 0,
-          status: "FILLED",
-          items: {
-            create: rxItems.map((item) => ({ productId: item.productId, quantity: item.quantity })),
-          },
+          status: rxLines.some((l) => l.servedQuantity < l.quantity) ? "PARTIAL" : "FILLED",
+          items: { create: rxLines },
         },
       });
 

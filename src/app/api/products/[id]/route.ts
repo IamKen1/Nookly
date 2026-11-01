@@ -38,7 +38,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     currentStock,
     drugSchedule,
     imageUrl,
+    supplierId,
   } = body;
+
+  // supplierId: a supplier's id sets the product's supplier, "" clears it, absent leaves it.
+  const supplier =
+    typeof supplierId === "string" && supplierId
+      ? await prisma.supplier.findFirst({ where: { id: supplierId, tenantId: session.tenantId }, select: { id: true } })
+      : null;
+  if (typeof supplierId === "string" && supplierId && !supplier) return NextResponse.json({ error: "Supplier not found." }, { status: 400 });
 
   try {
     const product = await prisma.product.update({
@@ -66,6 +74,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         ...(imageUrl !== undefined ? { imageUrl: imageUrl || null } : {}),
       },
     });
+
+    if (typeof supplierId === "string") {
+      await prisma.$transaction([
+        prisma.productSupplier.deleteMany({ where: { productId: id, ...(supplier ? { NOT: { supplierId: supplier.id } } : {}) } }),
+        ...(supplier
+          ? [prisma.productSupplier.upsert({ where: { productId_supplierId: { productId: id, supplierId: supplier.id } }, update: {}, create: { productId: id, supplierId: supplier.id } })]
+          : []),
+      ]);
+    }
 
     if (currentStock !== undefined && session.storeId) {
       await prisma.productStock.upsert({

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { CartLine } from "./CartPanel";
 
 export interface PrescriptionDraft {
   customerId?: string;
@@ -10,6 +11,7 @@ export interface PrescriptionDraft {
   writtenDate: string;
   instructions?: string;
   refillsAllowed?: number;
+  prescribedQuantities?: Record<string, number>;
 }
 
 export interface PrescriptionSelection {
@@ -26,6 +28,7 @@ interface PersonMatch {
 interface PendingPrescription {
   id: string;
   prescriptionNumber: string;
+  status?: string;
   customer: { firstName: string; lastName: string };
 }
 
@@ -40,6 +43,7 @@ function PersonPicker({
   onSelect,
   newValues,
   onNewValuesChange,
+  onUnfinishedChange,
 }: {
   label: string;
   placeholder: string;
@@ -49,10 +53,26 @@ function PersonPicker({
   onSelect: (person: PersonMatch | null) => void;
   newValues: { firstName: string; lastName: string; extra: string };
   onNewValuesChange: (values: { firstName: string; lastName: string; extra: string }) => void;
+  // Called with true while there's typed text that isn't a chosen or new person yet.
+  onUnfinishedChange: (unfinished: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PersonMatch[]>([]);
   const [creatingNew, setCreatingNew] = useState(false);
+  const [searched, setSearched] = useState("");
+
+  const unfinished = creatingNew
+    ? Boolean(newValues.firstName.trim() || newValues.lastName.trim() || newValues.extra.trim()) && !(newValues.firstName.trim() && newValues.lastName.trim())
+    : !selected && Boolean(query.trim());
+  useEffect(() => onUnfinishedChange(unfinished), [unfinished, onUnfinishedChange]);
+
+  // "+ New" starts from whatever was typed in the search box.
+  const startNew = () => {
+    const parts = query.trim().split(/\s+/).filter(Boolean);
+    if (parts.length) onNewValuesChange({ firstName: parts.slice(0, -1).join(" ") || parts[0], lastName: parts.length > 1 ? parts[parts.length - 1] : "", extra: "" });
+    setQuery("");
+    setCreatingNew(true);
+  };
 
   useEffect(() => {
     if (!query.trim() || selected) {
@@ -62,7 +82,10 @@ function PersonPicker({
     const t = setTimeout(() => {
       fetch(searchUrl(query.trim()))
         .then((r) => (r.ok ? r.json() : []))
-        .then((data) => setResults(Array.isArray(data) ? data.slice(0, 6) : []))
+        .then((data) => {
+          setResults(Array.isArray(data) ? data.slice(0, 6) : []);
+          setSearched(query.trim());
+        })
         .catch(() => setResults([]));
     }, 250);
     return () => clearTimeout(t);
@@ -75,7 +98,11 @@ function PersonPicker({
           <label className="text-xs font-semibold text-gray-700">{label} (new)</label>
           <button
             type="button"
-            onClick={() => setCreatingNew(false)}
+            onClick={() => {
+              // Going back to search drops what was typed here, so it can't be saved by accident.
+              onNewValuesChange({ firstName: "", lastName: "", extra: "" });
+              setCreatingNew(false);
+            }}
             className="text-xs font-medium text-emerald-700 hover:underline"
           >
             Search existing instead
@@ -125,7 +152,7 @@ function PersonPicker({
     <div>
       <div className="mb-1.5 flex items-center justify-between">
         <label className="text-xs font-semibold text-gray-700">{label}</label>
-        <button type="button" onClick={() => setCreatingNew(true)} className="text-xs font-medium text-emerald-700 hover:underline">
+        <button type="button" onClick={startNew} className="text-xs font-medium text-emerald-700 hover:underline">
           + New {label.toLowerCase()}
         </button>
       </div>
@@ -153,19 +180,42 @@ function PersonPicker({
           ))}
         </div>
       )}
+      {query.trim() && !selected && (
+        <p className="mt-1 text-xs text-amber-800">
+          {searched === query.trim() && results.length === 0 ? `No ${label.toLowerCase()} named “${query.trim()}”. ` : "Pick a name from the list, or "}
+          <button type="button" onClick={startNew} className="font-semibold text-emerald-700 underline">
+            add “{query.trim()}” as a new {label.toLowerCase()}
+          </button>
+          . Only a chosen or newly added {label.toLowerCase()} is saved.
+        </p>
+      )}
     </div>
   );
 }
 
 export default function PrescriptionFields({
   pendingPrescriptions,
+  cart = [],
+  initialExistingId,
   onChange,
+  onIncompleteChange,
 }: {
   pendingPrescriptions: PendingPrescription[];
+  cart?: CartLine[];
+  // Opens on "Existing / refill" with this prescription chosen (from Reorder).
+  initialExistingId?: string;
   onChange: (selection: PrescriptionSelection | null) => void;
+  // A message while the prescription is started but can't be saved yet; null when it's complete or untouched.
+  onIncompleteChange?: (message: string | null) => void;
 }) {
-  const [mode, setMode] = useState<"new" | "existing">("new");
-  const [existingId, setExistingId] = useState("");
+  const [mode, setMode] = useState<"new" | "existing">(initialExistingId ? "existing" : "new");
+  const [existingId, setExistingId] = useState(initialExistingId ?? "");
+  // The items this prescription covers (Rx-flagged ones if any, else the whole
+  // cart) and how many of each were prescribed — more than bought now means
+  // it stays "partially served" until the rest is bought.
+  const flagged = cart.filter((l) => l.requiresPrescription);
+  const rxLines = flagged.length > 0 ? flagged : cart;
+  const [prescribed, setPrescribed] = useState<Record<string, string>>({});
 
   const [customer, setCustomer] = useState<PersonMatch | null>(null);
   const [newCustomer, setNewCustomer] = useState({ firstName: "", lastName: "", extra: "" });
@@ -174,6 +224,8 @@ export default function PrescriptionFields({
   const [writtenDate, setWrittenDate] = useState(todayStr());
   const [instructions, setInstructions] = useState("");
   const [refillsAllowed, setRefillsAllowed] = useState(0);
+  const [customerUnfinished, setCustomerUnfinished] = useState(false);
+  const [doctorUnfinished, setDoctorUnfinished] = useState(false);
 
   useEffect(() => {
     if (mode === "existing") {
@@ -184,6 +236,10 @@ export default function PrescriptionFields({
     const hasCustomer = Boolean(customer || (newCustomer.firstName.trim() && newCustomer.lastName.trim()));
     const hasDoctor = Boolean(doctor || (newDoctor.firstName.trim() && newDoctor.lastName.trim()));
     if (!hasCustomer || !hasDoctor || !writtenDate) {
+      onChange(null);
+      return;
+    }
+    if (customerUnfinished || doctorUnfinished) {
       onChange(null);
       return;
     }
@@ -201,10 +257,26 @@ export default function PrescriptionFields({
         writtenDate,
         instructions: instructions.trim() || undefined,
         refillsAllowed,
+        prescribedQuantities: Object.fromEntries(
+          rxLines.map((l) => [l.productId, Math.max(l.quantity, parseInt(prescribed[l.productId] ?? "", 10) || l.quantity)])
+        ),
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, existingId, customer, newCustomer, doctor, newDoctor, writtenDate, instructions, refillsAllowed]);
+  }, [mode, existingId, customer, newCustomer, doctor, newDoctor, writtenDate, instructions, refillsAllowed, customerUnfinished, doctorUnfinished, prescribed, cart]);
+
+  // Started but not finished: checkout waits instead of silently dropping it.
+  useEffect(() => {
+    if (!onIncompleteChange) return;
+    if (mode === "existing") return onIncompleteChange(null);
+    const hasCustomer = Boolean(customer || (newCustomer.firstName.trim() && newCustomer.lastName.trim()));
+    const hasDoctor = Boolean(doctor || (newDoctor.firstName.trim() && newDoctor.lastName.trim()));
+    const touched = hasCustomer || hasDoctor || customerUnfinished || doctorUnfinished || Boolean(instructions.trim());
+    if (!touched) return onIncompleteChange(null);
+    if (customerUnfinished || !hasCustomer) return onIncompleteChange("Prescription: choose the customer from the list or add them as new — or clear it.");
+    if (doctorUnfinished || !hasDoctor) return onIncompleteChange("Prescription: choose the doctor from the list or add them as new — or clear it.");
+    onIncompleteChange(null);
+  }, [mode, customer, newCustomer, doctor, newDoctor, instructions, customerUnfinished, doctorUnfinished, onIncompleteChange]);
 
   return (
     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
@@ -240,6 +312,7 @@ export default function PrescriptionFields({
           {pendingPrescriptions.map((p) => (
             <option key={p.id} value={p.id}>
               {p.prescriptionNumber} — {p.customer.firstName} {p.customer.lastName}
+              {p.status === "PARTIAL" ? " (partially served)" : ""}
             </option>
           ))}
         </select>
@@ -254,6 +327,7 @@ export default function PrescriptionFields({
             onSelect={setCustomer}
             newValues={newCustomer}
             onNewValuesChange={setNewCustomer}
+            onUnfinishedChange={setCustomerUnfinished}
           />
           <PersonPicker
             label="Doctor"
@@ -264,6 +338,7 @@ export default function PrescriptionFields({
             onSelect={setDoctor}
             newValues={newDoctor}
             onNewValuesChange={setNewDoctor}
+            onUnfinishedChange={setDoctorUnfinished}
           />
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -287,6 +362,29 @@ export default function PrescriptionFields({
               />
             </div>
           </div>
+          {rxLines.length > 0 && (
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-gray-700">Prescribed quantity</label>
+              <ul className="space-y-1.5">
+                {rxLines.map((l) => (
+                  <li key={l.productId} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate text-gray-700">
+                      {l.name} <span className="text-xs text-gray-400">· buying {l.quantity} now</span>
+                    </span>
+                    <input
+                      type="number"
+                      min={l.quantity}
+                      value={prescribed[l.productId] ?? String(l.quantity)}
+                      onChange={(e) => setPrescribed((prev) => ({ ...prev, [l.productId]: e.target.value }))}
+                      aria-label={`Prescribed quantity of ${l.name}`}
+                      className="w-20 shrink-0 rounded-lg border border-gray-300 p-1.5 text-right text-sm focus:border-emerald-500"
+                    />
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-gray-500">If the doctor prescribed more than the customer buys now, it stays partially served until the rest is bought.</p>
+            </div>
+          )}
           <input
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}

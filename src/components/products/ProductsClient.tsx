@@ -32,14 +32,60 @@ interface Product {
   drugSchedule: string | null;
   imageUrl: string | null;
   category: { id: string; name: string };
+  supplier: { id: string; name: string } | null;
 }
 
-const DRUG_SCHEDULES = ["SCHEDULE_I", "SCHEDULE_II", "SCHEDULE_III", "SCHEDULE_IV", "SCHEDULE_V"];
+const ADD_NEW = "__new";
 
 const Field = ({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) => (
   <div className={className}>
     <label className="mb-1 block text-xs font-medium text-zinc-500">{label}</label>
     {children}
+  </div>
+);
+
+// A text box with Add / Cancel, used for adding a category or supplier without leaving the form.
+const InlineAdd = ({
+  value,
+  onChange,
+  placeholder,
+  busy,
+  onAdd,
+  onCancel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  busy: boolean;
+  onAdd: () => void;
+  onCancel: () => void;
+}) => (
+  <div className="flex gap-1.5">
+    <input
+      autoFocus
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onAdd();
+        }
+        if (e.key === "Escape") onCancel();
+      }}
+      placeholder={placeholder}
+      className="min-w-0 flex-1 rounded-lg border border-emerald-400 px-3 py-2 text-sm"
+    />
+    <button
+      type="button"
+      onClick={onAdd}
+      disabled={busy || !value.trim()}
+      className="shrink-0 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
+    >
+      {busy ? "…" : "Add"}
+    </button>
+    <button type="button" onClick={onCancel} className="shrink-0 rounded-lg border border-zinc-300 px-2.5 text-sm text-zinc-600">
+      Cancel
+    </button>
   </div>
 );
 
@@ -60,6 +106,7 @@ const emptyForm = {
   isVatable: true,
   isOTC: true,
   drugSchedule: "",
+  supplierId: "",
   imageUrl: null as string | null,
   batchNumber: "",
   expirationDate: "",
@@ -93,6 +140,43 @@ export default function ProductsClient({
     "/api/categories",
     { fallbackData: initialCategories }
   );
+  const { data: suppliers = [], mutate: refreshSuppliers } = useSWR<{ id: string; name: string }[]>(showForm ? "/api/suppliers" : null);
+  // Inline "+ New category" / "+ New supplier" right in the product form.
+  const [newCategoryName, setNewCategoryName] = useState<string | null>(null);
+  const [newSupplierName, setNewSupplierName] = useState<string | null>(null);
+  const [addingInline, setAddingInline] = useState(false);
+
+  const addInline = async (kind: "category" | "supplier") => {
+    const name = (kind === "category" ? newCategoryName : newSupplierName)?.trim();
+    if (!name) return;
+    setAddingInline(true);
+    setError(null);
+    try {
+      const res = await fetch(kind === "category" ? "/api/categories" : "/api/suppliers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `Couldn't add the ${kind}.`);
+        return;
+      }
+      if (kind === "category") {
+        await refreshCategories();
+        setForm((f) => ({ ...f, categoryId: data.id }));
+        setNewCategoryName(null);
+      } else {
+        await refreshSuppliers();
+        setForm((f) => ({ ...f, supplierId: data.id }));
+        setNewSupplierName(null);
+      }
+    } catch {
+      setError("Network error.");
+    } finally {
+      setAddingInline(false);
+    }
+  };
 
   const productsUrl = debouncedSearch
     ? `/api/products?search=${encodeURIComponent(debouncedSearch)}`
@@ -113,6 +197,8 @@ export default function ProductsClient({
     setEditingProduct(null);
     setForm(emptyForm);
     setError(null);
+    setNewCategoryName(null);
+    setNewSupplierName(null);
   };
 
   const handleEditClick = (product: Product) => {
@@ -134,6 +220,7 @@ export default function ProductsClient({
       isVatable: product.isVatable,
       isOTC: product.isOTC,
       drugSchedule: product.drugSchedule ?? "",
+      supplierId: product.supplier?.id ?? "",
       imageUrl: product.imageUrl,
       batchNumber: "",
       expirationDate: "",
@@ -293,7 +380,10 @@ export default function ProductsClient({
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-zinc-600">{p.category?.name}</td>
+                  <td className="px-4 py-3 text-zinc-600">
+                    {p.category?.name}
+                    {p.supplier && <span className="block text-xs text-zinc-400">{p.supplier.name}</span>}
+                  </td>
                   <td className="px-4 py-3 text-zinc-900">₱{Number(p.sellingPrice).toFixed(2)}</td>
                   <td className="px-4 py-3">
                     <span className={p.currentStock <= p.minimumStock ? "font-semibold text-amber-600" : "text-zinc-700"}>
@@ -371,33 +461,57 @@ export default function ProductsClient({
                   />
                 </Field>
                 <Field label="Category">
-                  <select
-                    required
-                    value={form.categoryId}
-                    onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  >
-                    <option value="">Category...</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  {newCategoryName !== null ? (
+                    <InlineAdd
+                      value={newCategoryName}
+                      onChange={setNewCategoryName}
+                      placeholder="New category name"
+                      busy={addingInline}
+                      onAdd={() => addInline("category")}
+                      onCancel={() => setNewCategoryName(null)}
+                    />
+                  ) : (
+                    <select
+                      required
+                      value={form.categoryId}
+                      onChange={(e) => (e.target.value === ADD_NEW ? setNewCategoryName("") : setForm({ ...form, categoryId: e.target.value }))}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">Category...</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                      <option value={ADD_NEW}>+ New category…</option>
+                    </select>
+                  )}
                 </Field>
-                <Field label="Drug Schedule" className="sm:col-span-1 lg:col-span-2">
-                  <select
-                    value={form.drugSchedule}
-                    onChange={(e) => setForm({ ...form, drugSchedule: e.target.value })}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                  >
-                    <option value="">Unscheduled</option>
-                    {DRUG_SCHEDULES.map((s) => (
-                      <option key={s} value={s}>
-                        {s.replace("_", " ")}
-                      </option>
-                    ))}
-                  </select>
+                <Field label="Supplier" className="sm:col-span-1 lg:col-span-2">
+                  {newSupplierName !== null ? (
+                    <InlineAdd
+                      value={newSupplierName}
+                      onChange={setNewSupplierName}
+                      placeholder="New supplier name"
+                      busy={addingInline}
+                      onAdd={() => addInline("supplier")}
+                      onCancel={() => setNewSupplierName(null)}
+                    />
+                  ) : (
+                    <select
+                      value={form.supplierId}
+                      onChange={(e) => (e.target.value === ADD_NEW ? setNewSupplierName("") : setForm({ ...form, supplierId: e.target.value }))}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">No supplier</option>
+                      {suppliers.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                      <option value={ADD_NEW}>+ New supplier…</option>
+                    </select>
+                  )}
                 </Field>
               </div>
 

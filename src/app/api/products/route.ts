@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
         drugSchedule: true,
         imageUrl: true,
         category: { select: { id: true, name: true } },
+        suppliers: { select: { supplier: { select: { id: true, name: true } } }, take: 1 },
         stocks: {
           where: session.storeId ? { storeId: session.storeId } : undefined,
           select: { currentStock: true, sellingPrice: true },
@@ -63,8 +64,10 @@ export async function GET(request: NextRequest) {
       orderBy: { name: "asc" },
     });
 
-    return products.map((product) => ({
+    return products.map(({ suppliers, ...product }) => ({
       ...product,
+      // The product's usual supplier (set on the product form), if any.
+      supplier: suppliers[0]?.supplier ?? null,
       currentStock: product.stocks[0]?.currentStock ?? 0,
       // This branch's own price, if it has one. sellingPrice stays the base
       // price so editing a product never overwrites it with a branch price.
@@ -106,6 +109,7 @@ export async function POST(request: NextRequest) {
     categoryId,
     drugSchedule,
     imageUrl,
+    supplierId,
     batchNumber,
     expirationDate,
   }: {
@@ -129,6 +133,7 @@ export async function POST(request: NextRequest) {
     isVatable?: boolean;
     categoryId: string;
     drugSchedule?: string;
+    supplierId?: string;
     imageUrl?: string;
     batchNumber?: string;
     expirationDate?: string;
@@ -176,6 +181,10 @@ export async function POST(request: NextRequest) {
   }
 
   const normalizedBarcode = typeof barcode === "string" ? barcode.trim() : "";
+  const supplier = supplierId
+    ? await prisma.supplier.findFirst({ where: { id: supplierId, tenantId: session.tenantId }, select: { id: true } })
+    : null;
+  if (supplierId && !supplier) return NextResponse.json({ error: "Supplier not found." }, { status: 400 });
 
   try {
     const product = await prisma.product.create({
@@ -201,6 +210,7 @@ export async function POST(request: NextRequest) {
         categoryId,
         drugSchedule: (drugSchedule || null) as never,
         imageUrl: imageUrl || null,
+        ...(supplier ? { suppliers: { create: { supplierId: supplier.id } } } : {}),
         stocks: {
           create: { storeId: session.storeId, currentStock: currentStock ?? 0 },
         },
@@ -213,6 +223,7 @@ export async function POST(request: NextRequest) {
                   expirationDate: new Date(expirationDate!),
                   quantity: currentStock!,
                   costPrice,
+                  supplierId: supplier?.id ?? null,
                 },
               },
             }

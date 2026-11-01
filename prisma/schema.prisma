@@ -123,6 +123,7 @@ model Tenant {
   stockRequests        StockRequest[]
   receivings           Receiving[]
   discounts            Discount[]
+  heldCarts            HeldCart[]
 
   @@map("tenants")
 }
@@ -318,6 +319,7 @@ model Store {
   stockRequestsIn  StockRequest[]    @relation("StockRequestTo")
   stockRequestsOut StockRequest[]    @relation("StockRequestFrom")
   receivings       Receiving[]
+  heldCarts        HeldCart[]
 
   @@unique([tenantId, code])
   @@map("stores")
@@ -358,6 +360,7 @@ model User {
   passwordResetTokens   PasswordResetToken[]
   apiKeys               ApiKey[]
   receivings            Receiving[]            @relation("ReceivingReceivedBy")
+  heldCarts             HeldCart[]             @relation("HeldCartUser")
 
   @@unique([tenantId, email])
   @@map("users")
@@ -711,7 +714,10 @@ model Prescription {
 
 model PrescriptionItem {
   id             String       @id @default(cuid())
-  quantity       Int
+  quantity       Int // prescribed
+  // How many have been dispensed so far; the prescription is partially served
+  // until every item reaches its prescribed quantity.
+  servedQuantity Int          @default(0)
   instructions   String?
   substituted    Boolean      @default(false)
   prescriptionId String
@@ -1133,4 +1139,22 @@ model Discount {
 
   @@unique([tenantId, code])
   @@map("discounts")
+}
+
+// A cart put on hold at the POS so the counter can serve the next customer,
+// then loaded back later. Prices and stock are re-read when it's loaded.
+model HeldCart {
+  id        String   @id @default(cuid())
+  tenantId  String
+  storeId   String
+  userId    String
+  label     String? // customer name or a note, to tell held carts apart
+  items     Json // [{ productId, quantity }]
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user      User     @relation("HeldCartUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, storeId, createdAt])
+  @@map("held_carts")
 }

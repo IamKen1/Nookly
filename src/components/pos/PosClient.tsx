@@ -28,6 +28,7 @@ import {
   ClipboardList,
   Store,
   X,
+  PauseCircle,
 } from "lucide-react";
 import { useBarcode } from "@/hooks/useBarcode";
 import { useBarcodeAudio } from "@/hooks/useBarcodeAudio";
@@ -45,6 +46,7 @@ import ShiftModal from "./ShiftModal";
 import CashTransactionModal from "./CashTransactionModal";
 import PrinterConnectButton from "./PrinterConnectButton";
 import PendingOrdersModal, { type PendingOrder } from "./PendingOrdersModal";
+import HeldCartsModal, { type HeldCart } from "./HeldCartsModal";
 import BranchSwitcher from "@/components/app/BranchSwitcher";
 import { PriceCheck } from "@/components/dashboard/cashier-tools";
 
@@ -146,6 +148,12 @@ export default function PosClient({
   const [sendingOrder, setSendingOrder] = useState(false);
   // The pending order the cart was loaded from, so checkout records its order taker.
   const [activeOrder, setActiveOrder] = useState<{ id: string; orderNumber: string; takerName: string } | null>(null);
+  // Set when the cart came from a prescription's Reorder; `continues` means
+  // this sale counts toward that prescription.
+  const [linkedRx, setLinkedRx] = useState<{ id: string; prescriptionNumber: string; customerName: string; continues: boolean } | null>(null);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const [holdLabel, setHoldLabel] = useState<string | null>(null);
+  const { data: heldCarts = [], mutate: refreshHeld } = useSWR<HeldCart[]>("/api/held-carts", { revalidateOnFocus: true });
   const isOrderTaker = !canCollectPayment(role ?? "");
 
   // Cashiers watch for orders sent by order takers — but only at branches that
@@ -275,7 +283,99 @@ export default function PosClient({
   const clearCart = () => {
     setCart([]);
     setActiveOrder(null);
+    setLinkedRx(null);
   };
+
+  // Saved lines (held cart, prescription) → cart lines, capped at today's stock.
+  const toCartLines = (items: HeldCart["items"]): CartLine[] =>
+    items
+      .filter((i) => i.currentStock > 0)
+      .map((i) => ({
+        productId: i.productId,
+        name: i.name,
+        strength: i.strength,
+        dosageForm: i.dosageForm,
+        price: i.price,
+        quantity: Math.min(i.quantity, i.currentStock),
+        maxStock: i.currentStock,
+        isVatable: i.isVatable,
+        requiresPrescription: i.requiresPrescription,
+      }));
+
+  const holdCurrentCart = async (label: string) => {
+    const res = await fetch("/api/held-carts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })) }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showNotification(data.error ?? "Couldn't put the cart on hold.", "error");
+      return false;
+    }
+    clearCart();
+    refreshHeld();
+    return true;
+  };
+
+  const startHold = () => {
+    if (cart.length === 0) return;
+    if (activeOrder) {
+      showNotification("This cart is an order from an order taker — finish or clear it instead.", "error");
+      return;
+    }
+    setHoldLabel("");
+  };
+
+  const loadHeldCart = async (held: HeldCart) => {
+    if (cart.length > 0) {
+      if (activeOrder) {
+        showNotification("Finish or clear the current order before loading a held cart.", "error");
+        return;
+      }
+      if (!confirm("Put the current cart on hold and load this one?")) return;
+      if (!(await holdCurrentCart(""))) return;
+    }
+    const lines = toCartLines(held.items);
+    await fetch(`/api/held-carts/${held.id}`, { method: "DELETE" });
+    setCart(lines);
+    setLinkedRx(null);
+    refreshHeld();
+    setHeldOpen(false);
+    const short = held.items.some((i) => i.quantity > i.currentStock);
+    showNotification(
+      short ? `Loaded ${held.label || "held cart"} — some items were reduced to available stock` : `Loaded ${held.label || "held cart"}`,
+      short ? "error" : "success"
+    );
+  };
+
+  // Reorder from the Prescriptions page arrives as /pos?rx=<id>.
+  useEffect(() => {
+    const rxId = new URLSearchParams(window.location.search).get("rx");
+    if (!rxId) return;
+    window.history.replaceState(null, "", "/pos");
+    (async () => {
+      const res = await fetch(`/api/prescriptions/${rxId}/reorder`);
+      const data = await res.json();
+      if (!res.ok) {
+        showNotification(data.error ?? "Couldn't load the prescription.", "error");
+        return;
+      }
+      const lines = toCartLines(data.lines);
+      if (lines.length === 0) {
+        showNotification(`Nothing from ${data.prescription.prescriptionNumber} is in stock here.`, "error");
+        return;
+      }
+      setCart(lines);
+      setActiveOrder(null);
+      setLinkedRx(data.prescription);
+      const short = data.lines.some((i: HeldCart["items"][number]) => i.quantity > i.currentStock);
+      showNotification(
+        `Added ${lines.length} item${lines.length === 1 ? "" : "s"} from ${data.prescription.prescriptionNumber}${short ? " — some reduced to available stock" : ""}`,
+        short ? "error" : "success"
+      );
+    })();
+  }, []);
 
   const loadPendingOrder = (order: PendingOrder) => {
     if (cart.length > 0 && !confirm("Replace the items currently in the cart with this order?")) return;
@@ -335,7 +435,7 @@ export default function PosClient({
 
   // Prescription attachment is always available at checkout (optional, cashier's
   // choice) rather than only when the cart happens to contain a flagged item.
-  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>(canRecordPrescriptions ? "/api/prescriptions?status=PENDING" : null);
+  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>(canRecordPrescriptions ? "/api/prescriptions?status=PENDING,PARTIAL" : null);
 
   const handleProcessSale = async (payload: {
     paymentMethod: string;
@@ -375,7 +475,11 @@ export default function PosClient({
   };
 
   const checkoutLabel = isOrderTaker ? (sendingOrder ? "Sending..." : "Send to cashier") : "Checkout";
-  const cartNotice = activeOrder ? `Order ${activeOrder.orderNumber} · taken by ${activeOrder.takerName}` : undefined;
+  const cartNotice = activeOrder
+    ? `Order ${activeOrder.orderNumber} · taken by ${activeOrder.takerName}`
+    : linkedRx
+    ? `${linkedRx.continues ? "Continuing" : "Reorder of"} ${linkedRx.prescriptionNumber} · ${linkedRx.customerName}`
+    : undefined;
 
   const printReceiptForSale = async (saleId: string) => {
     try {
@@ -473,7 +577,7 @@ export default function PosClient({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           {branches?.switchable && (
             <BranchSwitcher stores={branches.switchable} currentStoreId={branches.currentStoreId} tone="dark" />
           )}
@@ -502,21 +606,34 @@ export default function PosClient({
               </button>
               <button
                 onClick={() => setCashTxnModalOpen(true)}
+                title="Cash In/Out"
                 className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-white/10"
               >
                 <Banknote className="h-4 w-4" />
-                <span className="hidden sm:inline">Cash In/Out</span>
+                <span className="hidden 2xl:inline">Cash In/Out</span>
               </button>
             </>
+          )}
+          {heldCarts.length > 0 && (
+            <button
+              onClick={() => setHeldOpen(true)}
+                title="Carts on hold"
+              className="flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-white/25"
+            >
+              <PauseCircle className="h-4 w-4" />
+              <span className="hidden 2xl:inline">On hold</span>
+              <span className="rounded-full bg-white px-1.5 text-[11px] font-bold text-emerald-800">{heldCarts.length}</span>
+            </button>
           )}
           {branches && (
             // Any user at the counter can see which branch has an item.
             <button
               onClick={() => setStockCheckOpen(true)}
+                title="Stock check"
               className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-white/10"
             >
               <Store className="h-4 w-4" />
-              <span className="hidden sm:inline">Stock check</span>
+              <span className="hidden 2xl:inline">Stock check</span>
             </button>
           )}
           <PrinterConnectButton printer={printer} />
@@ -640,6 +757,7 @@ export default function PosClient({
           onSetQty={setQty}
           onRemove={removeLine}
           onClear={clearCart}
+          onHold={startHold}
           onOpenCheckout={isOrderTaker ? sendToCashier : () => setShowCheckout(true)}
           subtotal={subtotal}
           vatableSales={vatableSales}
@@ -684,6 +802,10 @@ export default function PosClient({
             onSetQty={setQty}
             onRemove={removeLine}
             onClear={clearCart}
+            onHold={() => {
+              setMobileCartOpen(false);
+              startHold();
+            }}
             onOpenCheckout={() => {
               setMobileCartOpen(false);
               if (isOrderTaker) sendToCashier();
@@ -705,8 +827,56 @@ export default function PosClient({
         cart={cart}
         pendingPrescriptions={pendingPrescriptions}
         canRecordPrescriptions={canRecordPrescriptions}
+        linkedPrescriptionId={linkedRx?.continues ? linkedRx.id : undefined}
         onProcessSale={handleProcessSale}
       />
+
+      {heldOpen && (
+        <HeldCartsModal
+          carts={heldCarts}
+          onClose={() => setHeldOpen(false)}
+          onLoad={loadHeldCart}
+          onRemove={async (c) => {
+            await fetch(`/api/held-carts/${c.id}`, { method: "DELETE" });
+            await refreshHeld();
+          }}
+        />
+      )}
+
+      {holdLabel !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setHoldLabel(null)}>
+          <form
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (await holdCurrentCart(holdLabel)) {
+                setHoldLabel(null);
+                showNotification("Cart put on hold — load it again from On hold", "success");
+              }
+            }}
+          >
+            <h2 className="text-base font-bold text-gray-900">Put this cart on hold</h2>
+            <p className="mt-1 text-xs text-gray-500">Serve the next customer, then load this cart again from On hold.</p>
+            <input
+              autoFocus
+              value={holdLabel}
+              onChange={(e) => setHoldLabel(e.target.value)}
+              placeholder="Customer name or note (optional)"
+              maxLength={60}
+              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setHoldLabel(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700">
+                Cancel
+              </button>
+              <button type="submit" className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                Hold cart
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {stockCheckOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh]" onClick={() => setStockCheckOpen(false)}>

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { requireFeature } from "@/lib/plan-gating";
 import { hasPermission } from "@/lib/permissions";
+import { prescriptionWhere } from "@/lib/prescription-list";
 
 interface PrescriptionItemInput {
   productId: string;
@@ -20,23 +21,15 @@ export async function GET(request: NextRequest) {
   const gate = await requireFeature(session.tenantId, "prescriptions");
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
-  const { searchParams } = new URL(request.url);
-  const status = searchParams.get("status");
-  const customerId = searchParams.get("customerId");
-
   const prescriptions = await prisma.prescription.findMany({
-    where: {
-      tenantId: session.tenantId,
-      ...(status ? { status: status as never } : {}),
-      ...(customerId ? { customerId } : {}),
-    },
+    where: prescriptionWhere(session.tenantId, new URL(request.url).searchParams),
     include: {
       customer: { select: { id: true, firstName: true, lastName: true } },
       doctor: { select: { id: true, firstName: true, lastName: true, licenseNumber: true } },
       items: { include: { product: { select: { id: true, name: true, requiresPrescription: true } } } },
     },
-    orderBy: { createdAt: "desc" },
-    take: 100,
+    orderBy: [{ originalDate: "desc" }, { createdAt: "desc" }],
+    take: 500,
   });
 
   return NextResponse.json(prescriptions);

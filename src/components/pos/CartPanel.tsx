@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X, PauseCircle } from "lucide-react";
 import { peso } from "@/lib/format";
 
 export interface CartLine {
@@ -22,6 +22,8 @@ interface CartPanelProps {
   onSetQty: (productId: string, quantity: number) => void;
   onRemove: (productId: string) => void;
   onClear: () => void;
+  // Sets the cart aside to serve the next customer.
+  onHold?: () => void;
   onOpenCheckout: () => void;
   subtotal: number;
   vatableSales: number;
@@ -74,6 +76,7 @@ export default function CartPanel({
   onSetQty,
   onRemove,
   onClear,
+  onHold,
   onOpenCheckout,
   subtotal,
   vatableSales,
@@ -208,13 +211,24 @@ export default function CartPanel({
                   <CreditCard className="h-4 w-4" />
                   {checkoutLabel}
                 </button>
-                <button
-                  onClick={onClear}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-300 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Clear All
-                </button>
+                <div className={onHold ? "grid grid-cols-2 gap-1.5" : ""}>
+                  {onHold && (
+                    <button
+                      onClick={onHold}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-300 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                    >
+                      <PauseCircle className="h-3.5 w-3.5" />
+                      Hold
+                    </button>
+                  )}
+                  <button
+                    onClick={onClear}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-300 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Clear All
+                  </button>
+                </div>
               </div>
             </div>
           </>
