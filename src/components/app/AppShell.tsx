@@ -71,7 +71,7 @@ export default async function AppShell({
         </div>
       </aside>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-3">
           <div className="flex items-center gap-2.5">
             <span className="text-sm font-medium text-zinc-700">{tenantName}</span>
