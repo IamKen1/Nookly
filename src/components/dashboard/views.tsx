@@ -18,6 +18,7 @@ import { startOfTodayPH } from "@/lib/timezone";
 import { prisma } from "@/lib/prisma";
 import {
   getExpiring,
+  getInventoryValue,
   getLowStock,
   getMonthToDate,
   getMyCounter,
@@ -162,6 +163,84 @@ async function AttentionCard({ scope, show }: { scope: DashboardScope; show: { s
 }
 
 // ─── Owner & Admin: the whole business at a glance ──────────────────────────
+// What the stock in the store is worth right now — the owner's capital on the shelves.
+function StockOnHandCard({ value }: { value: Awaited<ReturnType<typeof getInventoryValue>> }) {
+  const profit = value.retail - value.cost;
+  const showBranches = value.branches.length > 1;
+  return (
+    <Card
+      title="Stock on hand"
+      subtitle={showBranches ? "What the stock in all your branches is worth right now" : "What the stock in your store is worth right now"}
+      action={{ href: "/inventory", label: "Inventory" }}
+    >
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div>
+          <p className="text-xs font-medium text-zinc-500">At cost</p>
+          <p className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900">
+            <CountUp value={value.cost} />
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">What you paid for it</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-zinc-500">At selling price</p>
+          <p className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900">
+            <CountUp value={value.retail} />
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">If all of it sells</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-zinc-500">Potential profit</p>
+          <p className="mt-0.5 text-2xl font-semibold tracking-tight text-emerald-700">
+            <CountUp value={profit} />
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            {value.products.toLocaleString("en-PH")} products · {value.units.toLocaleString("en-PH")} units
+          </p>
+        </div>
+      </div>
+
+      {value.expiredCost > 0 && (
+        <Link
+          href="/inventory?tab=batches"
+          className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-800 hover:bg-red-100"
+        >
+          <span>
+            <span className="font-semibold">{peso(value.expiredCost)}</span>{" "}of it (at cost) is already expired and can&apos;t be sold
+          </span>
+          <span className="shrink-0 font-semibold">Review →</span>
+        </Link>
+      )}
+
+      {showBranches && (
+        <ul className="mt-5 divide-y divide-zinc-100 border-t border-zinc-100">
+          {value.branches.map((b) => {
+            const share = value.cost > 0 ? (b.cost / value.cost) * 100 : 0;
+            return (
+              <li key={b.id} className="flex items-center gap-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-zinc-800">{b.name}</p>
+                  <span className="mt-1.5 flex items-center gap-2">
+                    <span className="h-1.5 max-w-48 flex-1 overflow-hidden rounded-full bg-zinc-100">
+                      <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${share}%` }} />
+                    </span>
+                    <span className="text-[11px] tabular-nums text-zinc-400">{share.toFixed(0)}% of stock</span>
+                  </span>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-semibold tabular-nums text-zinc-900">{peso(b.cost)}</p>
+                  <p className="text-[11px] tabular-nums text-zinc-400">
+                    {b.units.toLocaleString("en-PH")} units · {peso(b.retail)} selling
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export async function OwnerDashboard({
   scope,
   info,
@@ -174,7 +253,7 @@ export async function OwnerDashboard({
   plan: { name: string; detail: string | null } | null;
 }) {
   const p = scope.permissions;
-  const [today, trend, mtd, top, mix, low, expiring] = await Promise.all([
+  const [today, trend, mtd, top, mix, low, expiring, stockValue] = await Promise.all([
     getTodayVsYesterday(scope),
     getSalesTrend(scope, 7),
     getMonthToDate(scope),
@@ -182,6 +261,7 @@ export async function OwnerDashboard({
     getPaymentMix(scope, 30),
     p.inventory ? getLowStock(scope, 0) : null,
     p.inventory ? getExpiring(scope, 60, 0) : null,
+    p.inventory ? getInventoryValue(scope) : null,
   ]);
 
   return (
@@ -236,6 +316,8 @@ export async function OwnerDashboard({
           />
         )}
       </div>
+
+      {stockValue && <StockOnHandCard value={stockValue} />}
 
       <div className="grid gap-6 xl:grid-cols-5">
         <Card title="Last 7 days" subtitle="Completed sales per day" className="xl:col-span-3" action={p.sales ? { href: "/sales", label: "Sales" } : undefined}>

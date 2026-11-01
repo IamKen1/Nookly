@@ -370,3 +370,72 @@ export async function getPendingPrescriptions(scope: DashboardScope, take = 6) {
     createdAt: r.createdAt.toISOString(),
   }));
 }
+
+// What the stock on the shelves is worth, per branch: at cost (the money tied
+// up in it) and at selling price (what it brings in if all of it sells).
+// Cost uses each batch's own purchase cost; units not covered by a batch fall
+// back to the product's cost price. Selling price honors branch prices.
+export async function getInventoryValue(scope: DashboardScope) {
+  const tenantId = scope.session.tenantId;
+  const [stores, stocks, batches] = await Promise.all([
+    prisma.store.findMany({
+      where: { tenantId, isActive: true, ...(scope.storeId ? { id: scope.storeId } : {}) },
+      orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
+      select: { id: true, name: true },
+    }),
+    prisma.productStock.findMany({
+      where: { store: { tenantId, isActive: true }, ...(scope.storeId ? { storeId: scope.storeId } : {}), currentStock: { gt: 0 }, product: { isActive: true } },
+      select: { productId: true, storeId: true, currentStock: true, sellingPrice: true, product: { select: { costPrice: true, sellingPrice: true } } },
+    }),
+    prisma.productBatch.findMany({
+      where: { quantity: { gt: 0 }, product: { tenantId, isActive: true } },
+      select: { productId: true, storeId: true, quantity: true, costPrice: true, expirationDate: true },
+    }),
+  ]);
+  // Batches recorded before branches existed belong to the primary branch.
+  const primary = await prisma.store.findFirst({
+    where: { tenantId },
+    orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
+    select: { id: true },
+  });
+
+  const now = new Date();
+  const batchesByKey = new Map<string, { quantity: number; cost: number; expired: boolean }[]>();
+  for (const b of batches) {
+    const key = `${b.productId}:${b.storeId ?? primary?.id}`;
+    const list = batchesByKey.get(key) ?? [];
+    list.push({ quantity: b.quantity, cost: Number(b.costPrice), expired: b.expirationDate < now });
+    batchesByKey.set(key, list);
+  }
+
+  const byStore = new Map(stores.map((s) => [s.id, { id: s.id, name: s.name, cost: 0, retail: 0, expiredCost: 0, units: 0, products: 0 }]));
+  for (const s of stocks) {
+    const row = byStore.get(s.storeId);
+    if (!row) continue;
+    const productCost = Number(s.product.costPrice);
+    let remaining = s.currentStock;
+    let cost = 0;
+    let expiredCost = 0;
+    // Value units from the recorded batches first, never more than are on hand.
+    for (const b of batchesByKey.get(`${s.productId}:${s.storeId}`) ?? []) {
+      if (remaining <= 0) break;
+      const units = Math.min(b.quantity, remaining);
+      cost += units * b.cost;
+      if (b.expired) expiredCost += units * b.cost;
+      remaining -= units;
+    }
+    cost += remaining * productCost;
+    row.cost += cost;
+    row.expiredCost += expiredCost;
+    row.retail += s.currentStock * Number(s.sellingPrice ?? s.product.sellingPrice);
+    row.units += s.currentStock;
+    row.products += 1;
+  }
+
+  const branches = [...byStore.values()];
+  const total = branches.reduce(
+    (t, b) => ({ cost: t.cost + b.cost, retail: t.retail + b.retail, expiredCost: t.expiredCost + b.expiredCost, units: t.units + b.units }),
+    { cost: 0, retail: 0, expiredCost: 0, units: 0 }
+  );
+  return { ...total, products: new Set(stocks.map((s) => s.productId)).size, branches };
+}

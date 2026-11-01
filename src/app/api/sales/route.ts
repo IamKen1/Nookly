@@ -193,8 +193,12 @@ export async function POST(request: NextRequest) {
     item.price = unitPrice;
   }
 
-  const requiresPrescription = items.some((item) => productMap.get(item.productId)?.requiresPrescription);
-  const prescriptionsGated = requiresPrescription && (await hasFeature(await getTenantPlanCode(session.tenantId), "prescriptions"));
+  // A prescription entered at checkout is recorded whenever the plan includes
+  // prescriptions — not only when a cart item is flagged Rx. Pharmacists often
+  // log prescriptions for items that aren't flagged, and dropping them silently
+  // left them missing from the Prescriptions page.
+  const hasPrescriptionInput = Boolean(prescriptionId || prescriptionDraft);
+  const prescriptionsGated = hasPrescriptionInput && (await hasFeature(await getTenantPlanCode(session.tenantId), "prescriptions"));
   if (prescriptionsGated) {
     if (prescriptionId) {
       const prescription = await prisma.prescription.findFirst({ where: { id: prescriptionId, tenantId: session.tenantId } });
@@ -256,7 +260,6 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
     now.getDate()
   ).padStart(2, "0")}`;
@@ -325,12 +328,18 @@ export async function POST(request: NextRequest) {
         ).id;
 
       const rxDateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-      const rxTodayCount = await tx.prescription.count({
-        where: { tenantId: session.tenantId, createdAt: { gte: todayStart } },
+      // Continue from the day's last RX number (a count can repeat one after a delete).
+      const lastRx = await tx.prescription.findFirst({
+        where: { tenantId: session.tenantId, prescriptionNumber: { startsWith: `RX-${rxDateKey}-` } },
+        orderBy: { prescriptionNumber: "desc" },
+        select: { prescriptionNumber: true },
       });
-      const prescriptionNumber = `RX-${rxDateKey}-${String(rxTodayCount + 1).padStart(4, "0")}`;
+      const lastRxSeq = lastRx ? parseInt(lastRx.prescriptionNumber.slice(`RX-${rxDateKey}-`.length), 10) || 0 : 0;
+      const prescriptionNumber = `RX-${rxDateKey}-${String(lastRxSeq + 1).padStart(4, "0")}`;
 
-      const rxItems = items.filter((item) => productMap.get(item.productId)?.requiresPrescription);
+      // The Rx-flagged items when there are any; otherwise everything prescribed in this sale.
+      const flaggedItems = items.filter((item) => productMap.get(item.productId)?.requiresPrescription);
+      const rxItems = flaggedItems.length > 0 ? flaggedItems : items;
 
       const createdPrescription = await tx.prescription.create({
         data: {
@@ -454,7 +463,7 @@ export async function POST(request: NextRequest) {
       break;
     } catch (error) {
       const target = (error as { code?: string; meta?: { target?: unknown } }).meta?.target;
-      const isNumberClash = (error as { code?: string }).code === "P2002" && String(target).includes("saleNumber");
+      const isNumberClash = (error as { code?: string }).code === "P2002" && /saleNumber|prescriptionNumber/.test(String(target));
       if (isNumberClash && attempt < 5) continue;
       throw error;
     }

@@ -98,6 +98,7 @@ export default function PosClient({
   permissions,
   branches,
   pollOrders = false,
+  canRecordPrescriptions = false,
 }: {
   categories: Category[];
   tenantName: string;
@@ -108,6 +109,8 @@ export default function PosClient({
   branches?: { currentStoreId: string | null; currentName: string; switchable: { id: string; name: string }[] | null };
   // True when this branch has active order takers; only then does the POS watch for their orders.
   pollOrders?: boolean;
+  // Plan includes prescriptions; otherwise checkout doesn't offer to record one.
+  canRecordPrescriptions?: boolean;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -329,7 +332,7 @@ export default function PosClient({
 
   // Prescription attachment is always available at checkout (optional, cashier's
   // choice) rather than only when the cart happens to contain a flagged item.
-  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>("/api/prescriptions?status=PENDING");
+  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>(canRecordPrescriptions ? "/api/prescriptions?status=PENDING" : null);
 
   const handleProcessSale = async (payload: {
     paymentMethod: string;
@@ -687,6 +690,7 @@ export default function PosClient({
         onClose={() => setShowCheckout(false)}
         cart={cart}
         pendingPrescriptions={pendingPrescriptions}
+        canRecordPrescriptions={canRecordPrescriptions}
         onProcessSale={handleProcessSale}
       />
 

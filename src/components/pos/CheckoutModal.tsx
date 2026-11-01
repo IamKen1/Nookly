@@ -21,6 +21,7 @@ interface CheckoutModalProps {
   onClose: () => void;
   cart: CartLine[];
   pendingPrescriptions: PendingPrescription[];
+  canRecordPrescriptions: boolean;
   onProcessSale: (payload: {
     paymentMethod: string;
     cashReceived?: number;
@@ -45,7 +46,7 @@ const DISCOUNTS: { value: DiscountType; label: string; percent: number }[] = [
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
-export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescriptions, onProcessSale }: CheckoutModalProps) {
+export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescriptions, canRecordPrescriptions, onProcessSale }: CheckoutModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "E_WALLET">("CASH");
   const [cashReceived, setCashReceived] = useState("");
   const [walletProvider, setWalletProvider] = useState<string>("GCash");
@@ -224,7 +225,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
             </div>
           </div>
 
-          <PrescriptionFields pendingPrescriptions={pendingPrescriptions} onChange={setPrescriptionSelection} />
+          {canRecordPrescriptions && <PrescriptionFields pendingPrescriptions={pendingPrescriptions} onChange={setPrescriptionSelection} />}
 
           <div>
             <h3 className="mb-2 text-sm font-semibold text-gray-900">Order Notes</h3>

@@ -2,6 +2,7 @@ import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { getRolePermissions } from "@/lib/permissions";
 import { branchHasOrderTakers, canManageAllBranches, getBranchContext } from "@/lib/branch-scope";
+import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
 import PosClient from "@/components/pos/PosClient";
 
 export default async function PosPage() {
@@ -14,7 +15,7 @@ export default async function PosPage() {
 
   if (!tenant) return null;
 
-  const [categories, permissions, branchContext, pollOrders] = await Promise.all([
+  const [categories, permissions, branchContext, pollOrders, canRecordPrescriptions] = await Promise.all([
     prisma.category.findMany({
       where: { tenantId: session.tenantId, isActive: true },
       orderBy: { name: "asc" },
@@ -22,6 +23,7 @@ export default async function PosPage() {
     getRolePermissions(session.tenantId, session.role),
     getBranchContext(session),
     branchHasOrderTakers(session.tenantId, session.storeId),
+    getTenantPlanCode(session.tenantId).then((code) => hasFeature(code, "prescriptions")),
   ]);
   const branches = branchContext.isMultiBranch
     ? {
@@ -40,6 +42,7 @@ export default async function PosPage() {
       permissions={permissions}
       branches={branches}
       pollOrders={pollOrders}
+      canRecordPrescriptions={canRecordPrescriptions}
       categories={categories.map((c) => ({ id: c.id, name: c.name }))}
     />
   );
