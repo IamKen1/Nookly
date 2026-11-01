@@ -75,15 +75,19 @@ type Tab = "stock" | "movements" | "batches" | "branches";
 export default function InventoryClient({
   isOwner = false,
   canAdjust = true,
+  initialTab,
   branches,
 }: {
   isOwner?: boolean;
   // Without "Adjust inventory" the page is view-only: no import, adjust, receive, or discard.
   canAdjust?: boolean;
+  initialTab?: string;
   // Present only when the workspace has more than one branch.
   branches?: { stores: { id: string; name: string }[]; currentStoreId: string | null; canTransfer: boolean; canSetPrices: boolean };
 }) {
-  const [tab, setTab] = useState<Tab>("stock");
+  const [tab, setTab] = useState<Tab>(
+    initialTab === "batches" || initialTab === "movements" || (initialTab === "branches" && branches) ? (initialTab as Tab) : "stock"
+  );
   const [search, setSearch] = useState("");
   const [adjustTarget, setAdjustTarget] = useState<Product | null>(null);
   const [adjustQty, setAdjustQty] = useState("");

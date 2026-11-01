@@ -6,8 +6,11 @@ import { hasFeature, type PlanCode } from "@/lib/plan-gating";
 import AppShell from "@/components/app/AppShell";
 import InventoryClient from "@/components/inventory/InventoryClient";
 
-export default async function InventoryPage() {
+// `?tab=batches|movements|branches` opens that tab directly (e.g. from the
+// dashboard's expiring or stock-request links).
+export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const session = await requirePagePermission("inventory");
+  const { tab } = await searchParams;
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: session.tenantId },
@@ -25,6 +28,7 @@ export default async function InventoryPage() {
     <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>
       <InventoryClient
         isOwner={session.role === "OWNER"}
+        initialTab={tab}
         canAdjust={await hasPermission(session.tenantId, session.role, "inventory_adjust")}
         branches={
           branchContext.isMultiBranch

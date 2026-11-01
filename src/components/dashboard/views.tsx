@@ -3,7 +3,6 @@ import {
   AlarmClock,
   BadgePercent,
   Boxes,
-  ClipboardList,
   ClipboardPlus,
   Coins,
   PackageX,
@@ -30,10 +29,13 @@ import {
   getStaffLeaderboard,
   getTodayVsYesterday,
   getTopProducts,
+  getPendingPrescriptions,
+  getWaitingOrders,
   type DashboardScope,
 } from "@/lib/dashboard-data";
 import { CountUp, DailySalesBars, HourlySalesLine } from "./charts";
 import { AlertRow, Card, DeltaChip, PaymentMix, RankBars, StatTile } from "./widgets";
+import { PriceCheck, ReprintButton } from "./cashier-tools";
 
 const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
 const phHourNow = () => new Date(Date.now() + PH_OFFSET_MS).getUTCHours();
@@ -82,13 +84,14 @@ function Hero({ info, eyebrow, children, aside }: { info: HeroInfo; eyebrow: str
   );
 }
 
-function HeroStat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="min-w-28 rounded-xl bg-white/10 px-3.5 py-2.5 ring-1 ring-white/15 backdrop-blur">
+function HeroStat({ label, value, href }: { label: string; value: React.ReactNode; href?: string }) {
+  const body = (
+    <div className={`min-w-28 rounded-xl bg-white/10 px-3.5 py-2.5 ring-1 ring-white/15 backdrop-blur ${href ? "transition hover:bg-white/20" : ""}`}>
       <p className="text-[11px] text-emerald-50/80">{label}</p>
       <p className="mt-0.5 text-base font-semibold">{value}</p>
     </div>
   );
+  return href ? <Link href={href}>{body}</Link> : body;
 }
 
 function QuickLink({ href, icon: Icon, label, primary = false }: { href: string; icon: typeof ShoppingCart; label: string; primary?: boolean }) {
@@ -110,13 +113,14 @@ async function AttentionCard({ scope, show }: { scope: DashboardScope; show: { s
     show.stock ? getLowStock(scope, 4) : null,
     show.expiry ? getExpiring(scope, 30, 4) : null,
   ]);
+  const p = scope.permissions;
   const rows: React.ReactNode[] = [];
   if (queues.pendingOrders > 0)
-    rows.push(<AlertRow key="po" title={`${queues.pendingOrders} order${queues.pendingOrders > 1 ? "s" : ""} waiting for a cashier`} status="warning" statusLabel="Waiting" />);
+    rows.push(<AlertRow key="po" title={`${queues.pendingOrders} order${queues.pendingOrders > 1 ? "s" : ""} waiting for a cashier`} detail="POS › Orders" status="warning" statusLabel="Waiting" href={p.pos ? "/pos" : undefined} />);
   if (queues.stockRequests > 0)
-    rows.push(<AlertRow key="sr" title={`${queues.stockRequests} stock request${queues.stockRequests > 1 ? "s" : ""} to review`} detail="Inventory › All branches" status="warning" statusLabel="Review" />);
+    rows.push(<AlertRow key="sr" title={`${queues.stockRequests} stock request${queues.stockRequests > 1 ? "s" : ""} to review`} detail="Inventory › All branches" status="warning" statusLabel="Review" href="/inventory?tab=branches" />);
   if (queues.prescriptions > 0)
-    rows.push(<AlertRow key="rx" title={`${queues.prescriptions} prescription${queues.prescriptions > 1 ? "s" : ""} pending`} status="info" statusLabel="Pending" />);
+    rows.push(<AlertRow key="rx" title={`${queues.prescriptions} prescription${queues.prescriptions > 1 ? "s" : ""} pending`} status="info" statusLabel="Pending" href={p.prescriptions ? "/prescriptions" : undefined} />);
   for (const b of expiring?.items ?? [])
     rows.push(
       <AlertRow
@@ -125,6 +129,7 @@ async function AttentionCard({ scope, show }: { scope: DashboardScope; show: { s
         detail={`Batch ${b.batchNumber} · ${b.quantity} left`}
         status={b.daysLeft < 0 ? "critical" : "warning"}
         statusLabel={b.daysLeft < 0 ? "Expired" : `${b.daysLeft}d left`}
+        href="/inventory?tab=batches"
       />
     );
   for (const s of low?.items ?? [])
@@ -135,6 +140,7 @@ async function AttentionCard({ scope, show }: { scope: DashboardScope; show: { s
         detail={scope.storeId ? `Minimum ${s.minimum}` : `${s.branch} · minimum ${s.minimum}`}
         status={s.stock <= 0 ? "critical" : "warning"}
         statusLabel={s.stock <= 0 ? "Out of stock" : `${s.stock} left`}
+        href="/inventory"
       />
     );
   return (
@@ -176,7 +182,6 @@ export async function OwnerDashboard({
     p.inventory ? getLowStock(scope, 0) : null,
     p.inventory ? getExpiring(scope, 60, 0) : null,
   ]);
-  const week = trend.daily.reduce((s, d) => s + d.total, 0);
 
   return (
     <div className="space-y-6">
@@ -187,7 +192,6 @@ export async function OwnerDashboard({
           <>
             <HeroStat label="Transactions" value={<CountUp value={today.transactions} format="int" />} />
             <HeroStat label="Average sale" value={peso(today.average)} />
-            <HeroStat label="Last 7 days" value={peso(week)} />
           </>
         }
       >
@@ -226,7 +230,7 @@ export async function OwnerDashboard({
             label="Expiring in 60 days"
             value={<CountUp value={expiring.count} format="int" />}
             hint={expiring.expired ? `${expiring.expired} already expired` : "Batches with stock"}
-            href="/inventory"
+            href="/inventory?tab=batches"
             tone={expiring.expired ? "critical" : expiring.count ? "warning" : "default"}
           />
         )}
@@ -303,12 +307,11 @@ export async function OwnerDashboard({
 // ─── Manager: running the branch today ──────────────────────────────────────
 export async function ManagerDashboard({ scope, info }: { scope: DashboardScope; info: HeroInfo }) {
   const p = scope.permissions;
-  const [today, trend, shifts, leaders, low] = await Promise.all([
+  const [today, trend, shifts, leaders] = await Promise.all([
     getTodayVsYesterday(scope),
     getSalesTrend(scope, 7),
     getOpenShifts(scope),
     getStaffLeaderboard(scope, 5),
-    p.inventory ? getLowStock(scope, 0) : null,
   ]);
   return (
     <div className="space-y-6">
@@ -319,7 +322,6 @@ export async function ManagerDashboard({ scope, info }: { scope: DashboardScope;
           <>
             <HeroStat label="Transactions" value={<CountUp value={today.transactions} format="int" />} />
             <HeroStat label="Average sale" value={peso(today.average)} />
-            <HeroStat label="On shift now" value={<CountUp value={shifts.length} format="int" />} />
           </>
         }
       >
@@ -377,11 +379,6 @@ export async function ManagerDashboard({ scope, info }: { scope: DashboardScope;
         <AttentionCard scope={scope} show={{ stock: p.inventory, expiry: p.inventory }} />
       </div>
 
-      {low && low.count > 0 && (
-        <p className="text-center text-xs text-zinc-400">
-          {low.count} product{low.count > 1 ? "s are" : " is"} at or below minimum stock{p.inventory && " — see Inventory"}.
-        </p>
-      )}
     </div>
   );
 }
@@ -389,12 +386,17 @@ export async function ManagerDashboard({ scope, info }: { scope: DashboardScope;
 // ─── Pharmacist & Pharmacy Tech: stock and prescriptions health ─────────────
 export async function PharmacistDashboard({ scope, info }: { scope: DashboardScope; info: HeroInfo }) {
   const p = scope.permissions;
-  const [expiring, low, queues] = await Promise.all([
+  const [expiring, low, rx, queues] = await Promise.all([
     p.inventory ? getExpiring(scope, 60, 8) : null,
     p.inventory ? getLowStock(scope, 8) : null,
+    getPendingPrescriptions(scope, 8),
     getQueues(scope),
   ]);
-  const attention = (expiring?.count ?? 0) + (low?.count ?? 0) + queues.prescriptions;
+  const rxCount = p.prescriptions ? queues.prescriptions : 0;
+  const attention = (expiring?.count ?? 0) + (low?.count ?? 0) + rxCount;
+  const batches = p.inventory ? "/inventory?tab=batches" : undefined;
+  const stock = p.inventory ? "/inventory" : undefined;
+  const rxHref = p.prescriptions ? "/prescriptions" : undefined;
   return (
     <div className="space-y-6">
       <Hero
@@ -402,9 +404,10 @@ export async function PharmacistDashboard({ scope, info }: { scope: DashboardSco
         eyebrow="Items needing attention"
         aside={
           <>
-            <HeroStat label="Expired batches" value={<CountUp value={expiring?.expired ?? 0} format="int" />} />
-            <HeroStat label="Expiring ≤ 60 days" value={<CountUp value={expiring?.count ?? 0} format="int" />} />
-            <HeroStat label="Low on stock" value={<CountUp value={low?.count ?? 0} format="int" />} />
+            {p.inventory && <HeroStat label="Expired batches" value={expiring?.expired ?? 0} href={batches} />}
+            {p.inventory && <HeroStat label="Expiring ≤ 60 days" value={expiring?.count ?? 0} href={batches} />}
+            {p.inventory && <HeroStat label="Low on stock" value={low?.count ?? 0} href={stock} />}
+            {p.prescriptions && <HeroStat label="Prescriptions pending" value={rxCount} href={rxHref} />}
           </>
         }
       >
@@ -412,105 +415,211 @@ export async function PharmacistDashboard({ scope, info }: { scope: DashboardSco
           <CountUp value={attention} format="int" />
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {p.inventory && <QuickLink href="/inventory" icon={Boxes} label="Inventory" primary />}
+          {p.inventory && <QuickLink href="/inventory?tab=batches" icon={Boxes} label="Receive or discard batches" primary />}
           {p.prescriptions && <QuickLink href="/prescriptions" icon={ClipboardPlus} label="Prescriptions" />}
           {p.pos && <QuickLink href="/pos" icon={ShoppingCart} label="POS" />}
         </div>
       </Hero>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile icon={AlarmClock} label="Expired batches" value={expiring?.expired ?? 0} hint="Pull from shelves" tone={expiring?.expired ? "critical" : "default"} href={p.inventory ? "/inventory" : undefined} />
-        <StatTile icon={AlarmClock} label="Expiring in 60 days" value={expiring?.count ?? 0} hint="Sell these first" tone={expiring?.count ? "warning" : "default"} href={p.inventory ? "/inventory" : undefined} />
-        <StatTile icon={PackageX} label="Low on stock" value={low?.count ?? 0} hint={low?.outOfStock ? `${low.outOfStock} out of stock` : "At or below minimum"} tone={low?.outOfStock ? "critical" : low?.count ? "warning" : "default"} href={p.inventory ? "/inventory" : undefined} />
-        <StatTile icon={ClipboardList} label="Pending prescriptions" value={queues.prescriptions} hint="Waiting to be filled" tone={queues.prescriptions ? "warning" : "default"} href={p.prescriptions ? "/prescriptions" : undefined} />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Expiring soonest" subtitle="Batches with stock, next 60 days" action={p.inventory ? { href: "/inventory", label: "Batches" } : undefined}>
-          {!expiring || expiring.items.length === 0 ? (
-            <p className="py-6 text-center text-sm text-zinc-400">Nothing expiring in the next 60 days.</p>
-          ) : (
-            <ul className="divide-y divide-zinc-100">
-              {expiring.items.map((b) => (
-                <AlertRow
-                  key={b.id}
-                  title={b.name}
-                  detail={`Batch ${b.batchNumber} · ${b.quantity} left · ${formatDate(b.expirationDate)}`}
-                  status={b.daysLeft < 0 ? "critical" : b.daysLeft <= 30 ? "warning" : "info"}
-                  statusLabel={b.daysLeft < 0 ? "Expired" : `${b.daysLeft}d left`}
-                />
-              ))}
-            </ul>
-          )}
-        </Card>
-        <Card title="Running low" subtitle="Reorder before these run out" action={p.inventory ? { href: "/inventory", label: "Stock levels" } : undefined}>
-          {!low || low.items.length === 0 ? (
-            <p className="py-6 text-center text-sm text-zinc-400">Every product is above its minimum.</p>
-          ) : (
-            <ul className="divide-y divide-zinc-100">
-              {low.items.map((s) => (
-                <AlertRow
-                  key={`${s.id}-${s.branch}`}
-                  title={s.name}
-                  detail={`Minimum ${s.minimum}${scope.storeId ? "" : ` · ${s.branch}`}`}
-                  status={s.stock <= 0 ? "critical" : "warning"}
-                  statusLabel={s.stock <= 0 ? "Out of stock" : `${s.stock} left`}
-                />
-              ))}
-            </ul>
-          )}
-        </Card>
+      <div className={`grid gap-6 ${p.prescriptions && p.inventory ? "xl:grid-cols-3" : "lg:grid-cols-2"}`}>
+        {p.inventory && (
+          <Card title="Expiring soonest" subtitle="Pull expired lots, sell the next ones first" action={{ href: "/inventory?tab=batches", label: "Batches" }}>
+            {!expiring || expiring.items.length === 0 ? (
+              <p className="py-6 text-center text-sm text-zinc-400">Nothing expiring in the next 60 days.</p>
+            ) : (
+              <ul className="divide-y divide-zinc-100">
+                {expiring.items.map((b) => (
+                  <AlertRow
+                    key={b.id}
+                    title={b.name}
+                    detail={`Batch ${b.batchNumber} · ${b.quantity} left · ${formatDate(b.expirationDate)}`}
+                    status={b.daysLeft < 0 ? "critical" : b.daysLeft <= 30 ? "warning" : "info"}
+                    statusLabel={b.daysLeft < 0 ? "Expired" : `${b.daysLeft}d left`}
+                    href={batches}
+                  />
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
+        {p.inventory && (
+          <Card title="Running low" subtitle="Reorder before these run out" action={{ href: "/inventory", label: "Stock levels" }}>
+            {!low || low.items.length === 0 ? (
+              <p className="py-6 text-center text-sm text-zinc-400">Every product is above its minimum.</p>
+            ) : (
+              <ul className="divide-y divide-zinc-100">
+                {low.items.map((s) => (
+                  <AlertRow
+                    key={`${s.id}-${s.branch}`}
+                    title={s.name}
+                    detail={`Minimum ${s.minimum}${scope.storeId ? "" : ` · ${s.branch}`}`}
+                    status={s.stock <= 0 ? "critical" : "warning"}
+                    statusLabel={s.stock <= 0 ? "Out of stock" : `${s.stock} left`}
+                    href={stock}
+                  />
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
+        {p.prescriptions && (
+          <Card title="Prescriptions to fill" subtitle="Oldest first" action={{ href: "/prescriptions", label: "All prescriptions" }}>
+            {rx.length === 0 ? (
+              <p className="py-6 text-center text-sm text-zinc-400">No prescriptions waiting.</p>
+            ) : (
+              <ul className="divide-y divide-zinc-100">
+                {rx.map((r) => (
+                  <AlertRow
+                    key={r.id}
+                    title={`${r.number} · ${r.patient}`}
+                    detail={`${r.items} item${r.items === 1 ? "" : "s"} · received ${formatDate(r.createdAt)}`}
+                    status={r.status === "PARTIAL" ? "warning" : "info"}
+                    statusLabel={r.status === "PARTIAL" ? "Partly filled" : "Pending"}
+                    href={rxHref}
+                  />
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
       </div>
     </div>
   );
 }
 
-// ─── Cashier: my shift and my sales ─────────────────────────────────────────
+// ─── Cashier: my shift, my drawer, my counter tools ─────────────────────────
+const methodLabel = (m: string) =>
+  ({ CASH: "Cash", CREDIT_CARD: "Credit card", DEBIT_CARD: "Debit card", INSURANCE: "Insurance", CHECK: "Check", SPLIT: "Split" })[m] ?? m;
+
 export async function CashierDashboard({ scope, info }: { scope: DashboardScope; info: HeroInfo }) {
   const p = scope.permissions;
-  const [me, queues] = await Promise.all([getMyCounter(scope.session), getQueues(scope)]);
+  const [me, orders] = await Promise.all([getMyCounter(scope.session), getWaitingOrders(scope.session)]);
+  const shift = me.shift;
+  // Same parts the shift close adds up, so the total matches end-of-shift.
+  const drawerRows = shift
+    ? [
+        { label: "Starting cash", value: shift.startingCash },
+        { label: "Cash sales", value: shift.cashSales },
+        ...(shift.eWallet.cashInCount ? [{ label: `E-wallet cash in (${shift.eWallet.cashInCount})`, value: shift.eWallet.cashInTotal }] : []),
+        ...(shift.eWallet.cashOutCount ? [{ label: `E-wallet cash out (${shift.eWallet.cashOutCount})`, value: -shift.eWallet.cashOutTotal }] : []),
+        ...(shift.load.count ? [{ label: `Load sold (${shift.load.count})`, value: shift.load.total }] : []),
+        ...(shift.eWallet.feesEarned + shift.load.feesEarned
+          ? [{ label: "Service fees earned", value: shift.eWallet.feesEarned + shift.load.feesEarned }]
+          : []),
+        ...(shift.expenses ? [{ label: "Expenses paid out", value: -shift.expenses }] : []),
+      ]
+    : [];
+
   return (
     <div className="space-y-6">
       <Hero
         info={info}
-        eyebrow={me.shift ? `Your shift · open since ${timePH(me.shift.openedAt)}` : "Your shift"}
+        eyebrow={shift ? `Your shift · open since ${timePH(shift.openedAt)}` : "Your shift"}
         aside={
-          me.shift ? (
+          shift ? (
             <>
-              <HeroStat label="Sales this shift" value={<CountUp value={me.shift.count} format="int" />} />
-              <HeroStat label="Cash sales" value={peso(me.shift.cashSales)} />
-              <HeroStat label="Starting cash" value={peso(me.shift.startingCash)} />
+              <HeroStat label="Transactions" value={shift.salesCount} />
+              <HeroStat label="Average sale" value={peso(shift.salesCount ? shift.netSales / shift.salesCount : 0)} />
             </>
           ) : undefined
         }
       >
-        {me.shift ? (
+        {shift ? (
           <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
-            <CountUp value={me.shift.total} />
+            <CountUp value={shift.netSales} />
           </p>
         ) : (
           <p className="mt-1 text-2xl font-semibold tracking-tight">No shift open yet</p>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {p.pos && <QuickLink href="/pos" icon={ShoppingCart} label={me.shift ? "Go to POS" : "Start shift in POS"} primary />}
+          {p.pos && <QuickLink href="/pos" icon={ShoppingCart} label={shift ? "Go to POS" : "Start shift in POS"} primary />}
           {p.sales && <QuickLink href="/sales" icon={Receipt} label="My sales" />}
         </div>
       </Hero>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatTile icon={Coins} label="My sales today" value={<CountUp value={me.todayTotal} />} tone="good" />
-        <StatTile icon={Receipt} label="Transactions today" value={me.todayCount} hint={me.todayCount ? `Avg ${peso(me.todayTotal / me.todayCount)}` : undefined} />
-        <StatTile
-          icon={Users}
-          label="Orders waiting"
-          value={queues.pendingOrders}
-          hint={queues.pendingOrders ? "Open Orders in the POS" : "None right now"}
-          tone={queues.pendingOrders ? "warning" : "default"}
-          href={p.pos ? "/pos" : undefined}
-        />
+      {orders.length > 0 && (
+        <Card
+          title={`${orders.length} order${orders.length > 1 ? "s" : ""} waiting for you`}
+          subtitle="Open Orders in the POS to load one into the cart"
+          action={p.pos ? { href: "/pos", label: "Open POS" } : undefined}
+        >
+          <ul className="divide-y divide-zinc-100">
+            {orders.map((o) => (
+              <li key={o.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-zinc-800">{o.orderNumber}</p>
+                  <p className="text-xs text-zinc-400">
+                    From {o.takenBy} · {timePH(o.createdAt)} · {o.itemCount} item{o.itemCount === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-semibold tabular-nums text-zinc-900">{peso(o.total)}</p>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <div className={`grid gap-6 ${shift ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
+        {shift && (
+          <Card title="Cash drawer" subtitle="What should be in your drawer now">
+            <p className="text-2xl font-semibold tracking-tight text-zinc-900">{peso(shift.expectedCash)}</p>
+            <ul className="mt-3 space-y-1.5 border-t border-zinc-100 pt-3 text-sm">
+              {drawerRows.map((r) => (
+                <li key={r.label} className="flex justify-between gap-3">
+                  <span className="text-zinc-500">{r.label}</span>
+                  <span className={`tabular-nums ${r.value < 0 ? "text-red-600" : "text-zinc-800"}`}>
+                    {r.value < 0 ? "−" : ""}
+                    {peso(Math.abs(r.value))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-zinc-400">Count your drawer against this when you end your shift.</p>
+          </Card>
+        )}
+        {shift && (
+          <Card title="Payments this shift" subtitle="Match card totals with the terminal">
+            {shift.paymentMethods.length === 0 ? (
+              <p className="py-6 text-center text-sm text-zinc-400">No sales yet this shift.</p>
+            ) : (
+              <ul className="space-y-2.5 text-sm">
+                {shift.paymentMethods.map((m) => (
+                  <li key={m.method} className="flex items-center justify-between gap-3">
+                    <span className="text-zinc-700">
+                      {methodLabel(m.method)} <span className="text-xs text-zinc-400">· {m.salesCount}</span>
+                    </span>
+                    <span className="font-semibold tabular-nums text-zinc-900">{peso(m.totalAmount)}</span>
+                  </li>
+                ))}
+                {shift.returnsAmount !== 0 && (
+                  <li className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-2.5">
+                    <span className="text-zinc-500">Returns / refunds</span>
+                    <span className="tabular-nums text-red-600">−{peso(Math.abs(shift.returnsAmount))}</span>
+                  </li>
+                )}
+              </ul>
+            )}
+          </Card>
+        )}
+        {p.pos && (
+          <Card title="Price & stock check" subtitle="Answer “magkano po?” without touching the cart">
+            <PriceCheck />
+          </Card>
+        )}
+        {!shift && (
+          <Card title="Before you start" subtitle="Your first steps for the day">
+            <ol className="space-y-2.5 text-sm text-zinc-700">
+              <li>
+                1. Open the POS and tap <span className="font-semibold">Start shift</span>.
+              </li>
+              <li>2. Count your starting cash and enter it.</li>
+              <li>3. Ring up sales — your drawer total appears here as you go.</li>
+            </ol>
+          </Card>
+        )}
       </div>
 
-      <Card title="My recent sales" subtitle="Your last 5 transactions" action={p.sales ? { href: "/sales", label: "All my sales" } : undefined}>
+      <Card title="My recent sales" subtitle="Reprint a receipt when a customer asks" action={p.sales ? { href: "/sales", label: "All my sales" } : undefined}>
         {me.recent.length === 0 ? (
           <p className="py-6 text-center text-sm text-zinc-400">No sales yet — your first one will show up here.</p>
         ) : (
@@ -520,12 +629,13 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-zinc-800">{s.saleNumber}</p>
                   <p className="text-xs text-zinc-400">
-                    {timePH(s.saleDate)} · {s.items} item{s.items === 1 ? "" : "s"} · {s.paymentMethod.replace("_", " ").toLowerCase()}
+                    {timePH(s.saleDate)} · {s.items} item{s.items === 1 ? "" : "s"} · {methodLabel(s.paymentMethod).toLowerCase()}
+                    {s.status !== "COMPLETED" && ` · ${s.status.toLowerCase()}`}
                   </p>
                 </div>
-                <div className="text-right">
+                <div className="flex shrink-0 items-center gap-3">
                   <p className="text-sm font-semibold tabular-nums text-zinc-900">{peso(s.total)}</p>
-                  {s.status !== "COMPLETED" && <p className="text-[11px] font-semibold text-zinc-400">{s.status.toLowerCase()}</p>}
+                  <ReprintButton saleId={s.id} />
                 </div>
               </li>
             ))}

@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { startOfTodayPH } from "@/lib/timezone";
 import { batchesAtStore } from "@/lib/branch-scope";
 import { getRolePermissions, saleVisibilityWhere, type PermissionModuleKey } from "@/lib/permissions";
+import { computeShiftReading } from "@/lib/shift-reading";
+import { parsePendingItems } from "@/lib/pending-orders";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -259,45 +261,36 @@ export async function getQueues(scope: DashboardScope) {
   return { prescriptions, stockRequests, pendingOrders };
 }
 
-// The signed-in cashier's open shift and their own sales.
+// The signed-in cashier's open shift — read the same way the shift is closed
+// (computeShiftReading), so "expected in drawer" here matches end-of-shift —
+// plus their latest sales for reprints.
 export async function getMyCounter(session: SessionPayload) {
-  const todayStart = startOfTodayPH();
-  const [shift, today, recent] = await Promise.all([
-    prisma.shift.findFirst({
-      where: { tenantId: session.tenantId, userId: session.userId, closedAt: null },
-      select: {
-        id: true,
-        openedAt: true,
-        startingCash: true,
-        sales: { where: { status: "COMPLETED" }, select: { totalAmount: true, paymentMethod: true } },
-      },
-    }),
-    prisma.sale.aggregate({
-      where: { tenantId: session.tenantId, userId: session.userId, status: "COMPLETED", saleDate: { gte: todayStart } },
-      _sum: { totalAmount: true },
-      _count: true,
-    }),
+  const [openShift, recent] = await Promise.all([
+    prisma.shift.findFirst({ where: { tenantId: session.tenantId, userId: session.userId, closedAt: null }, select: { id: true } }),
     prisma.sale.findMany({
       where: { tenantId: session.tenantId, userId: session.userId },
       orderBy: { saleDate: "desc" },
-      take: 5,
+      take: 6,
       select: { id: true, saleNumber: true, saleDate: true, totalAmount: true, paymentMethod: true, status: true, _count: { select: { items: true } } },
     }),
   ]);
-  const shiftTotal = shift?.sales.reduce((s, x) => s + Number(x.totalAmount), 0) ?? 0;
-  const shiftCash = shift?.sales.filter((x) => x.paymentMethod === "CASH").reduce((s, x) => s + Number(x.totalAmount), 0) ?? 0;
+  const reading = openShift ? await computeShiftReading(openShift.id) : null;
   return {
-    shift: shift
+    shift: reading
       ? {
-          openedAt: shift.openedAt.toISOString(),
-          startingCash: Number(shift.startingCash),
-          total: shiftTotal,
-          count: shift.sales.length,
-          cashSales: shiftCash,
+          openedAt: reading.openedAt,
+          startingCash: reading.startingCash,
+          netSales: reading.netSales,
+          salesCount: reading.salesCount,
+          cashSales: reading.cashSalesTotal,
+          paymentMethods: reading.paymentMethods.filter((m) => m.totalAmount !== 0).sort((a, b) => b.totalAmount - a.totalAmount),
+          eWallet: reading.eWallet,
+          load: reading.load,
+          expenses: reading.expenses.total,
+          returnsAmount: reading.returnsAmount,
+          expectedCash: reading.computedExpectedCash,
         }
       : null,
-    todayTotal: Number(today._sum.totalAmount ?? 0),
-    todayCount: today._count,
     recent: recent.map((r) => ({
       id: r.id,
       saleNumber: r.saleNumber,
@@ -308,6 +301,34 @@ export async function getMyCounter(session: SessionPayload) {
       items: r._count.items,
     })),
   };
+}
+
+// Orders sent by order takers that are waiting for a cashier at this branch.
+export async function getWaitingOrders(session: SessionPayload) {
+  if (!session.storeId) return [];
+  const orders = await prisma.pendingOrder.findMany({
+    where: { tenantId: session.tenantId, storeId: session.storeId, status: "OPEN" },
+    orderBy: { createdAt: "asc" },
+    take: 8,
+    select: { id: true, orderNumber: true, createdAt: true, items: true, createdBy: { select: { firstName: true, lastName: true } } },
+  });
+  const ids = [...new Set(orders.flatMap((o) => parsePendingItems(o.items).map((i) => i.productId)))];
+  const products = await prisma.product.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, sellingPrice: true, stocks: { where: { storeId: session.storeId }, select: { sellingPrice: true } } },
+  });
+  const priceOf = new Map(products.map((p) => [p.id, Number(p.stocks[0]?.sellingPrice ?? p.sellingPrice)]));
+  return orders.map((o) => {
+    const items = parsePendingItems(o.items);
+    return {
+      id: o.id,
+      orderNumber: o.orderNumber,
+      createdAt: o.createdAt.toISOString(),
+      takenBy: `${o.createdBy.firstName} ${o.createdBy.lastName}`.trim(),
+      itemCount: items.reduce((s, i) => s + i.quantity, 0),
+      total: items.reduce((s, i) => s + i.quantity * (priceOf.get(i.productId) ?? 0), 0),
+    };
+  });
 }
 
 // Orders this order taker sent today, and where they stand.
@@ -322,4 +343,30 @@ export async function getMyOrders(session: SessionPayload) {
     completed: orders.filter((o) => o.status === "COMPLETED").length,
     cancelled: orders.filter((o) => o.status === "CANCELLED").length,
   };
+}
+
+// Prescriptions still waiting to be filled, oldest first.
+export async function getPendingPrescriptions(scope: DashboardScope, take = 6) {
+  if (!scope.permissions.prescriptions) return [];
+  const rows = await prisma.prescription.findMany({
+    where: { tenantId: scope.session.tenantId, status: { in: ["PENDING", "PARTIAL"] } },
+    orderBy: { createdAt: "asc" },
+    take,
+    select: {
+      id: true,
+      prescriptionNumber: true,
+      status: true,
+      createdAt: true,
+      customer: { select: { firstName: true, lastName: true } },
+      _count: { select: { items: true } },
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    number: r.prescriptionNumber,
+    status: r.status as string,
+    patient: r.customer ? `${r.customer.firstName} ${r.customer.lastName}`.trim() : "Walk-in",
+    items: r._count.items,
+    createdAt: r.createdAt.toISOString(),
+  }));
 }

@@ -129,25 +129,27 @@ export function RankBars({ rows, empty }: { rows: { id: string; name: string; va
 }
 
 // One row of a "needs attention" list. Status always carries an icon + label,
-// never color alone.
+// never color alone. With `href` the whole row opens the place to act on it.
 export function AlertRow({
   title,
   detail,
   status,
   statusLabel,
+  href,
 }: {
   title: string;
   detail?: string;
   status: "critical" | "warning" | "info";
   statusLabel: string;
+  href?: string;
 }) {
   const style = {
     critical: { cls: "bg-red-50 text-red-700", Icon: CircleAlert },
     warning: { cls: "bg-amber-50 text-amber-800", Icon: AlertTriangle },
     info: { cls: "bg-zinc-100 text-zinc-600", Icon: Clock3 },
   }[status];
-  return (
-    <li className="flex items-center justify-between gap-3 py-2.5">
+  const body = (
+    <>
       <div className="min-w-0">
         <p className="truncate text-sm text-zinc-800">{title}</p>
         {detail && <p className="truncate text-xs text-zinc-400">{detail}</p>}
@@ -156,6 +158,17 @@ export function AlertRow({
         <style.Icon className="h-3 w-3" />
         {statusLabel}
       </span>
+    </>
+  );
+  return (
+    <li>
+      {href ? (
+        <Link href={href} className="-mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 transition hover:bg-zinc-50">
+          {body}
+        </Link>
+      ) : (
+        <div className="flex items-center justify-between gap-3 py-2.5">{body}</div>
+      )}
     </li>
   );
 }
