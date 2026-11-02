@@ -5,6 +5,7 @@ import {
   Boxes,
   ClipboardPlus,
   Coins,
+  Info,
   PackageX,
   Receipt,
   ShoppingCart,
@@ -282,9 +283,19 @@ export async function OwnerDashboard({
 
   return (
     <div className="space-y-6">
+      {info.isMultiBranch && !scope.storeId && (
+        // Owners see every branch combined here, whichever branch is picked in the header.
+        <p className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+          <Info className="h-4 w-4 shrink-0 text-sky-600" />
+          <span>
+            <span className="font-semibold">Overview of all branches.</span> Sales, stock, and alerts below combine every branch. For one branch, use
+            Reports or Inventory and choose that branch.
+          </span>
+        </p>
+      )}
       <Hero
         info={info}
-        eyebrow={scope.storeId ? "Today's sales · this branch" : "Today's sales"}
+        eyebrow={scope.storeId ? "Today's sales · this branch" : info.isMultiBranch ? "Today's sales · all branches" : "Today's sales"}
         aside={
           <>
             <HeroStat label="Transactions" value={<CountUp value={today.transactions} format="int" />} />
