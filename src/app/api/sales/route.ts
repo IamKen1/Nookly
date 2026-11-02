@@ -12,6 +12,7 @@ import { invalidateCached } from "@/lib/route-cache";
 import { canCollectPayment, isShiftRequired, phDayOf } from "@/lib/permissions-shared";
 import { batchesAtStore } from "@/lib/branch-scope";
 import { getRolePermissions, hasPermission, saleVisibilityWhere } from "@/lib/permissions";
+import { readOrderPrescription } from "@/lib/order-prescription";
 
 class PendingOrderTakenError extends Error {}
 
@@ -97,8 +98,8 @@ export async function POST(request: NextRequest) {
     discountHolderName,
     customerId,
     orderRemarks,
-    prescriptionId,
-    prescriptionDraft,
+    prescriptionId: requestedPrescriptionId,
+    prescriptionDraft: requestedPrescriptionDraft,
   }: {
     pendingOrderId?: string;
     items: CheckoutItem[];
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
   const pendingOrder = pendingOrderId
     ? await prisma.pendingOrder.findFirst({
         where: { id: pendingOrderId, tenantId: session.tenantId, storeId: session.storeId },
-        select: { id: true, status: true, createdById: true, orderRemarks: true },
+        select: { id: true, status: true, createdById: true, orderRemarks: true, prescription: true },
       })
     : null;
   if (pendingOrderId && !pendingOrder) {
@@ -202,6 +203,11 @@ export async function POST(request: NextRequest) {
   // prescriptions — not only when a cart item is flagged Rx. Pharmacists often
   // log prescriptions for items that aren't flagged, and dropping them silently
   // left them missing from the Prescriptions page.
+  // An order sent with a prescription uses that one: whoever took the order
+  // entered it, and the cashier only takes payment.
+  const orderRx = readOrderPrescription(pendingOrder?.prescription);
+  const prescriptionId = orderRx ? orderRx.prescriptionId : requestedPrescriptionId;
+  const prescriptionDraft: PrescriptionDraft | undefined = orderRx ? orderRx.prescriptionDraft : requestedPrescriptionDraft;
   const hasPrescriptionInput = Boolean(prescriptionId || prescriptionDraft);
   const prescriptionsGated = hasPrescriptionInput && (await hasFeature(await getTenantPlanCode(session.tenantId), "prescriptions"));
   if (prescriptionsGated) {
@@ -381,6 +387,7 @@ export async function POST(request: NextRequest) {
           writtenDate: new Date(prescriptionDraft.writtenDate),
           instructions: prescriptionDraft.instructions || null,
           refillsAllowed: prescriptionDraft.refillsAllowed ?? 0,
+          storeId: session.storeId ?? null,
           status: rxLines.some((l) => l.servedQuantity < l.quantity) ? "PARTIAL" : "FILLED",
           items: { create: rxLines },
         },

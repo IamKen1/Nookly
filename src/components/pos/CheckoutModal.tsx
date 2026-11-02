@@ -28,6 +28,9 @@ interface CheckoutModalProps {
   canRecordPrescriptions: boolean;
   // A prescription this cart continues (from Reorder); preselected at checkout.
   linkedPrescriptionId?: string;
+  // Already entered before checkout (by whoever took the order, or in the cart):
+  // shown instead of the form. Without a selection it's the order's own, which the server applies.
+  attachedPrescription?: { label: string; selection?: PrescriptionSelection };
   onProcessSale: (payload: {
     paymentMethod: string;
     cashReceived?: number;
@@ -50,7 +53,16 @@ const QUICK_AMOUNTS = [100, 200, 500, 1000];
 const discountRateLabel = (d: DiscountDTO) =>
   d.kind === "FIXED" ? `${peso(d.value)} off` : `${Number(d.value.toFixed(2))}%${d.maxAmount != null ? ` · max ${peso(d.maxAmount)}` : ""}`;
 
-export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescriptions, canRecordPrescriptions, linkedPrescriptionId, onProcessSale }: CheckoutModalProps) {
+export default function CheckoutModal({
+  isOpen,
+  onClose,
+  cart,
+  pendingPrescriptions,
+  canRecordPrescriptions,
+  linkedPrescriptionId,
+  attachedPrescription,
+  onProcessSale,
+}: CheckoutModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "E_WALLET">("CASH");
   const [cashReceived, setCashReceived] = useState("");
   const [walletProvider, setWalletProvider] = useState<string>("GCash");
@@ -108,7 +120,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
 
   const handleProcess = async () => {
     setError(null);
-    if (prescriptionIncomplete) {
+    if (prescriptionIncomplete && !attachedPrescription) {
       setError(prescriptionIncomplete);
       return;
     }
@@ -128,7 +140,9 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
         discountIdNumber: discount?.asksForId ? discountIdNumber.trim() || undefined : undefined,
         discountHolderName: discount?.asksForId ? discountHolderName.trim() || undefined : undefined,
         orderRemarks: remarks.trim() || undefined,
-        ...(prescriptionSelection ?? {}),
+        ...(attachedPrescription
+          ? { prescriptionId: attachedPrescription.selection?.prescriptionId, prescriptionDraft: attachedPrescription.selection?.prescriptionDraft }
+          : { prescriptionId: prescriptionSelection?.prescriptionId, prescriptionDraft: prescriptionSelection?.prescriptionDraft }),
       });
       if (!result.ok) {
         setError(result.error ?? "Payment processing failed.");
@@ -241,7 +255,13 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
             </div>
           </div>
 
-          {canRecordPrescriptions && <PrescriptionFields
+          {attachedPrescription ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+              <p className="text-xs font-semibold text-gray-700">Prescription</p>
+              <p className="mt-0.5 font-medium text-amber-900">{attachedPrescription.label}</p>
+              <p className="mt-0.5 text-[11px] text-gray-500">Entered with the order. It&apos;s saved when this sale is completed.</p>
+            </div>
+          ) : canRecordPrescriptions && <PrescriptionFields
               key={linkedPrescriptionId ?? "new"}
               pendingPrescriptions={pendingPrescriptions}
               cart={cart}
@@ -420,7 +440,7 @@ export default function CheckoutModal({ isOpen, onClose, cart, pendingPrescripti
             </div>
           )}
 
-          {prescriptionIncomplete && !error && <p className="text-sm text-amber-700">{prescriptionIncomplete}</p>}
+          {prescriptionIncomplete && !attachedPrescription && !error && <p className="text-sm text-amber-700">{prescriptionIncomplete}</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
           {success && <p className="text-sm font-medium text-emerald-600">{success}</p>}
         </div>

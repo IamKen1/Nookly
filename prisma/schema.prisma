@@ -323,6 +323,7 @@ model Store {
   receivings       Receiving[]
   heldCarts        HeldCart[]
   supplierReturns  SupplierReturn[]
+  prescriptions    Prescription[]
 
   @@unique([tenantId, code])
   @@map("stores")
@@ -714,7 +715,10 @@ model Prescription {
   updatedAt          DateTime           @updatedAt
   customerId         String
   doctorId           String
+  // Branch where it was recorded; null for prescriptions recorded before branches were tracked.
+  storeId            String?
   tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store              Store?             @relation(fields: [storeId], references: [id], onDelete: SetNull)
   items              PrescriptionItem[]
   customer           Customer           @relation(fields: [customerId], references: [id])
   doctor             Doctor             @relation(fields: [doctorId], references: [id])
@@ -722,6 +726,7 @@ model Prescription {
 
   @@unique([tenantId, prescriptionNumber])
   @@index([tenantId, status])
+  @@index([tenantId, storeId])
   @@map("prescriptions")
 }
 
@@ -851,6 +856,10 @@ model PendingOrder {
   orderNumber  String
   items        Json // [{ productId, quantity }]
   orderRemarks String?
+  // Prescription entered by whoever took the order: { prescriptionId } or
+  // { prescriptionDraft }, plus a label for the cashier. Saved as a real
+  // prescription only when the order is paid.
+  prescription Json?
   status       PendingOrderStatus @default(OPEN)
   createdById  String
   saleId       String?            @unique

@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const prescriptions = await prisma.prescription.findMany({
-    where: prescriptionWhere(session.tenantId, new URL(request.url).searchParams),
+    where: prescriptionWhere(session.tenantId, new URL(request.url).searchParams, session.storeId),
     include: {
       customer: { select: { id: true, firstName: true, lastName: true } },
       doctor: { select: { id: true, firstName: true, lastName: true, licenseNumber: true } },
@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
         instructions: instructions || null,
         refillsAllowed: refillsAllowed ?? 0,
         daysSupply: daysSupply ?? null,
+        storeId: session.storeId ?? null,
         items: {
           create: items.map((item) => ({
             productId: item.productId,

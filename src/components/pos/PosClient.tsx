@@ -43,6 +43,7 @@ import type { DiscountType } from "@/lib/vat-calculations";
 import { ALL_ROLE_LABELS, canCollectPayment, isShiftRequired, phDayOf, type PermissionModuleKey } from "@/lib/permissions-shared";
 import CartPanel, { type CartLine } from "./CartPanel";
 import CheckoutModal, { type PrescriptionDraft } from "./CheckoutModal";
+import PrescriptionFields, { type PrescriptionSelection } from "./PrescriptionFields";
 import ShiftModal from "./ShiftModal";
 import CashTransactionModal from "./CashTransactionModal";
 import PrinterConnectButton from "./PrinterConnectButton";
@@ -153,8 +154,16 @@ export default function PosClient({
   const [sendingOrder, setSendingOrder] = useState(false);
   // Sending is confirmed first, so a stray tap doesn't send (and clear) the cart.
   const [confirmSend, setConfirmSend] = useState(false);
-  // The pending order the cart was loaded from, so checkout records its order taker.
-  const [activeOrder, setActiveOrder] = useState<{ id: string; orderNumber: string; takerName: string } | null>(null);
+  // The pending order the cart was loaded from, so checkout records its order taker
+  // (and uses the prescription entered with it, if any).
+  const [activeOrder, setActiveOrder] = useState<{ id: string; orderNumber: string; takerName: string; prescription: string | null } | null>(null);
+  // A prescription entered in the cart before sending the order. The form stays
+  // mounted (just hidden) while it's attached, so editing keeps what was typed
+  // and it re-checks itself as the cart changes.
+  const [rxFormMounted, setRxFormMounted] = useState(false);
+  const [rxFormOpen, setRxFormOpen] = useState(false);
+  const [cartRx, setCartRx] = useState<PrescriptionSelection | null>(null);
+  const [cartRxIncomplete, setCartRxIncomplete] = useState<string | null>(null);
   // Set when the cart came from a prescription's Reorder; `continues` means
   // this sale counts toward that prescription.
   const [linkedRx, setLinkedRx] = useState<{ id: string; prescriptionNumber: string; customerName: string; continues: boolean } | null>(null);
@@ -211,6 +220,11 @@ export default function PosClient({
     if (shiftBlock) {
       showNotification(shiftBlock, "error");
       setShiftModalOpen(true);
+      return;
+    }
+    if (cartRxIncomplete) {
+      showNotification(cartRxIncomplete, "error");
+      setRxFormOpen(true);
       return;
     }
     setShowCheckout(true);
@@ -306,10 +320,17 @@ export default function PosClient({
   };
 
   const removeLine = (productId: string) => setCart((prev) => prev.filter((l) => l.productId !== productId));
+  const removeCartRx = () => {
+    setRxFormMounted(false);
+    setRxFormOpen(false);
+    setCartRx(null);
+    setCartRxIncomplete(null);
+  };
   const clearCart = () => {
     setCart([]);
     setActiveOrder(null);
     setLinkedRx(null);
+    removeCartRx();
   };
 
   // Saved lines (held cart, prescription) → cart lines, capped at today's stock.
@@ -350,6 +371,7 @@ export default function PosClient({
       showNotification("This cart is an order sent to the cashier — finish or clear it instead.", "error");
       return;
     }
+    if (rxFormMounted && (cartRx || cartRxIncomplete) && !confirm("Held carts don't keep the prescription. Hold anyway?")) return;
     setHoldLabel("");
   };
 
@@ -419,14 +441,26 @@ export default function PosClient({
         requiresPrescription: i.requiresPrescription,
       }));
     setCart(lines);
-    setActiveOrder({ id: order.id, orderNumber: order.orderNumber, takerName: order.createdBy.name });
+    setActiveOrder({ id: order.id, orderNumber: order.orderNumber, takerName: order.createdBy.name, prescription: order.prescription ?? null });
+    setLinkedRx(null);
+    removeCartRx();
     setOrdersModalOpen(false);
     const short = order.items.some((i) => i.quantity > i.currentStock);
     showNotification(short ? `Loaded ${order.orderNumber} — some items were reduced to available stock` : `Loaded ${order.orderNumber}`, short ? "error" : "success");
   };
 
+  // The prescription that goes with the order: the one entered in the cart, or
+  // the one a Reorder continues.
+  const rxForOrder: PrescriptionSelection | null = cartRx ?? (linkedRx?.continues ? { prescriptionId: linkedRx.id, label: `${linkedRx.prescriptionNumber} · ${linkedRx.customerName}` } : null);
+
   const askSendToCashier = () => {
-    if (cart.length > 0 && !sendingOrder) setConfirmSend(true);
+    if (cart.length === 0 || sendingOrder) return;
+    if (cartRxIncomplete) {
+      showNotification(cartRxIncomplete, "error");
+      setRxFormOpen(true);
+      return;
+    }
+    setConfirmSend(true);
   };
 
   const sendToCashier = async () => {
@@ -436,7 +470,10 @@ export default function PosClient({
       const res = await fetch("/api/pending-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })) }),
+        body: JSON.stringify({
+          items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+          ...(rxForOrder ? { prescription: { prescriptionId: rxForOrder.prescriptionId, prescriptionDraft: rxForOrder.prescriptionDraft } } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -466,7 +503,16 @@ export default function PosClient({
 
   // Prescription attachment is always available at checkout (optional, cashier's
   // choice) rather than only when the cart happens to contain a flagged item.
-  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>(canRecordPrescriptions ? "/api/prescriptions?status=PENDING,PARTIAL" : null);
+  const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>(
+    canRecordPrescriptions ? `/api/prescriptions?status=PENDING,PARTIAL&here=1${linkedRx ? `&alsoId=${linkedRx.id}` : ""}` : null
+  );
+  // Whoever can send orders to the cashier can also enter the prescription with it.
+  const canAttachRx = canRecordPrescriptions && (isOrderTaker || canSendToCashier) && !activeOrder;
+  const openRxForm = () => {
+    setRxFormMounted(true);
+    setRxFormOpen(true);
+  };
+  const cartRxLabel = !rxFormMounted ? null : cartRxIncomplete ? "" : cartRx?.label ?? null;
 
   const handleProcessSale = async (payload: {
     paymentMethod: string;
@@ -511,7 +557,7 @@ export default function PosClient({
   const cartNotice = shiftBlock
     ? shiftBlock
     : activeOrder
-    ? `Order ${activeOrder.orderNumber} · taken by ${activeOrder.takerName}`
+    ? `Order ${activeOrder.orderNumber} · taken by ${activeOrder.takerName}${activeOrder.prescription ? " · with prescription" : ""}`
     : linkedRx
     ? `${linkedRx.continues ? "Continuing" : "Reorder of"} ${linkedRx.prescriptionNumber} · ${linkedRx.customerName}`
     : undefined;
@@ -802,6 +848,8 @@ export default function PosClient({
           onHold={startHold}
           onSendToCashier={sendLabel ? askSendToCashier : undefined}
           sendLabel={sendLabel}
+          onPrescription={canAttachRx ? openRxForm : undefined}
+          prescriptionLabel={cartRxLabel}
           onOpenCheckout={isOrderTaker ? askSendToCashier : openCheckout}
           subtotal={subtotal}
           vatableSales={vatableSales}
@@ -859,6 +907,15 @@ export default function PosClient({
                 : undefined
             }
             sendLabel={sendLabel}
+            onPrescription={
+              canAttachRx
+                ? () => {
+                    setMobileCartOpen(false);
+                    openRxForm();
+                  }
+                : undefined
+            }
+            prescriptionLabel={cartRxLabel}
             onOpenCheckout={() => {
               setMobileCartOpen(false);
               if (isOrderTaker) askSendToCashier();
@@ -881,6 +938,13 @@ export default function PosClient({
         pendingPrescriptions={pendingPrescriptions}
         canRecordPrescriptions={canRecordPrescriptions}
         linkedPrescriptionId={linkedRx?.continues ? linkedRx.id : undefined}
+        attachedPrescription={
+          activeOrder?.prescription
+            ? { label: activeOrder.prescription }
+            : rxFormMounted && cartRx?.label && !cartRxIncomplete
+              ? { label: cartRx.label, selection: cartRx }
+              : undefined
+        }
         onProcessSale={handleProcessSale}
       />
 
@@ -931,6 +995,50 @@ export default function PosClient({
         </div>
       )}
 
+      {rxFormMounted && (
+        <div
+          className={`fixed inset-0 z-50 items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[6vh] ${rxFormOpen ? "flex" : "hidden"}`}
+          onClick={() => setRxFormOpen(false)}
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Prescription for this order</h2>
+                <p className="text-xs text-gray-500">Goes with the order to the cashier and is saved when it&apos;s paid.</p>
+              </div>
+              <button onClick={() => setRxFormOpen(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <PrescriptionFields
+              pendingPrescriptions={pendingPrescriptions}
+              cart={cart}
+              initialExistingId={linkedRx?.continues ? linkedRx.id : undefined}
+              onChange={setCartRx}
+              onIncompleteChange={setCartRxIncomplete}
+            />
+            {cartRxIncomplete && <p className="mt-2 text-xs text-amber-700">{cartRxIncomplete}</p>}
+            <div className="mt-4 flex justify-between gap-2">
+              <button type="button" onClick={removeCartRx} className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50">
+                Remove prescription
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (cartRxIncomplete) return;
+                  if (!cartRx) removeCartRx();
+                  else setRxFormOpen(false);
+                }}
+                disabled={Boolean(cartRxIncomplete)}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmSend && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !sendingOrder && setConfirmSend(false)}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -942,6 +1050,11 @@ export default function PosClient({
               </span>
               <span className="font-bold text-gray-900">{peso(subtotal)}</span>
             </div>
+            {rxForOrder?.label && (
+              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <span className="font-semibold">Prescription:</span> {rxForOrder.label}
+              </p>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"

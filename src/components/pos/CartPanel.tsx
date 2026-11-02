@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X, PauseCircle, Send } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X, PauseCircle, Send, ClipboardPlus } from "lucide-react";
 import { peso } from "@/lib/format";
 
 export interface CartLine {
@@ -27,6 +27,10 @@ interface CartPanelProps {
   // Queues the cart for a cashier, for users who can also check out themselves.
   onSendToCashier?: () => void;
   sendLabel?: string;
+  // Entering the prescription before sending the order (for whoever can send to the cashier).
+  onPrescription?: () => void;
+  // The attached prescription, e.g. "Juan Dela Cruz · Dr. Ana Santos"; "" while started but unfinished.
+  prescriptionLabel?: string | null;
   onOpenCheckout: () => void;
   subtotal: number;
   vatableSales: number;
@@ -82,6 +86,8 @@ export default function CartPanel({
   onHold,
   onSendToCashier,
   sendLabel,
+  onPrescription,
+  prescriptionLabel,
   onOpenCheckout,
   subtotal,
   vatableSales,
@@ -209,6 +215,20 @@ export default function CartPanel({
               </div>
 
               <div className="space-y-1.5">
+                {onPrescription && (
+                  <button
+                    onClick={onPrescription}
+                    className={`flex w-full items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
+                      prescriptionLabel ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100" : "border-dashed border-amber-400 text-amber-800 hover:bg-amber-50"
+                    }`}
+                  >
+                    <ClipboardPlus className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {prescriptionLabel ? `Rx: ${prescriptionLabel}` : prescriptionLabel === "" ? "Prescription: not finished" : "Add prescription"}
+                    </span>
+                    {prescriptionLabel != null && <span className="shrink-0 font-medium text-amber-700 underline">Edit</span>}
+                  </button>
+                )}
                 <button
                   onClick={onOpenCheckout}
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700"

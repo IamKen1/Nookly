@@ -17,6 +17,8 @@ export interface PrescriptionDraft {
 export interface PrescriptionSelection {
   prescriptionId?: string;
   prescriptionDraft?: PrescriptionDraft;
+  // Who it's for, to show where it's attached; not sent anywhere.
+  label?: string;
 }
 
 interface PersonMatch {
@@ -230,7 +232,8 @@ export default function PrescriptionFields({
 
   useEffect(() => {
     if (mode === "existing") {
-      onChange(existingId ? { prescriptionId: existingId } : null);
+      const rx = pendingPrescriptions.find((p) => p.id === existingId);
+      onChange(existingId ? { prescriptionId: existingId, label: rx ? `${rx.prescriptionNumber} · ${rx.customer.firstName} ${rx.customer.lastName}` : "Continuing prescription" } : null);
       return;
     }
 
@@ -259,6 +262,9 @@ export default function PrescriptionFields({
         instructions: instructions.trim() || undefined,
         prescribedQuantities: Object.fromEntries(rxLines.map((l) => [l.productId, parseInt(prescribed[l.productId] ?? "", 10) || 0])),
       },
+      label: `${customer ? `${customer.firstName} ${customer.lastName}` : `${newCustomer.firstName.trim()} ${newCustomer.lastName.trim()}`} · Dr. ${
+        doctor ? `${doctor.firstName} ${doctor.lastName}` : `${newDoctor.firstName.trim()} ${newDoctor.lastName.trim()}`
+      }`,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, existingId, customer, newCustomer, doctor, newDoctor, writtenDate, instructions, customerUnfinished, doctorUnfinished, prescribed, cart]);

@@ -20,6 +20,8 @@ export interface PendingOrder {
   id: string;
   orderNumber: string;
   orderRemarks: string | null;
+  // Label of the prescription entered with the order, if any.
+  prescription?: string | null;
   createdAt: string;
   createdBy: { id: string; name: string };
   items: PendingOrderLine[];
@@ -211,6 +213,11 @@ export default function PendingOrdersModal({
                     ))}
                   </tbody>
                 </table>
+                {selected.prescription && (
+                  <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <span className="font-semibold">Prescription:</span> {selected.prescription}
+                  </p>
+                )}
                 {selected.orderRemarks && (
                   <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
                     <span className="font-semibold">Note:</span> {selected.orderRemarks}

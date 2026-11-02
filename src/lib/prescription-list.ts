@@ -5,8 +5,9 @@ const isDate = (v: string | null): v is string => Boolean(v && /^\d{4}-\d{2}-\d{
 
 // Filters shared by the Prescriptions list and its Excel export:
 // ?from&to (prescription date, Philippine days), ?q (customer name or Rx #),
-// ?status (one or more, comma-separated).
-export function prescriptionWhere(tenantId: string, params: URLSearchParams): Prisma.PrescriptionWhereInput {
+// ?status (one or more, comma-separated), ?here=1 (this branch's, plus older
+// ones recorded before branches were tracked; ?alsoId keeps one more in).
+export function prescriptionWhere(tenantId: string, params: URLSearchParams, storeId?: string | null): Prisma.PrescriptionWhereInput {
   const from = params.get("from");
   const to = params.get("to");
   const q = params.get("q")?.trim();
@@ -18,6 +19,10 @@ export function prescriptionWhere(tenantId: string, params: URLSearchParams): Pr
   if (customerId) where.customerId = customerId;
   if (isDate(from) || isDate(to)) {
     where.originalDate = { ...(isDate(from) ? { gte: startOfDatePH(from) } : {}), ...(isDate(to) ? { lt: endOfDatePH(to) } : {}) };
+  }
+  if (params.get("here") === "1" && storeId) {
+    const alsoId = params.get("alsoId");
+    where.AND = [{ OR: [{ storeId }, { storeId: null }, ...(alsoId ? [{ id: alsoId }] : [])] }];
   }
   if (q) {
     const words = q.split(/\s+/).filter(Boolean);

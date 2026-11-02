@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { parsePendingItems } from "@/lib/pending-orders";
 import { hasPermission } from "@/lib/permissions";
+import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
+import { prepareOrderPrescription, readOrderPrescription, type OrderPrescription } from "@/lib/order-prescription";
 
 // Open orders waiting for a cashier at the current branch, with each line
 // resolved against today's product price and this branch's stock so the
@@ -43,6 +45,8 @@ export async function GET(request: NextRequest) {
       orderRemarks: o.orderRemarks,
       createdAt: o.createdAt.toISOString(),
       createdBy: { id: o.createdBy.id, name: `${o.createdBy.firstName} ${o.createdBy.lastName}`.trim() },
+      // Only the label: the cashier sees it, the sale reads the rest from the order.
+      prescription: readOrderPrescription(o.prescription)?.label ?? null,
       items: parsePendingItems(o.items).flatMap((i) => {
         const p = productMap.get(i.productId);
         if (!p) return [];
@@ -79,7 +83,7 @@ export async function POST(request: NextRequest) {
 
   const products = await prisma.product.findMany({
     where: { id: { in: items.map((i) => i.productId) }, tenantId: session.tenantId, isActive: true },
-    select: { id: true, name: true, stocks: { where: { storeId: session.storeId }, select: { currentStock: true, isHidden: true } } },
+    select: { id: true, name: true, requiresPrescription: true, stocks: { where: { storeId: session.storeId }, select: { currentStock: true, isHidden: true } } },
   });
   const productMap = new Map(products.map((p) => [p.id, p]));
   for (const item of items) {
@@ -90,6 +94,17 @@ export async function POST(request: NextRequest) {
     if (item.quantity > available) {
       return NextResponse.json({ error: `Not enough stock for ${product.name}. Available: ${available}.` }, { status: 409 });
     }
+  }
+
+  // A prescription entered by the order taker rides along until payment.
+  let prescription: OrderPrescription | null = null;
+  if (body.prescription) {
+    if (!(await hasFeature(await getTenantPlanCode(session.tenantId), "prescriptions"))) {
+      return NextResponse.json({ error: "Your plan doesn't include prescriptions." }, { status: 403 });
+    }
+    const prepared = await prepareOrderPrescription(session.tenantId, body.prescription, items, new Map(products.map((p) => [p.id, p.requiresPrescription])));
+    if ("error" in prepared) return NextResponse.json({ error: prepared.error }, { status: 400 });
+    prescription = prepared.value;
   }
 
   const now = new Date();
@@ -109,6 +124,7 @@ export async function POST(request: NextRequest) {
           orderNumber,
           items: items as unknown as Prisma.InputJsonValue,
           orderRemarks: orderRemarks || null,
+          prescription: prescription ? (prescription as unknown as Prisma.InputJsonValue) : undefined,
           createdById: session.userId,
         },
       });
