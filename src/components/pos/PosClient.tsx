@@ -151,6 +151,8 @@ export default function PosClient({
   const [cashTxnModalOpen, setCashTxnModalOpen] = useState(false);
   const [ordersModalOpen, setOrdersModalOpen] = useState(false);
   const [sendingOrder, setSendingOrder] = useState(false);
+  // Sending is confirmed first, so a stray tap doesn't send (and clear) the cart.
+  const [confirmSend, setConfirmSend] = useState(false);
   // The pending order the cart was loaded from, so checkout records its order taker.
   const [activeOrder, setActiveOrder] = useState<{ id: string; orderNumber: string; takerName: string } | null>(null);
   // Set when the cart came from a prescription's Reorder; `continues` means
@@ -423,6 +425,10 @@ export default function PosClient({
     showNotification(short ? `Loaded ${order.orderNumber} — some items were reduced to available stock` : `Loaded ${order.orderNumber}`, short ? "error" : "success");
   };
 
+  const askSendToCashier = () => {
+    if (cart.length > 0 && !sendingOrder) setConfirmSend(true);
+  };
+
   const sendToCashier = async () => {
     if (cart.length === 0 || sendingOrder) return;
     setSendingOrder(true);
@@ -438,6 +444,7 @@ export default function PosClient({
         return;
       }
       clearCart();
+      setConfirmSend(false);
       showNotification(`Order ${data.orderNumber} sent to the cashier`, "success");
     } catch {
       showNotification("Network error. The order was not sent.", "error");
@@ -793,9 +800,9 @@ export default function PosClient({
           onRemove={removeLine}
           onClear={clearCart}
           onHold={startHold}
-          onSendToCashier={sendLabel ? sendToCashier : undefined}
+          onSendToCashier={sendLabel ? askSendToCashier : undefined}
           sendLabel={sendLabel}
-          onOpenCheckout={isOrderTaker ? sendToCashier : openCheckout}
+          onOpenCheckout={isOrderTaker ? askSendToCashier : openCheckout}
           subtotal={subtotal}
           vatableSales={vatableSales}
           vatAmount={vatAmount}
@@ -847,14 +854,14 @@ export default function PosClient({
               sendLabel
                 ? () => {
                     setMobileCartOpen(false);
-                    sendToCashier();
+                    askSendToCashier();
                   }
                 : undefined
             }
             sendLabel={sendLabel}
             onOpenCheckout={() => {
               setMobileCartOpen(false);
-              if (isOrderTaker) sendToCashier();
+              if (isOrderTaker) askSendToCashier();
               else openCheckout();
             }}
             subtotal={subtotal}
@@ -921,6 +928,41 @@ export default function PosClient({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {confirmSend && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !sendingOrder && setConfirmSend(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-base font-bold text-gray-900">Send this order to the cashier?</h2>
+            <p className="mt-1 text-xs text-gray-500">The cart will be cleared here and the order will wait for payment at the cashier.</p>
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm">
+              <span className="text-gray-600">
+                {cart.length} {cart.length === 1 ? "item" : "items"} · {cart.reduce((sum, l) => sum + l.quantity, 0)} pcs
+              </span>
+              <span className="font-bold text-gray-900">{peso(subtotal)}</span>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                // Focus Cancel, not Send: a barcode scan ends with Enter.
+                autoFocus
+                onClick={() => setConfirmSend(false)}
+                disabled={sendingOrder}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={sendToCashier}
+                disabled={sendingOrder}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {sendingOrder ? "Sending..." : "Send to cashier"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
