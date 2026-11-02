@@ -225,7 +225,6 @@ export default function PrescriptionFields({
   const [newDoctor, setNewDoctor] = useState({ firstName: "", lastName: "", extra: "" });
   const [writtenDate, setWrittenDate] = useState(todayStr());
   const [instructions, setInstructions] = useState("");
-  const [refillsAllowed, setRefillsAllowed] = useState(0);
   const [customerUnfinished, setCustomerUnfinished] = useState(false);
   const [doctorUnfinished, setDoctorUnfinished] = useState(false);
 
@@ -258,12 +257,11 @@ export default function PrescriptionFields({
           : { firstName: newDoctor.firstName.trim(), lastName: newDoctor.lastName.trim(), licenseNumber: newDoctor.extra.trim() || undefined },
         writtenDate,
         instructions: instructions.trim() || undefined,
-        refillsAllowed,
         prescribedQuantities: Object.fromEntries(rxLines.map((l) => [l.productId, parseInt(prescribed[l.productId] ?? "", 10) || 0])),
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, existingId, customer, newCustomer, doctor, newDoctor, writtenDate, instructions, refillsAllowed, customerUnfinished, doctorUnfinished, prescribed, cart]);
+  }, [mode, existingId, customer, newCustomer, doctor, newDoctor, writtenDate, instructions, customerUnfinished, doctorUnfinished, prescribed, cart]);
 
   // Started but not finished: checkout waits instead of silently dropping it.
   useEffect(() => {
@@ -302,7 +300,7 @@ export default function PrescriptionFields({
               onClick={() => setMode("existing")}
               className={`rounded-full px-2.5 py-1 font-medium ${mode === "existing" ? "bg-emerald-600 text-white" : "text-gray-600"}`}
             >
-              Existing / refill
+              Continue existing
             </button>
           </div>
         )}
@@ -346,27 +344,16 @@ export default function PrescriptionFields({
             onNewValuesChange={setNewDoctor}
             onUnfinishedChange={setDoctorUnfinished}
           />
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-700">Date written</label>
-              <input
-                type="date"
-                value={writtenDate}
-                onChange={(e) => setWrittenDate(e.target.value)}
-                max={todayStr()}
-                className="w-full rounded-lg border border-gray-300 p-2 text-sm focus:border-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-700">Refills allowed</label>
-              <input
-                type="number"
-                min={0}
-                value={refillsAllowed}
-                onChange={(e) => setRefillsAllowed(Math.max(0, Number(e.target.value) || 0))}
-                className="w-full rounded-lg border border-gray-300 p-2 text-sm focus:border-emerald-500"
-              />
-            </div>
+          {/* The prescribed quantity below covers how much the customer may get, so there's no separate refill count. */}
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-700">Date written</label>
+            <input
+              type="date"
+              value={writtenDate}
+              onChange={(e) => setWrittenDate(e.target.value)}
+              max={todayStr()}
+              className="w-full rounded-lg border border-gray-300 p-2 text-sm focus:border-emerald-500 sm:w-1/2"
+            />
           </div>
           {rxLines.length > 0 && (
             <div>
