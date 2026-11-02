@@ -1,771 +1,418 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Download, Printer } from "lucide-react";
-import { peso, formatDate, formatDateTime } from "@/lib/format";
-import { isCompleteDate } from "@/lib/date-input";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
+import { ArrowDown, ArrowUp, Download, FileSpreadsheet, Loader2, Printer, Search } from "lucide-react";
+import { REPORTS, REPORT_GROUPS, POINT_IN_TIME, type CellFormat, type ReportKey, type ReportResult } from "@/lib/reports/registry";
 
-type Tab = "overview" | "income" | "expenses" | "inventory-dates" | "e-services";
+type RunResult = ReportResult & { meta: { label: string; scope: string; period: string } };
 
-interface UnifiedDashboard {
-  summary: {
-    totalTransactions: number;
-    grossRevenue: number;
-    totalSales: number;
-    netRevenue: number;
-    totalExpenses: number;
-    totalCOGS: number;
-    grossProfit: number;
-    grossMarginPercent: number;
-    vatCollected: number;
-    averageSale: number;
-  };
-  trend: Array<{ periodKey: string; periodLabel: string; netRevenue: number; expenses: number; grossProfit: number; salesCount: number }>;
-  topProductsByRevenue: Array<{ productId: string; productName: string; unitsSold: number; revenue: number; grossProfit: number }>;
-  categorySales: Array<{ categoryName: string; revenue: number; grossProfit: number }>;
-  paymentMethods: Array<{ label: string; salesCount: number; totalAmount: number }>;
+const PH_OFFSET = 8 * 3600 * 1000;
+const phToday = () => new Date(Date.now() + PH_OFFSET).toISOString().slice(0, 10);
+const shift = (iso: string, days: number) => new Date(Date.parse(iso) + days * 86400000).toISOString().slice(0, 10);
+
+// Date presets, in Philippine calendar days.
+function presetRange(preset: string): [string, string] {
+  const t = phToday();
+  const [y, m] = [Number(t.slice(0, 4)), Number(t.slice(5, 7))];
+  const monthStart = (yy: number, mm: number) => `${yy}-${String(mm).padStart(2, "0")}-01`;
+  switch (preset) {
+    case "today":
+      return [t, t];
+    case "yesterday":
+      return [shift(t, -1), shift(t, -1)];
+    case "7d":
+      return [shift(t, -6), t];
+    case "30d":
+      return [shift(t, -29), t];
+    case "lastMonth": {
+      const ly = m === 1 ? y - 1 : y;
+      const lm = m === 1 ? 12 : m - 1;
+      return [monthStart(ly, lm), shift(monthStart(y, m), -1)];
+    }
+    case "quarter":
+      return [monthStart(y, Math.floor((m - 1) / 3) * 3 + 1), t];
+    case "year":
+      return [`${y}-01-01`, t];
+    default:
+      return [monthStart(y, m), t];
+  }
 }
+const PRESETS = [
+  ["today", "Today"],
+  ["yesterday", "Yesterday"],
+  ["7d", "Last 7 days"],
+  ["month", "This month"],
+  ["lastMonth", "Last month"],
+  ["30d", "Last 30 days"],
+  ["quarter", "This quarter"],
+  ["year", "This year"],
+  ["custom", "Custom"],
+] as const;
 
-interface ExpensesReport {
-  filters: { startDate: string | null; endDate: string | null };
-  summary: { count: number; totalAmount: number };
-  rows: Array<{
-    id: string;
-    description: string;
-    amount: number;
-    createdAt: string;
-    storeName: string | null;
-    cashierName: string | null;
-  }>;
+const pesoFmt = new Intl.NumberFormat("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmt(v: unknown, f?: CellFormat) {
+  if (v === null || v === undefined || v === "") return "";
+  switch (f) {
+    case "money":
+      return Number(v) < 0 ? `−₱${pesoFmt.format(-Number(v))}` : `₱${pesoFmt.format(Number(v))}`;
+    case "int":
+      return Number(v).toLocaleString("en-PH");
+    case "qty":
+      return Number(v).toLocaleString("en-PH", { maximumFractionDigits: 2 });
+    case "pct":
+      return `${Number(v).toFixed(1)}%`;
+    case "date":
+      return typeof v === "string" && v.includes("T")
+        ? new Date(v).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" })
+        : new Date(`${v}T00:00:00+08:00`).toLocaleDateString("en-PH", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" });
+    case "datetime":
+      return new Date(String(v)).toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" });
+    default:
+      return String(v);
+  }
 }
-
-interface IncomeReport {
-  summary: { totalProducts: number; totalRevenue: number; totalCost: number; grossIncome: number; overallMarginPercent: number };
-  rows: Array<{ productId: string; productName: string; unitsSold: number; totalRevenue: number; grossIncome: number; marginPercent: number }>;
-}
-
-interface InventoryDatesReport {
-  summary: { totalProducts: number; expired: number; expiringSoon: number; noExpiryDate: number };
-  rows: Array<{
-    id: string;
-    name: string;
-    category: { name: string } | null;
-    currentStock: number;
-    expiryDate: string | null;
-    batchNumber: string | null;
-    daysToExpiry: number | null;
-    dateStatus: string;
-  }>;
-}
-
-interface CashServicesTotals {
-  count: number;
-  gross: number;
-  fees: number;
-}
-
-interface CashServicesReport {
-  generatedAt: string;
-  filters: { startDate: string | null; endDate: string | null };
-  summary: {
-    cashIn: CashServicesTotals;
-    cashOut: CashServicesTotals;
-    load: CashServicesTotals;
-    totalFeesEarned: number;
-    netCashImpact: number;
-    transactionCount: number;
-  };
-  providerBreakdown: Array<{ type: "CASH_IN" | "CASH_OUT" | "LOAD"; provider: string; count: number; gross: number; fees: number }>;
-  trend: Array<{ periodKey: string; periodLabel: string; feesEarned: number } & Record<"CASH_IN" | "CASH_OUT" | "LOAD", CashServicesTotals>>;
-  transactions: Array<{
-    type: "CASH_IN" | "CASH_OUT" | "LOAD";
-    provider: string;
-    amount: number;
-    serviceFee: number;
-    referenceNumber: string | null;
-    customerName: string | null;
-    customerMobile: string | null;
-    cashierName: string;
-    createdAt: string;
-  }>;
-}
-
-const TXN_TYPE_LABELS: Record<"CASH_IN" | "CASH_OUT" | "LOAD", string> = {
-  CASH_IN: "Cash In",
-  CASH_OUT: "Cash Out",
-  LOAD: "Load",
+// Shows the server's reason (e.g. "needs more than one branch") instead of a bare status code.
+const reportFetcher = async (url: string) => {
+  const res = await fetch(url);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? "Couldn't load the report.");
+  return body;
 };
 
-const StatCard = ({ label, value, tone }: { label: string; value: string; tone?: "amber" | "red" | "emerald" }) => (
-  <div className="rounded-2xl border border-zinc-200 bg-white p-5">
-    <p className="text-xs font-medium text-zinc-500">{label}</p>
-    <p
-      className={`mt-1 text-xl font-bold ${
-        tone === "amber" ? "text-amber-600" : tone === "red" ? "text-red-600" : tone === "emerald" ? "text-emerald-600" : "text-zinc-900"
-      }`}
-    >
-      {value}
-    </p>
-  </div>
-);
+const numeric = (f?: CellFormat) => f === "money" || f === "int" || f === "pct" || f === "qty";
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const firstOfMonthStr = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+const remember = (k: string, v: string) => {
+  try {
+    localStorage.setItem(`nookly.reports.${k}`, v);
+  } catch {}
 };
-
-const ALL_TABS: [Tab, string][] = [
-  ["overview", "Overview"],
-  ["income", "Income by product"],
-  ["expenses", "Expenses"],
-  ["e-services", "E-Services"],
-  ["inventory-dates", "Expiry monitor"],
-];
+const recall = (k: string) => {
+  try {
+    return localStorage.getItem(`nookly.reports.${k}`);
+  } catch {
+    return null;
+  }
+};
 
 export default function ReportsClient({
   enabledReports,
-  branchScope,
+  branches,
+  isMultiBranch,
 }: {
-  enabledReports: string[];
-  // Present only for owners/admins of a multi-branch workspace.
-  branchScope?: { currentBranchName: string };
+  enabledReports: ReportKey[];
+  // Branches this user may pick (null = their own branch only).
+  branches: { id: string; name: string }[] | null;
+  isMultiBranch: boolean;
 }) {
-  const tabs = ALL_TABS.filter(([key]) => enabledReports.includes(key));
-  const canExportValuation = enabledReports.includes("inventory-valuation");
-  const [tab, setTab] = useState<Tab>(tabs[0]?.[0] ?? "overview");
-  const [loading, setLoading] = useState(true);
-  const [dashboard, setDashboard] = useState<UnifiedDashboard | null>(null);
-  const [income, setIncome] = useState<IncomeReport | null>(null);
-  const [expenses, setExpenses] = useState<ExpensesReport | null>(null);
-  const [inventoryDates, setInventoryDates] = useState<InventoryDatesReport | null>(null);
-  const [cashServices, setCashServices] = useState<CashServicesReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const available = REPORTS.filter((r) => enabledReports.includes(r.key) && (!("multiBranch" in r && r.multiBranch) || isMultiBranch));
+  const [report, setReport] = useState<ReportKey>(available[0]?.key ?? "sales-summary");
+  const [preset, setPreset] = useState("month");
+  const [[from, to], setRange] = useState<[string, string]>(() => presetRange("month"));
+  const [branch, setBranch] = useState("current");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  const [limit, setLimit] = useState(500);
 
-  const [cashStartDate, setCashStartDate] = useState(firstOfMonthStr());
-  const [cashEndDate, setCashEndDate] = useState(todayStr());
-  const [cashPeriod, setCashPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
-
-  const [overviewStartDate, setOverviewStartDate] = useState(firstOfMonthStr());
-  const [overviewEndDate, setOverviewEndDate] = useState(todayStr());
-  const [overviewPeriod, setOverviewPeriod] = useState<"daily" | "weekly" | "monthly" | "annually">("monthly");
-
-  const [incomeStartDate, setIncomeStartDate] = useState(firstOfMonthStr());
-  const [incomeEndDate, setIncomeEndDate] = useState(todayStr());
-
-  const [expensesStartDate, setExpensesStartDate] = useState(firstOfMonthStr());
-  const [expensesEndDate, setExpensesEndDate] = useState(todayStr());
-
-  const [expiryWindowDays, setExpiryWindowDays] = useState(90);
-  const [allBranches, setAllBranches] = useState(false);
-  const branchQuery = allBranches ? "&branch=all" : "";
-
-  const load = useCallback(
-    async (t: Tab) => {
-      const ranges: Partial<Record<Tab, string[]>> = {
-        overview: [overviewStartDate, overviewEndDate],
-        income: [incomeStartDate, incomeEndDate],
-        expenses: [expensesStartDate, expensesEndDate],
-        "e-services": [cashStartDate, cashEndDate],
-      };
-      if (ranges[t]?.some((d) => !isCompleteDate(d))) return;
-      setLoading(true);
-      setError(null);
-      try {
-        if (t === "overview") {
-          const params = new URLSearchParams({ startDate: overviewStartDate, endDate: overviewEndDate, period: overviewPeriod });
-          const res = await fetch(`/api/reports/unified-dashboard?${params.toString()}${branchQuery}`);
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
-          setDashboard(data);
-        } else if (t === "income") {
-          const params = new URLSearchParams({ startDate: incomeStartDate, endDate: incomeEndDate });
-          const res = await fetch(`/api/reports/income?${params.toString()}${branchQuery}`);
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
-          setIncome(data);
-        } else if (t === "expenses") {
-          const params = new URLSearchParams({ startDate: expensesStartDate, endDate: expensesEndDate });
-          const res = await fetch(`/api/reports/expenses?${params.toString()}${branchQuery}`);
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
-          setExpenses(data);
-        } else if (t === "e-services") {
-          const params = new URLSearchParams({ startDate: cashStartDate, endDate: cashEndDate, period: cashPeriod });
-          const res = await fetch(`/api/reports/e-services?${params.toString()}${branchQuery}`);
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
-          setCashServices(data);
-        } else {
-          const params = new URLSearchParams({ expiryWindowDays: String(expiryWindowDays) });
-          const res = await fetch(`/api/reports/inventory-dates?${params.toString()}${branchQuery}`);
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
-          setInventoryDates(data);
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load report.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [
-      cashStartDate,
-      cashEndDate,
-      cashPeriod,
-      overviewStartDate,
-      overviewEndDate,
-      overviewPeriod,
-      incomeStartDate,
-      incomeEndDate,
-      expensesStartDate,
-      expensesEndDate,
-      expiryWindowDays,
-      branchQuery,
-    ]
-  );
-
+  // Reopen where the user left off (this browser only).
   useEffect(() => {
-    load(tab);
-  }, [tab, load]);
+    const r = recall("report") as ReportKey | null;
+    const p = recall("preset");
+    const b = recall("branch");
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (r && available.some((a) => a.key === r)) setReport(r);
+    if (p && p !== "custom" && PRESETS.some(([k]) => k === p)) {
+      setPreset(p);
+      setRange(presetRange(p));
+    }
+    if (b && (b === "current" || b === "all" || branches?.some((x) => x.id === b))) setBranch(b);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const meta = REPORTS.find((r) => r.key === report)!;
+  const pointInTime = POINT_IN_TIME.includes(report);
+  const qs = new URLSearchParams({ report, from, to, branch }).toString();
+  const { data, error, isLoading } = useSWR<RunResult>(available.length ? `/api/reports/run?${qs}` : null, reportFetcher, { keepPreviousData: true, revalidateOnFocus: false });
+  const loading = isLoading || (data && data.meta.label !== meta.label);
+
+  const rows = useMemo(() => {
+    if (!data) return [];
+    const needle = q.trim().toLowerCase();
+    let list = needle ? data.rows.filter((r) => data.columns.some((c) => String(r[c.key] ?? "").toLowerCase().includes(needle))) : data.rows;
+    if (sort) {
+      const col = data.columns.find((c) => c.key === sort.key);
+      list = [...list].sort((a, b) => {
+        const x = a[sort.key];
+        const y = b[sort.key];
+        if (x === y) return 0;
+        if (x === null || x === undefined || x === "") return 1;
+        if (y === null || y === undefined || y === "") return -1;
+        return (numeric(col?.format) ? Number(x) - Number(y) : String(x).localeCompare(String(y))) * sort.dir;
+      });
+    }
+    return list;
+  }, [data, q, sort]);
+
+  const totals = useMemo(() => {
+    if (!data || !data.columns.some((c) => c.total)) return null;
+    return Object.fromEntries(data.columns.filter((c) => c.total).map((c) => [c.key, rows.reduce((s, r) => s + Number(r[c.key] ?? 0), 0)]));
+  }, [data, rows]);
+
+  const pick = (key: ReportKey) => {
+    setReport(key);
+    setSort(null);
+    setQ("");
+    setLimit(500);
+    remember("report", key);
+  };
+  const pickPreset = (p: string) => {
+    setPreset(p);
+    if (p !== "custom") setRange(presetRange(p));
+    remember("preset", p);
+  };
+
+  if (available.length === 0) {
+    return <p className="text-sm text-zinc-500">No reports are included in your plan.</p>;
+  }
+
+  const ctl = "rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-800 focus:border-emerald-500 focus:outline-none";
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Reports</h1>
-          <p className="mt-1 text-sm text-zinc-500">Sales, profitability, and inventory insight for your business.</p>
+    <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+      {/* Report list */}
+      <nav className="print:hidden lg:sticky lg:top-4 lg:w-60 lg:shrink-0" aria-label="Reports">
+        <select value={report} onChange={(e) => pick(e.target.value as ReportKey)} className={`${ctl} w-full lg:hidden`}>
+          {REPORT_GROUPS.map((g) => (
+            <optgroup key={g} label={g}>
+              {available.filter((r) => r.group === g).map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <div className="hidden max-h-[calc(100vh-7rem)] overflow-y-auto rounded-lg border border-zinc-200 bg-white py-2 lg:block">
+          {REPORT_GROUPS.map((g) => {
+            const list = available.filter((r) => r.group === g);
+            if (!list.length) return null;
+            return (
+              <div key={g} className="mb-1">
+                <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{g}</p>
+                {list.map((r) => (
+                  <button
+                    key={r.key}
+                    onClick={() => pick(r.key)}
+                    className={`block w-full px-3 py-1.5 text-left text-[13px] ${
+                      r.key === report ? "bg-emerald-50 font-semibold text-emerald-800" : "text-zinc-700 hover:bg-zinc-50"
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </div>
-        {branchScope && (
-          <select
-            value={allBranches ? "all" : "current"}
-            onChange={(e) => setAllBranches(e.target.value === "all")}
-            className="ml-auto mr-3 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700"
-          >
-            <option value="current">{branchScope.currentBranchName}</option>
-            <option value="all">All branches</option>
-          </select>
-        )}
-        {canExportValuation && (
-          <a
-            href={`/api/reports/inventory-valuation${allBranches ? "?branch=all" : ""}`}
-            className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300"
-          >
-            <Download className="h-4 w-4" /> Export inventory valuation
-          </a>
-        )}
-      </div>
+      </nav>
 
-      <div className="mt-6 flex gap-2 border-b border-zinc-200">
-        {tabs.map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`px-4 py-2 text-sm font-semibold ${
-              tab === key ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <section className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold text-zinc-900">{meta.label}</h1>
+            <p className="text-xs text-zinc-500">
+              {meta.description}
+              {data && !loading && (
+                <span className="text-zinc-400">
+                  {" "}
+                  · {data.meta.scope} · {data.meta.period}
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex gap-1.5 print:hidden">
+            <a href={`/api/reports/run?${qs}&format=xlsx`} className="flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-zinc-400">
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" /> Excel
+            </a>
+            <a href={`/api/reports/run?${qs}&format=csv`} className="flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-zinc-400">
+              <Download className="h-3.5 w-3.5" /> CSV
+            </a>
+            <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-zinc-400">
+              <Printer className="h-3.5 w-3.5" /> Print
+            </button>
+          </div>
+        </div>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
-      {loading && <p className="mt-8 text-center text-sm text-zinc-400">Loading...</p>}
-
-      {!loading && tab === "overview" && dashboard && (
-        <div className="mt-6 space-y-6">
-          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
-              <input
-                type="date"
-                value={overviewStartDate}
-                max={overviewEndDate}
-                onChange={(e) => setOverviewStartDate(e.target.value)}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
-              <input
-                type="date"
-                value={overviewEndDate}
-                min={overviewStartDate}
-                max={todayStr()}
-                onChange={(e) => setOverviewEndDate(e.target.value)}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">Group by</label>
-              <select
-                value={overviewPeriod}
-                onChange={(e) => setOverviewPeriod(e.target.value as typeof overviewPeriod)}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              >
-                <option value="daily">Day</option>
-                <option value="weekly">Week</option>
-                <option value="monthly">Month</option>
-                <option value="annually">Year</option>
+        {/* Filters */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 print:hidden">
+          {pointInTime ? (
+            <span className="text-xs text-zinc-500">As of now</span>
+          ) : (
+            <>
+              <select value={preset} onChange={(e) => pickPreset(e.target.value)} className={ctl} aria-label="Period">
+                {PRESETS.map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
               </select>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            <StatCard label="Total sales" value={peso(dashboard.summary.totalSales)} />
-            <StatCard label="Expenses" value={peso(dashboard.summary.totalExpenses)} tone="red" />
-            <StatCard label="Net revenue" value={peso(dashboard.summary.netRevenue)} />
-            <StatCard label="Gross profit" value={peso(dashboard.summary.grossProfit)} tone="emerald" />
-            <StatCard label="Margin" value={`${dashboard.summary.grossMarginPercent}%`} />
-            <StatCard label="Transactions" value={String(dashboard.summary.totalTransactions)} />
-          </div>
-          <p className="text-xs text-zinc-400">
-            Net revenue = Total sales minus expenses logged at end-of-shift. Gross profit and margin are based on
-            total sales only (not affected by expenses).
-          </p>
-
-          <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                  <th className="px-4 py-3">Period</th>
-                  <th className="px-4 py-3">Sales</th>
-                  <th className="px-4 py-3">Net revenue</th>
-                  <th className="px-4 py-3">Expenses</th>
-                  <th className="px-4 py-3">Gross profit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.trend.map((row) => (
-                  <tr key={row.periodKey} className="border-b border-zinc-50 last:border-0">
-                    <td className="px-4 py-3 text-zinc-700">{row.periodLabel}</td>
-                    <td className="px-4 py-3 text-zinc-600">{row.salesCount}</td>
-                    <td className="px-4 py-3 text-zinc-900">{peso(row.netRevenue)}</td>
-                    <td className="px-4 py-3 text-red-600">{peso(row.expenses)}</td>
-                    <td className="px-4 py-3 text-emerald-700">{peso(row.grossProfit)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-              <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">Top products</div>
-              <table className="w-full text-sm">
-                <tbody>
-                  {dashboard.topProductsByRevenue.slice(0, 6).map((p) => (
-                    <tr key={p.productId} className="border-b border-zinc-50 last:border-0">
-                      <td className="px-4 py-2.5 text-zinc-700">{p.productName}</td>
-                      <td className="px-4 py-2.5 text-right text-zinc-900">{peso(p.revenue)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-              <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">Payment methods</div>
-              <table className="w-full text-sm">
-                <tbody>
-                  {dashboard.paymentMethods.map((p) => (
-                    <tr key={p.label} className="border-b border-zinc-50 last:border-0">
-                      <td className="px-4 py-2.5 text-zinc-700">{p.label}</td>
-                      <td className="px-4 py-2.5 text-right text-zinc-900">{peso(p.totalAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+              <input
+                type="date"
+                value={from}
+                max={to}
+                onChange={(e) => {
+                  setPreset("custom");
+                  if (e.target.value) setRange([e.target.value, to]);
+                }}
+                className={ctl}
+                aria-label="From"
+              />
+              <span className="text-xs text-zinc-400">to</span>
+              <input
+                type="date"
+                value={to}
+                min={from}
+                max={phToday()}
+                onChange={(e) => {
+                  setPreset("custom");
+                  if (e.target.value) setRange([from, e.target.value]);
+                }}
+                className={ctl}
+                aria-label="To"
+              />
+            </>
+          )}
+          {branches && report !== "payables-aging" && report !== "prescriptions" && (
+            <select
+              value={branch}
+              onChange={(e) => {
+                setBranch(e.target.value);
+                remember("branch", e.target.value);
+              }}
+              className={ctl}
+              aria-label="Branch"
+            >
+              <option value="current">This branch</option>
+              <option value="all">All branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <label className="ml-auto flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2 py-1.5">
+            <Search className="h-3.5 w-3.5 text-zinc-400" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter rows" className="w-32 text-xs outline-none sm:w-44" />
+          </label>
         </div>
-      )}
 
-      {!loading && tab === "income" && income && (
-        <div className="mt-6 space-y-6">
-          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
-              <input
-                type="date"
-                value={incomeStartDate}
-                max={incomeEndDate}
-                onChange={(e) => setIncomeStartDate(e.target.value)}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
-              <input
-                type="date"
-                value={incomeEndDate}
-                min={incomeStartDate}
-                max={todayStr()}
-                onChange={(e) => setIncomeEndDate(e.target.value)}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
+        {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error.message}</p>}
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <StatCard label="Total revenue" value={peso(income.summary.totalRevenue)} />
-            <StatCard label="Gross income" value={peso(income.summary.grossIncome)} tone="emerald" />
-            <StatCard label="Overall margin" value={`${income.summary.overallMarginPercent}%`} />
-          </div>
-          <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                  <th className="px-4 py-3">Product</th>
-                  <th className="px-4 py-3">Units sold</th>
-                  <th className="px-4 py-3">Revenue</th>
-                  <th className="px-4 py-3">Gross income</th>
-                  <th className="px-4 py-3">Margin</th>
+        {/* Key figures */}
+        {data && (
+          <dl className={`mt-3 flex flex-wrap gap-x-6 gap-y-2 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 ${loading ? "opacity-50" : ""}`}>
+            {data.summary.map((s) => (
+              <div key={s.label} className="min-w-0">
+                <dt className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">{s.label}</dt>
+                <dd className="text-sm font-semibold tabular-nums text-zinc-900">{fmt(s.value, s.format)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
+        {/* Table */}
+        <div className={`relative mt-3 overflow-auto rounded-lg border border-zinc-200 bg-white ${loading ? "opacity-60" : ""}`} style={{ maxHeight: "calc(100vh - 16rem)" }}>
+          {loading && <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-zinc-400" />}
+          {data && (
+            <table className="w-full border-collapse text-xs">
+              <thead className="sticky top-0 z-10 bg-zinc-50">
+                <tr>
+                  {data.columns.map((c) => (
+                    <th
+                      key={c.key}
+                      onClick={() => setSort((s) => (s?.key === c.key ? (s.dir === -1 ? { key: c.key, dir: 1 } : null) : { key: c.key, dir: -1 }))}
+                      className={`cursor-pointer select-none whitespace-nowrap border-b border-zinc-200 px-3 py-2 font-semibold text-zinc-600 hover:text-zinc-900 ${numeric(c.format) ? "text-right" : "text-left"}`}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {c.label}
+                        {sort?.key === c.key && (sort.dir === -1 ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />)}
+                      </span>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {income.rows.map((r) => (
-                  <tr key={r.productId} className="border-b border-zinc-50 last:border-0">
-                    <td className="px-4 py-3 font-medium text-zinc-900">{r.productName}</td>
-                    <td className="px-4 py-3 text-zinc-600">{r.unitsSold}</td>
-                    <td className="px-4 py-3 text-zinc-900">{peso(r.totalRevenue)}</td>
-                    <td className="px-4 py-3 text-emerald-700">{peso(r.grossIncome)}</td>
-                    <td className="px-4 py-3 text-zinc-600">{r.marginPercent}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {!loading && tab === "expenses" && expenses && (
-        <div className="mt-6 space-y-6">
-          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
-              <input
-                type="date"
-                value={expensesStartDate}
-                max={expensesEndDate}
-                onChange={(e) => setExpensesStartDate(e.target.value)}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
-              <input
-                type="date"
-                value={expensesEndDate}
-                min={expensesStartDate}
-                max={todayStr()}
-                onChange={(e) => setExpensesEndDate(e.target.value)}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <StatCard label="Total expenses" value={peso(expenses.summary.totalAmount)} tone="red" />
-            <StatCard label="Entries" value={String(expenses.summary.count)} />
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Description</th>
-                  <th className="px-4 py-3">Branch</th>
-                  <th className="px-4 py-3">Logged by</th>
-                  <th className="px-4 py-3">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.rows.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">
-                      No expenses logged in this period.
+                    <td colSpan={data.columns.length} className="px-3 py-8 text-center text-zinc-400">
+                      {q ? "No rows match the filter." : "No data for this period."}
                     </td>
                   </tr>
                 ) : (
-                  expenses.rows.map((row) => (
-                    <tr key={row.id} className="border-b border-zinc-50 last:border-0">
-                      <td className="px-4 py-3 text-zinc-500">{formatDateTime(row.createdAt)}</td>
-                      <td className="px-4 py-3 text-zinc-900">{row.description}</td>
-                      <td className="px-4 py-3 text-zinc-600">{row.storeName ?? "-"}</td>
-                      <td className="px-4 py-3 text-zinc-600">{row.cashierName ?? "-"}</td>
-                      <td className="px-4 py-3 text-red-600">{peso(row.amount)}</td>
-                    </tr>
-                  ))
+                  rows.slice(0, limit).map((r, i) => {
+                    const kind = r.kind as string | undefined;
+                    return (
+                      <tr
+                        key={i}
+                        className={`border-b border-zinc-100 hover:bg-emerald-50/40 ${kind === "subtotal" ? "bg-zinc-50 font-semibold" : kind === "total" ? "bg-emerald-50 font-bold" : ""}`}
+                      >
+                        {data.columns.map((c) => {
+                          const v = r[c.key];
+                          const negative = numeric(c.format) && Number(v) < 0;
+                          return (
+                            <td
+                              key={c.key}
+                              className={`whitespace-nowrap px-3 py-1.5 ${numeric(c.format) ? "text-right tabular-nums" : "max-w-[22rem] truncate"} ${
+                                negative ? "text-red-600" : "text-zinc-800"
+                              }`}
+                              title={!numeric(c.format) && String(v ?? "").length > 40 ? String(v) : undefined}
+                            >
+                              {fmt(v, c.format)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {!loading && tab === "e-services" && cashServices && (
-        <div className="mt-6 space-y-6">
-          <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4 print:hidden">
-            <div className="flex flex-wrap items-end gap-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
-                <input
-                  type="date"
-                  value={cashStartDate}
-                  max={cashEndDate}
-                  onChange={(e) => setCashStartDate(e.target.value)}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
-                <input
-                  type="date"
-                  value={cashEndDate}
-                  min={cashStartDate}
-                  max={todayStr()}
-                  onChange={(e) => setCashEndDate(e.target.value)}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-500">Group by</label>
-                <select
-                  value={cashPeriod}
-                  onChange={(e) => setCashPeriod(e.target.value as "daily" | "weekly" | "monthly")}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-                >
-                  <option value="daily">Day</option>
-                  <option value="weekly">Week</option>
-                  <option value="monthly">Month</option>
-                </select>
-              </div>
-            </div>
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:border-zinc-300"
-            >
-              <Printer className="h-4 w-4" /> Print statement
-            </button>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-200 bg-white p-6">
-            <div className="border-b border-zinc-200 pb-4 text-center">
-              <h2 className="text-lg font-bold text-zinc-900">E-Services Statement</h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                E-wallet (GCash/Maya) cash in/out and prepaid load — agent revenue and cash-drawer impact
-              </p>
-              <p className="mt-1 text-xs text-zinc-400">
-                {formatDate(cashServices.filters.startDate ?? cashStartDate)} – {formatDate(cashServices.filters.endDate ?? cashEndDate)}
-              </p>
-            </div>
-
-            <div className="mt-5 space-y-1.5 text-sm">
-              <div className="flex justify-between text-zinc-600">
-                <span>Cash In ({cashServices.summary.cashIn.count} transactions)</span>
-                <span className="font-medium text-zinc-900">{peso(cashServices.summary.cashIn.gross)}</span>
-              </div>
-              <div className="flex justify-between text-zinc-600">
-                <span>Cash Out ({cashServices.summary.cashOut.count} transactions)</span>
-                <span className="font-medium text-zinc-900">({peso(cashServices.summary.cashOut.gross)})</span>
-              </div>
-              <div className="flex justify-between text-zinc-600">
-                <span>Prepaid Load Sold ({cashServices.summary.load.count} transactions)</span>
-                <span className="font-medium text-zinc-900">{peso(cashServices.summary.load.gross)}</span>
-              </div>
-              <div className="flex justify-between border-t border-zinc-200 pt-1.5 font-semibold text-zinc-900">
-                <span>Net Cash Impact on Drawer</span>
-                <span>{peso(cashServices.summary.netCashImpact)}</span>
-              </div>
-              <div className="mt-3 flex justify-between border-t border-zinc-200 pt-3 text-base font-bold text-emerald-700">
-                <span>Total Agent Fee Revenue</span>
-                <span>{peso(cashServices.summary.totalFeesEarned)}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-            <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">Breakdown by provider / network</div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                    <th className="px-4 py-3">Type</th>
-                    <th className="px-4 py-3">Provider / Network</th>
-                    <th className="px-4 py-3">Count</th>
-                    <th className="px-4 py-3">Gross amount</th>
-                    <th className="px-4 py-3">Fees earned</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cashServices.providerBreakdown.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">No transactions in this period.</td>
-                    </tr>
-                  ) : (
-                    cashServices.providerBreakdown.map((p) => (
-                      <tr key={`${p.type}:${p.provider}`} className="border-b border-zinc-50 last:border-0">
-                        <td className="px-4 py-3 text-zinc-600">{TXN_TYPE_LABELS[p.type]}</td>
-                        <td className="px-4 py-3 font-medium text-zinc-900">{p.provider}</td>
-                        <td className="px-4 py-3 text-zinc-600">{p.count}</td>
-                        <td className="px-4 py-3 text-zinc-900">{peso(p.gross)}</td>
-                        <td className="px-4 py-3 text-emerald-700">{peso(p.fees)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-            <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">
-              Trend by {cashPeriod === "daily" ? "day" : cashPeriod === "weekly" ? "week" : "month"}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                    <th className="px-4 py-3">Period</th>
-                    <th className="px-4 py-3">Cash In</th>
-                    <th className="px-4 py-3">Cash Out</th>
-                    <th className="px-4 py-3">Load</th>
-                    <th className="px-4 py-3">Fees earned</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cashServices.trend.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">No transactions in this period.</td>
-                    </tr>
-                  ) : (
-                    cashServices.trend.map((row) => (
-                      <tr key={row.periodKey} className="border-b border-zinc-50 last:border-0">
-                        <td className="px-4 py-3 text-zinc-700">{row.periodLabel}</td>
-                        <td className="px-4 py-3 text-zinc-600">{peso(row.CASH_IN.gross)}</td>
-                        <td className="px-4 py-3 text-zinc-600">{peso(row.CASH_OUT.gross)}</td>
-                        <td className="px-4 py-3 text-zinc-600">{peso(row.LOAD.gross)}</td>
-                        <td className="px-4 py-3 text-emerald-700">{peso(row.feesEarned)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white print:hidden">
-            <div className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">Recent transactions</div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Type</th>
-                    <th className="px-4 py-3">Provider</th>
-                    <th className="px-4 py-3">Amount</th>
-                    <th className="px-4 py-3">Fee</th>
-                    <th className="px-4 py-3">Reference</th>
-                    <th className="px-4 py-3">Mobile / customer</th>
-                    <th className="px-4 py-3">Cashier</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cashServices.transactions.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-zinc-400">No transactions in this period.</td>
-                    </tr>
-                  ) : (
-                    cashServices.transactions.map((t, i) => (
-                      <tr key={i} className="border-b border-zinc-50 last:border-0">
-                        <td className="px-4 py-3 text-zinc-500">{formatDateTime(t.createdAt)}</td>
-                        <td className="px-4 py-3 text-zinc-600">{TXN_TYPE_LABELS[t.type]}</td>
-                        <td className="px-4 py-3 text-zinc-700">{t.provider}</td>
-                        <td className="px-4 py-3 text-zinc-900">{peso(t.amount)}</td>
-                        <td className="px-4 py-3 text-emerald-700">{peso(t.serviceFee)}</td>
-                        <td className="px-4 py-3 text-zinc-500">{t.referenceNumber ?? "-"}</td>
-                        <td className="px-4 py-3 text-zinc-500">{t.customerMobile ?? t.customerName ?? "-"}</td>
-                        <td className="px-4 py-3 text-zinc-500">{t.cashierName}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!loading && tab === "inventory-dates" && inventoryDates && (
-        <div className="mt-6 space-y-6">
-          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">Expiring within</label>
-              <select
-                value={expiryWindowDays}
-                onChange={(e) => setExpiryWindowDays(Number(e.target.value))}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              >
-                <option value={30}>30 days</option>
-                <option value={60}>60 days</option>
-                <option value={90}>90 days</option>
-                <option value={180}>180 days</option>
-                <option value={365}>1 year</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <StatCard label="Expired" value={String(inventoryDates.summary.expired)} tone="red" />
-            <StatCard label="Expiring soon" value={String(inventoryDates.summary.expiringSoon)} tone="amber" />
-            <StatCard label="No expiry set" value={String(inventoryDates.summary.noExpiryDate)} />
-          </div>
-          <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                  <th className="px-4 py-3">Product</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Stock</th>
-                  <th className="px-4 py-3">Expiry</th>
-                  <th className="px-4 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inventoryDates.rows
-                  .filter((r) => r.dateStatus !== "no_expiry")
-                  .slice(0, 50)
-                  .map((r) => (
-                    <tr key={r.id} className="border-b border-zinc-50 last:border-0">
-                      <td className="px-4 py-3 font-medium text-zinc-900">{r.name}</td>
-                      <td className="px-4 py-3 text-zinc-600">{r.category?.name ?? "-"}</td>
-                      <td className="px-4 py-3 text-zinc-600">{r.currentStock}</td>
-                      <td className="px-4 py-3 text-zinc-600">
-                        {r.expiryDate ? formatDate(r.expiryDate) : "-"}
-                        {r.batchNumber && <p className="text-xs text-zinc-400">Batch {r.batchNumber}</p>}
+              {totals && rows.length > 0 && (
+                <tfoot className="sticky bottom-0 bg-zinc-100 font-semibold">
+                  <tr>
+                    {data.columns.map((c, i) => (
+                      <td key={c.key} className={`whitespace-nowrap border-t border-zinc-300 px-3 py-2 ${numeric(c.format) ? "text-right tabular-nums" : ""}`}>
+                        {i === 0 ? `Total (${rows.length.toLocaleString("en-PH")})` : c.key in totals ? fmt(totals[c.key], c.format) : ""}
                       </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={
-                            r.dateStatus === "expired"
-                              ? "font-semibold text-red-600"
-                              : r.dateStatus === "expiring_soon"
-                              ? "font-semibold text-amber-600"
-                              : "text-zinc-600"
-                          }
-                        >
-                          {r.dateStatus.replace("_", " ")}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
+                    ))}
+                  </tr>
+                </tfoot>
+              )}
             </table>
-          </div>
+          )}
         </div>
-      )}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500">
+          <span>
+            {data && (
+              <>
+                {rows.length.toLocaleString("en-PH")} row{rows.length === 1 ? "" : "s"}
+                {rows.length > limit && (
+                  <>
+                    {" "}
+                    · showing {limit.toLocaleString("en-PH")} —{" "}
+                    <button onClick={() => setLimit((l) => l + 1000)} className="font-semibold text-emerald-700 print:hidden">
+                      show more
+                    </button>{" "}
+                    or export for all
+                  </>
+                )}
+              </>
+            )}
+          </span>
+          {data?.note && <span className="max-w-3xl text-zinc-400">{data.note}</span>}
+        </div>
+      </section>
     </div>
   );
 }

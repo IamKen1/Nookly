@@ -48,7 +48,7 @@ export default async function AppShell({
   return (
     <div className="flex min-h-screen bg-zinc-50">
       {/* Stays in place while the page scrolls; its own list scrolls on short screens. */}
-      <aside className="hidden w-56 shrink-0 border-r border-zinc-200 bg-white sm:sticky sm:top-0 sm:flex sm:h-screen sm:flex-col">
+      <aside className="hidden w-56 shrink-0 border-r border-zinc-200 bg-white sm:sticky sm:top-0 sm:flex sm:h-screen sm:flex-col print:hidden">
         <Link href="/" className="flex items-center gap-2 px-5 py-5 font-bold text-zinc-900">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-600 text-white">
             <Leaf className="h-4.5 w-4.5" />
@@ -74,7 +74,7 @@ export default async function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-3">
+        <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-3 print:hidden">
           <div className="flex items-center gap-2.5">
             <span className="text-sm font-medium text-zinc-700">{tenantName}</span>
             {role && (

@@ -21,23 +21,11 @@ const UPGRADE_FEATURE_LABEL: Record<FeatureKey, string> = {
   apiAccess: "API access",
 };
 
-// Reports tabs are gated individually per plan (a plan can offer some report
-// tabs without all of them) rather than one on/off switch — see
-// Plan.enabledReports, a JSON array of these keys.
-export type ReportKey = "overview" | "income" | "expenses" | "e-services" | "inventory-dates" | "inventory-valuation";
-
-export const REPORT_LABELS: Record<ReportKey, string> = {
-  overview: "Overview",
-  income: "Income by product",
-  expenses: "Expenses",
-  "e-services": "E-Services",
-  "inventory-dates": "Expiry monitor",
-  "inventory-valuation": "Inventory valuation export",
-};
-
-export const ALL_REPORT_KEYS: ReportKey[] = ["overview", "income", "expenses", "e-services", "inventory-dates", "inventory-valuation"];
-
-const isReportKey = (value: unknown): value is ReportKey => ALL_REPORT_KEYS.includes(value as ReportKey);
+// Reports are gated individually per plan (Plan.enabledReports, a JSON array
+// of report keys) — the catalog lives in src/lib/reports/registry.ts and the
+// ops console's Plans tab ticks which ones each plan includes.
+import { REPORT_LABELS, isReportKey, type ReportKey } from "@/lib/reports/registry";
+export type { ReportKey };
 
 export async function getEnabledReports(planCode: PlanCode | null | undefined): Promise<ReportKey[]> {
   if (!planCode) return [];

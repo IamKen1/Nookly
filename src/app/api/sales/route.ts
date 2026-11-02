@@ -436,6 +436,8 @@ export async function POST(request: NextRequest) {
         quantity: item.quantity,
         unitPrice: item.price,
         totalPrice: item.price * item.quantity,
+        // The product's cost now (it follows the latest delivery), kept for profit reports.
+        unitCost: productMap.get(item.productId)!.costPrice,
       })),
     });
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { REPORTS, REPORT_GROUPS } from "@/lib/reports/registry";
 
 interface Plan {
   id: string;
@@ -30,14 +31,8 @@ const FEATURE_FLAGS: { key: keyof Plan; label: string }[] = [
   { key: "featureApiAccess", label: "API access (read-only data export)" },
 ];
 
-const REPORT_FLAGS: { key: string; label: string }[] = [
-  { key: "overview", label: "Overview" },
-  { key: "income", label: "Income by product" },
-  { key: "expenses", label: "Expenses" },
-  { key: "e-services", label: "E-Services" },
-  { key: "inventory-dates", label: "Expiry monitor" },
-  { key: "inventory-valuation", label: "Inventory valuation export" },
-];
+// Every report in the catalog, grouped as on the Reports screen.
+const REPORT_FLAGS = REPORTS.map((r) => ({ key: r.key as string, label: r.label, group: r.group }));
 
 function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
   const [draft, setDraft] = useState(plan);
@@ -184,17 +179,32 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
       </div>
 
       <div className="mt-4">
-        <p className="mb-2 text-xs font-medium text-zinc-500">Reports tabs (which Reports pages this plan can see)</p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {REPORT_FLAGS.map((r) => (
-            <label key={r.key} className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                checked={draft.enabledReports.includes(r.key)}
-                onChange={(e) => toggleReport(r.key, e.target.checked)}
-              />
-              {r.label}
-            </label>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-zinc-500">
+            Reports this plan includes ({draft.enabledReports.filter((k) => REPORT_FLAGS.some((r) => r.key === k)).length} of {REPORT_FLAGS.length})
+          </p>
+          <span className="flex gap-2 text-xs">
+            <button type="button" className="font-medium text-zinc-600 hover:underline" onClick={() => set("enabledReports", REPORT_FLAGS.map((r) => r.key) as never)}>
+              All
+            </button>
+            <button type="button" className="font-medium text-zinc-600 hover:underline" onClick={() => set("enabledReports", [] as never)}>
+              None
+            </button>
+          </span>
+        </div>
+        <div className="space-y-3">
+          {REPORT_GROUPS.map((g) => (
+            <div key={g}>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{g}</p>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {REPORT_FLAGS.filter((r) => r.group === g).map((r) => (
+                  <label key={r.key} className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700">
+                    <input type="checkbox" checked={draft.enabledReports.includes(r.key)} onChange={(e) => toggleReport(r.key, e.target.checked)} />
+                    {r.label}
+                  </label>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
