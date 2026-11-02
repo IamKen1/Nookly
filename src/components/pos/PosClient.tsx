@@ -1041,14 +1041,44 @@ export default function PosClient({
 
       {confirmSend && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !sendingOrder && setConfirmSend(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-base font-bold text-gray-900">Send this order to the cashier?</h2>
             <p className="mt-1 text-xs text-gray-500">The cart will be cleared here and the order will wait for payment at the cashier.</p>
-            <div className="mt-3 flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm">
-              <span className="text-gray-600">
-                {cart.length} {cart.length === 1 ? "item" : "items"} · {cart.reduce((sum, l) => sum + l.quantity, 0)} pcs
-              </span>
-              <span className="font-bold text-gray-900">{peso(subtotal)}</span>
+            {/* The same breakdown as the cart, so whoever takes the order can tell the customer the total. */}
+            <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm">
+              <ul className="max-h-48 space-y-1 overflow-y-auto">
+                {cart.map((l) => (
+                  <li key={l.productId} className="flex justify-between gap-3">
+                    <span className="min-w-0 truncate text-gray-700">
+                      {l.name} <span className="text-xs text-gray-400">· {l.quantity} × {peso(l.price)}</span>
+                    </span>
+                    <span className="shrink-0 tabular-nums text-gray-900">{peso(l.price * l.quantity)}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-2 space-y-0.5 border-t border-gray-200 pt-2 text-xs text-gray-600">
+                <div className="flex justify-between">
+                  <span>Subtotal ({cart.reduce((sum, l) => sum + l.quantity, 0)} pcs)</span>
+                  <span className="tabular-nums">{peso(subtotal)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>VAT Sales</span>
+                  <span className="tabular-nums">{peso(vatableSales)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>12% VAT</span>
+                  <span className="tabular-nums">{peso(vatAmount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Non-VAT Sales</span>
+                  <span className="tabular-nums">{peso(nonVatableTotal)}</span>
+                </div>
+              </div>
+              <div className="mt-2 flex justify-between border-t border-gray-200 pt-2">
+                <span className="font-bold text-gray-900">Total</span>
+                <span className="font-bold tabular-nums text-emerald-700">{peso(subtotal)}</span>
+              </div>
+              <p className="mt-1 text-[11px] text-gray-400">Before any discount (Senior/PWD etc.), which the cashier applies at payment.</p>
             </div>
             {rxForOrder?.label && (
               <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
