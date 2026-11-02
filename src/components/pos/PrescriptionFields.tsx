@@ -202,7 +202,7 @@ export default function PrescriptionFields({
 }: {
   pendingPrescriptions: PendingPrescription[];
   cart?: CartLine[];
-  // Opens on "Existing / refill" with this prescription chosen (from Reorder).
+  // Opens on "Continue existing" with this prescription chosen (from Reorder).
   initialExistingId?: string;
   onChange: (selection: PrescriptionSelection | null) => void;
   // A message while the prescription is started but can't be saved yet; null when it's complete or untouched.
