@@ -23,17 +23,30 @@ const DRUG_SCHEDULE_VALUES: DrugSchedule[] = ["SCHEDULE_I", "SCHEDULE_II", "SCHE
 // category as "already accounted for" without anything being persisted.
 const DRY_RUN_CATEGORY_PREFIX = "__dryrun__:";
 
+// Headers match loosely: "Selling Price *", "Expiry Date (YYYY-MM-DD)" and
+// "selling price" all read as the same column.
+const normalizeHeader = (h: string) => h.replace(/\(.*?\)/g, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+
 const getFieldValue = (row: RowData, candidates: string[]): unknown => {
   for (const candidate of candidates) {
     if (row[candidate] !== undefined && row[candidate] !== null && row[candidate] !== "") return row[candidate];
   }
-  const normalizedCandidates = candidates.map((c) => c.replace(/\s+/g, "").toLowerCase());
+  const normalizedCandidates = candidates.map(normalizeHeader);
   for (const [key, value] of Object.entries(row)) {
-    if (normalizedCandidates.includes(key.replace(/\s+/g, "").toLowerCase()) && value !== undefined && value !== null && value !== "") {
+    if (normalizedCandidates.includes(normalizeHeader(key)) && value !== undefined && value !== null && value !== "") {
       return value;
     }
   }
   return undefined;
+};
+
+// Excel dates arrive as day serials (or Date objects); typed text as strings.
+const parseDate = (value: unknown): Date | null => {
+  if (value === undefined || value === null || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "number") return new Date(Date.UTC(1899, 11, 30) + Math.round(value) * 86400000);
+  const d = new Date(String(value).trim());
+  return Number.isNaN(d.getTime()) ? null : d;
 };
 
 const getTextValue = (row: RowData, candidates: string[]): string => {
@@ -69,9 +82,9 @@ const normalizeDrugSchedule = (value: string): DrugSchedule | null => {
 };
 
 const buildProductName = (row: RowData): string => {
-  const productName = getTextValue(row, ["Product Name"]);
+  const productName = getTextValue(row, ["Product Name", "Name"]);
   if (productName) return productName;
-  const brandName = getTextValue(row, ["Brand Name"]);
+  const brandName = getTextValue(row, ["Brand Name", "Brand"]);
   if (brandName) return brandName;
   const genericName = getTextValue(row, ["Generic Name"]);
   const dosage = getTextValue(row, ["Dosage", "Strength"]);
@@ -86,21 +99,21 @@ const buildProductPayload = (row: RowData, categoryId: string) => {
   const costPrice = parseNumber(getFieldValue(row, ["Cost Price", "Cost Price Per Piece", "COST PRICE PER PIECE"])) ?? 0;
   const sellingPrice =
     parseNumber(getFieldValue(row, ["Selling Price", "Selling Price Per Piece", "SELLING PRICE PER PIECE AS PER GOOGLE", "SELLING PRICE PER PIECE"])) ?? 0;
-  const currentStock = parseInteger(getFieldValue(row, ["Current Stock"])) ?? 0;
+  const currentStock = parseInteger(getFieldValue(row, ["Current Stock", "Starting Stock", "Stock", "Quantity"])) ?? 0;
   const minimumStock = parseInteger(getFieldValue(row, ["Minimum Stock"])) ?? 0;
   const maximumStock = parseInteger(getFieldValue(row, ["Maximum Stock"]));
   const reorderPoint = parseInteger(getFieldValue(row, ["Reorder Point"])) ?? minimumStock;
   const weight = parseNumber(getFieldValue(row, ["Net Weight", "Weight"]));
-  const expiryDateValue = getTextValue(row, ["Expiry Date"]);
-  const expiryDate = expiryDateValue ? new Date(expiryDateValue) : null;
-  const batchNumber = getTextValue(row, ["Batch Number"]);
-  const batchExpirationValue = getTextValue(row, ["Batch Expiration Date"]);
-  const batchExpirationDate = batchExpirationValue ? new Date(batchExpirationValue) : null;
+  const expiryRaw = getFieldValue(row, ["Batch Expiration Date", "Expiry Date", "Expiration Date"]);
+  const batchExpirationDate = parseDate(expiryRaw);
+  // An expiry date without a lot number still gets tracked, as an opening batch.
+  const batchNumber = getTextValue(row, ["Batch Number", "Batch Lot Number", "Lot Number", "Batch"]) || (batchExpirationDate ? "OPENING" : "");
+  const expiryDate = batchExpirationDate;
 
   return {
     name: productName,
     genericName: getTextValue(row, ["Generic Name"]) || null,
-    brandName: getTextValue(row, ["Brand Name"]) || null,
+    brandName: getTextValue(row, ["Brand Name", "Brand"]) || null,
     barcode: getTextValue(row, ["Barcode"]) || null,
     description: getTextValue(row, ["Description"]) || null,
     strength: getTextValue(row, ["Strength", "Dosage"]) || null,
@@ -125,15 +138,16 @@ const buildProductPayload = (row: RowData, categoryId: string) => {
     maximumStock,
     reorderPoint,
     drugSchedule: normalizeDrugSchedule(getTextValue(row, ["Drug Schedule"])),
-    requiresPrescription: parseYesNo(getFieldValue(row, ["Requires Prescription"]), false),
+    requiresPrescription: parseYesNo(getFieldValue(row, ["Requires Prescription", "Rx Required", "Prescription"]), false),
     isOTC: parseYesNo(getFieldValue(row, ["Is OTC"]), true),
-    isVatable: parseYesNo(getFieldValue(row, ["Is VATable", "Is Vatable"]), true),
+    isVatable: parseYesNo(getFieldValue(row, ["Is VATable", "Is Vatable", "VATable", "VAT"]), true),
     isActive: parseYesNo(getFieldValue(row, ["Is Active"]), true),
     // Batch/expiry are only ever applied when adding a brand-new product —
     // valid only if both are present, the date parses, and there's stock to track.
     batchNumber: batchNumber || null,
-    batchExpirationDate: batchExpirationDate && !Number.isNaN(batchExpirationDate.getTime()) ? batchExpirationDate : null,
-    hasInvalidBatchExpiration: Boolean(batchNumber && batchExpirationValue && Number.isNaN(new Date(batchExpirationValue).getTime())),
+    batchExpirationDate,
+    hasInvalidBatchExpiration: Boolean(expiryRaw !== undefined && !batchExpirationDate),
+    supplierName: getTextValue(row, ["Supplier", "Supplier Name"]),
   };
 };
 
@@ -185,7 +199,8 @@ export async function POST(request: NextRequest) {
 
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "buffer" });
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const productsSheet = workbook.SheetNames.find((n) => n.trim().toLowerCase() === "products");
+    const worksheet = workbook.Sheets[productsSheet ?? workbook.SheetNames[0]];
     const data = XLSX.utils.sheet_to_json(worksheet) as RowData[];
 
     const errors: ImportIssue[] = [];
@@ -400,7 +415,10 @@ async function processAddProduct(
     return "skipped";
   }
 
-  const { currentStock, batchNumber, batchExpirationDate, hasInvalidBatchExpiration, ...productData } = payload;
+  const { currentStock, batchNumber, batchExpirationDate, hasInvalidBatchExpiration, supplierName, ...productData } = payload;
+  if (supplierName && dryRun && !(await prisma.supplier.findFirst({ where: { tenantId: session.tenantId, name: { equals: supplierName, mode: "insensitive" } }, select: { id: true } }))) {
+    warnings.push({ row: rowNumber, field: "Supplier", message: `Would add supplier "${supplierName}"` });
+  }
   const willTrackBatch = Boolean(batchNumber && batchExpirationDate && currentStock > 0 && !hasInvalidBatchExpiration);
 
   if (dryRun) {
@@ -412,6 +430,10 @@ async function processAddProduct(
 
   try {
     await prisma.$transaction(async (tx) => {
+      const supplier = supplierName
+        ? (await tx.supplier.findFirst({ where: { tenantId: session.tenantId, name: { equals: supplierName, mode: "insensitive" } }, select: { id: true } })) ??
+          (await tx.supplier.create({ data: { tenantId: session.tenantId, name: supplierName }, select: { id: true } }))
+        : null;
       const product = await tx.product.create({
         data: {
           tenantId: session.tenantId,
@@ -421,6 +443,7 @@ async function processAddProduct(
           sellingPrice: new Prisma.Decimal(productData.sellingPrice),
           costPricePerBox: productData.costPricePerBox != null ? new Prisma.Decimal(productData.costPricePerBox) : null,
           stocks: { create: { storeId: session.storeId!, currentStock } },
+          ...(supplier ? { suppliers: { create: { supplierId: supplier.id } } } : {}),
         },
       });
 
@@ -433,6 +456,7 @@ async function processAddProduct(
             expirationDate: batchExpirationDate!,
             quantity: currentStock,
             costPrice: new Prisma.Decimal(productData.costPrice),
+            supplierId: supplier?.id ?? null,
           },
         });
       }

@@ -361,6 +361,13 @@ export default function InventoryClient({
             }}
           />
         </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          {importMode === "add"
+            ? "Use the template: fill the Products sheet, one product per row. Only Product Name, Category, Cost Price and Selling Price are required. Pharmacy columns can be left blank. You'll see a preview before anything is saved."
+            : importMode === "update"
+              ? "Use an Export of your products, change what you need, then import it here. Products are matched by Product ID, or by name."
+              : "Use the Count sheet: enter what you actually counted. Stock is corrected to match."}
+        </p>
 
         {importResult && (
           <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
