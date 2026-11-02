@@ -7,6 +7,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import BranchStockPanel from "./BranchStockPanel";
 import ReceivingPanel from "./ReceivingPanel";
+import InventoryAnalytics from "./InventoryAnalytics";
 
 interface Product {
   id: string;
@@ -447,6 +448,8 @@ export default function InventoryClient({
           </button>
         ))}
       </div>
+
+      <InventoryAnalytics tab={tab} branchName={branches?.stores.find((s) => s.id === branches.currentStoreId)?.name ?? null} />
 
       {tab === "receiving" && <ReceivingPanel canAdjust={canAdjust} canSeeAllBranches={canSeeAllBranches} canPay={canPaySuppliers} />}
 

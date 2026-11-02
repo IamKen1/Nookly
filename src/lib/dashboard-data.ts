@@ -375,7 +375,7 @@ export async function getPendingPrescriptions(scope: DashboardScope, take = 6) {
 // up in it) and at selling price (what it brings in if all of it sells).
 // Cost uses each batch's own purchase cost; units not covered by a batch fall
 // back to the product's cost price. Selling price honors branch prices.
-export async function getInventoryValue(scope: DashboardScope) {
+export async function getInventoryValue(scope: { session: { tenantId: string }; storeId: string | null }) {
   const tenantId = scope.session.tenantId;
   const [stores, stocks, batches] = await Promise.all([
     prisma.store.findMany({

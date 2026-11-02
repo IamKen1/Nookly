@@ -47,14 +47,15 @@ export default async function AppShell({
 
   return (
     <div className="flex min-h-screen bg-zinc-50">
-      <aside className="hidden w-56 shrink-0 border-r border-zinc-200 bg-white sm:flex sm:flex-col">
+      {/* Stays in place while the page scrolls; its own list scrolls on short screens. */}
+      <aside className="hidden w-56 shrink-0 border-r border-zinc-200 bg-white sm:sticky sm:top-0 sm:flex sm:h-screen sm:flex-col">
         <Link href="/" className="flex items-center gap-2 px-5 py-5 font-bold text-zinc-900">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-600 text-white">
             <Leaf className="h-4.5 w-4.5" />
           </span>
           Nookly
         </Link>
-        <nav className="flex flex-1 flex-col gap-1 px-3">
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3">
           {visibleItems.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
