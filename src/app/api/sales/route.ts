@@ -9,9 +9,9 @@ import { runInBackground } from "@/lib/background";
 import { notifySaleCreated, notifyStockThresholdReached } from "@/lib/notifications";
 import { getReceiptSettings } from "@/lib/receipt-settings";
 import { invalidateCached } from "@/lib/route-cache";
-import { canCollectPayment } from "@/lib/permissions-shared";
+import { canCollectPayment, isShiftRequired, phDayOf } from "@/lib/permissions-shared";
 import { batchesAtStore } from "@/lib/branch-scope";
-import { hasPermission, saleVisibilityWhere } from "@/lib/permissions";
+import { getRolePermissions, hasPermission, saleVisibilityWhere } from "@/lib/permissions";
 
 class PendingOrderTakenError extends Error {}
 
@@ -279,8 +279,15 @@ export async function POST(request: NextRequest) {
 
   const openShift = await prisma.shift.findFirst({
     where: { tenantId: session.tenantId, storeId: session.storeId, userId: session.userId, closedAt: null },
-    select: { id: true },
+    select: { id: true, openedAt: true },
   });
+  // Roles set to "Must start & end a shift" sell only from a shift opened today.
+  if (isShiftRequired(session.role, await getRolePermissions(session.tenantId, session.role))) {
+    if (!openShift) return NextResponse.json({ error: "Start your shift before ringing up sales.", code: "SHIFT_REQUIRED" }, { status: 400 });
+    if (phDayOf(openShift.openedAt) !== phDayOf(new Date())) {
+      return NextResponse.json({ error: "End the shift you started on an earlier day, then start today's.", code: "SHIFT_STALE" }, { status: 400 });
+    }
+  }
 
   const batchWhere = await batchesAtStore(session.tenantId, session.storeId);
 

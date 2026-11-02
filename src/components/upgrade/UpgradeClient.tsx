@@ -108,7 +108,7 @@ export default function UpgradeClient({
             onClick={async () => {
               setLoggingOut(true);
               try {
-                await fetch("/api/auth/logout", { method: "POST" });
+                await fetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force: true }) });
                 router.push("/login");
                 router.refresh();
               } finally {

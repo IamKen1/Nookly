@@ -12,6 +12,7 @@ export const PERMISSION_MODULES = [
   { key: "dashboard", parent: null, path: "/dashboard", label: "Dashboard", description: "Today's sales, stock alerts, and plan" },
   { key: "all_branches", parent: "dashboard", path: null, label: "See all branches", description: "Unticked: Dashboard and Sales show only their own branch" },
   { key: "pos", parent: null, path: "/pos", label: "POS", description: "Ring up sales, or send orders to a cashier (Order Takers)" },
+  { key: "pos_shift_required", parent: "pos", path: null, label: "Must start & end a shift", description: "Ticked: can't sell without an open shift, or log out without ending it" },
   { key: "products", parent: null, path: "/products", label: "Products", description: "Browse the product catalog" },
   { key: "products_edit", parent: "products", path: null, label: "Edit products & prices", description: "Add, edit, and delete products and their prices" },
   { key: "inventory", parent: null, path: "/inventory", label: "Inventory", description: "Stock levels, batches, movement history, and branch stock" },
@@ -62,6 +63,15 @@ export const ROLE_DESCRIPTIONS: Record<ConfigurableRole, string> = {
 // never collect payment themselves, so every sale has a separate person
 // accountable for taking the order and for handling the money.
 export const canCollectPayment = (role: string) => role !== "ORDER_TAKER";
+
+// "Must start & end a shift" is a requirement, not an access right, so the
+// owner (who otherwise has every permission) is never held to it, and order
+// takers never handle the cash drawer. Off for every role unless ticked.
+export const isShiftRequired = (role: string, permissions: Partial<Record<PermissionModuleKey, boolean>>) =>
+  role !== "OWNER" && canCollectPayment(role) && Boolean(permissions.pos_shift_required);
+
+// Philippine calendar day of an instant, to tell a shift left open from an earlier day.
+export const phDayOf = (d: Date | string) => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
 // Includes OWNER (not a configurable role, but still needs a display label
 // wherever the logged-in user's role is shown in the UI).

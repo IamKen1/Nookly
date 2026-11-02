@@ -40,7 +40,7 @@ import { usePrinterConnection } from "@/lib/printer/usePrinterConnection";
 import { generateThermalReceiptText, printReceipt } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 import type { DiscountType } from "@/lib/vat-calculations";
-import { ALL_ROLE_LABELS, canCollectPayment, type PermissionModuleKey } from "@/lib/permissions-shared";
+import { ALL_ROLE_LABELS, canCollectPayment, isShiftRequired, phDayOf, type PermissionModuleKey } from "@/lib/permissions-shared";
 import CartPanel, { type CartLine } from "./CartPanel";
 import CheckoutModal, { type PrescriptionDraft } from "./CheckoutModal";
 import ShiftModal from "./ShiftModal";
@@ -157,6 +157,7 @@ export default function PosClient({
   const [holdLabel, setHoldLabel] = useState<string | null>(null);
   const { data: heldCarts = [], mutate: refreshHeld } = useSWR<HeldCart[]>("/api/held-carts", { revalidateOnFocus: true });
   const isOrderTaker = !canCollectPayment(role ?? "");
+  const shiftRequired = isShiftRequired(role ?? "", permissions);
 
   // Cashiers watch for orders sent by order takers — but only at branches that
   // have order takers, since every check is a database read. SWR pauses while
@@ -187,10 +188,27 @@ export default function PosClient({
     }
   );
 
-  const { data: shiftData, mutate: refreshShiftStatus } = useSWR<{ openShift: { id: string } | null }>(
+  const { data: shiftData, mutate: refreshShiftStatus } = useSWR<{ openShift: { id: string; openedAt: string } | null }>(
     "/api/shifts?mine=true"
   );
   const hasOpenShift = shiftData ? Boolean(shiftData.openShift) : null;
+  // "Must start & end a shift": sell only from a shift opened today.
+  const shiftBlock: string | null =
+    !shiftRequired || !shiftData
+      ? null
+      : !shiftData.openShift
+      ? "Start your shift before ringing up sales."
+      : phDayOf(shiftData.openShift.openedAt) !== phDayOf(new Date())
+      ? "Your shift from an earlier day is still open — end it, then start today's."
+      : null;
+  const openCheckout = () => {
+    if (shiftBlock) {
+      showNotification(shiftBlock, "error");
+      setShiftModalOpen(true);
+      return;
+    }
+    setShowCheckout(true);
+  };
   const openShiftId = shiftData?.openShift?.id ?? null;
 
   const printer = usePrinterConnection();
@@ -477,7 +495,9 @@ export default function PosClient({
   };
 
   const checkoutLabel = isOrderTaker ? (sendingOrder ? "Sending..." : "Send to cashier") : "Checkout";
-  const cartNotice = activeOrder
+  const cartNotice = shiftBlock
+    ? shiftBlock
+    : activeOrder
     ? `Order ${activeOrder.orderNumber} · taken by ${activeOrder.takerName}`
     : linkedRx
     ? `${linkedRx.continues ? "Continuing" : "Reorder of"} ${linkedRx.prescriptionNumber} · ${linkedRx.customerName}`
@@ -539,7 +559,14 @@ export default function PosClient({
                     onClick={async () => {
                       setLoggingOut(true);
                       try {
-                        await fetch("/api/auth/logout", { method: "POST" });
+                        const res = await fetch("/api/auth/logout", { method: "POST" });
+                        if (!res.ok) {
+                          // This role ends its shift before logging out.
+                          setMenuOpen(false);
+                          showNotification((await res.json().catch(() => ({}))).error ?? "Couldn't log out.", "error");
+                          setShiftModalOpen(true);
+                          return;
+                        }
                         router.push("/login");
                         router.refresh();
                       } finally {
@@ -760,7 +787,7 @@ export default function PosClient({
           onRemove={removeLine}
           onClear={clearCart}
           onHold={startHold}
-          onOpenCheckout={isOrderTaker ? sendToCashier : () => setShowCheckout(true)}
+          onOpenCheckout={isOrderTaker ? sendToCashier : openCheckout}
           subtotal={subtotal}
           vatableSales={vatableSales}
           vatAmount={vatAmount}
@@ -811,7 +838,7 @@ export default function PosClient({
             onOpenCheckout={() => {
               setMobileCartOpen(false);
               if (isOrderTaker) sendToCashier();
-              else setShowCheckout(true);
+              else openCheckout();
             }}
             subtotal={subtotal}
             vatableSales={vatableSales}

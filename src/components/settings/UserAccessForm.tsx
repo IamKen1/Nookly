@@ -166,10 +166,13 @@ export default function UserAccessForm() {
                     </div>
                   </td>
                   <td className="px-1 py-3 text-center">
-                    <input type="checkbox" checked disabled className="h-4 w-4 accent-emerald-600 opacity-40" aria-label={`Owner: ${m.label}`} />
+                    {/* The owner has every access right, but is never held to the shift requirement. */}
+                    <input type="checkbox" checked={m.key !== "pos_shift_required"} disabled className="h-4 w-4 accent-emerald-600 opacity-40" aria-label={`Owner: ${m.label}`} />
                   </td>
                   {CONFIGURABLE_ROLES.map((role) => {
-                    const parentOff = m.parent !== null && !matrix[role][m.parent];
+                    // Order takers never handle the cash drawer, so the shift requirement doesn't apply to them.
+                    const notApplicable = m.key === "pos_shift_required" && role === "ORDER_TAKER";
+                    const parentOff = notApplicable || (m.parent !== null && !matrix[role][m.parent]);
                     return (
                       <td key={role} className="px-1 py-3 text-center">
                         <input
@@ -177,7 +180,7 @@ export default function UserAccessForm() {
                           checked={Boolean(matrix[role]?.[m.key]) && !parentOff}
                           disabled={parentOff}
                           onChange={() => toggle(role, m.key)}
-                          title={parentOff ? `Tick ${PERMISSION_MODULES.find((x) => x.key === m.parent)?.label} first` : undefined}
+                          title={notApplicable ? "Order takers don't handle the cash drawer" : parentOff ? `Tick ${PERMISSION_MODULES.find((x) => x.key === m.parent)?.label} first` : undefined}
                           aria-label={`${ROLE_LABELS[role]}: ${m.label}`}
                           className="h-4 w-4 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-30"
                         />
