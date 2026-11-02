@@ -2,9 +2,10 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { ChevronRight, Loader2, PackageCheck, Plus, Search, Trash2, X } from "lucide-react";
+import { ChevronRight, Loader2, PackageCheck, Plus, Search, Trash2, Wallet, X } from "lucide-react";
 import { formatDate, formatDateTime, peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import PaidFrom from "@/components/suppliers/PaidFrom";
 
 interface ReceivingLine {
   id: string;
@@ -49,6 +50,8 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches, canPay = 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [justReceived, setJustReceived] = useState<string | null>(null);
   const [showReceive, setShowReceive] = useState(false);
+  const [paying, setPaying] = useState<Receiving | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const params = new URLSearchParams();
   if (query) params.set("q", query);
@@ -203,6 +206,20 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches, canPay = 
                             </tbody>
                           </table>
                           {r.notes && <p className="ml-6 mt-2 text-xs text-zinc-500">Note: {r.notes}</p>}
+                          {canPay && r.supplier && r.amountPaid !== undefined && r.totalCost - r.amountPaid > 0.005 && (
+                            <div className="ml-6 mt-3 flex items-center gap-3">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPaying(r);
+                                }}
+                                className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                              >
+                                <Wallet className="h-3.5 w-3.5" /> Record payment
+                              </button>
+                              <span className="text-xs text-zinc-500">{peso(r.totalCost - r.amountPaid)} still to pay</span>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -213,7 +230,20 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches, canPay = 
           </tbody>
         </table>
       </div>
+      {message && <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{message}</p>}
       {receivings.length >= 100 && <p className="mt-2 text-xs text-zinc-400">Showing the latest 100 — search or filter by supplier to find older ones.</p>}
+
+      {paying && (
+        <DeliveryPaymentModal
+          delivery={paying}
+          onClose={() => setPaying(null)}
+          onPaid={async (msg) => {
+            setPaying(null);
+            setMessage(msg);
+            await mutate();
+          }}
+        />
+      )}
 
       {showReceive && (
         <ReceiveDeliveryModal
@@ -230,6 +260,104 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches, canPay = 
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Pays one delivery (in full or in part) right from the Receiving list.
+function DeliveryPaymentModal({ delivery, onClose, onPaid }: { delivery: Receiving; onClose: () => void; onPaid: (message: string) => void }) {
+  const open = Math.round((delivery.totalCost - (delivery.amountPaid ?? 0)) * 100) / 100;
+  const [amount, setAmount] = useState(String(open));
+  const [method, setMethod] = useState("CASH");
+  const [fromDrawer, setFromDrawer] = useState(true);
+  const [shiftId, setShiftId] = useState<string | null>(null);
+  const [paidOn, setPaidOn] = useState(todayPH());
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/suppliers/${delivery.supplier!.id}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: Number(amount), method, paidOn, referenceNumber, receivingIds: [delivery.id], fromDrawer: method === "CASH" && fromDrawer, shiftId }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setError(data.error ?? "Couldn't record the payment.");
+      onPaid(
+        `Paid ${peso(Number(amount))} to ${delivery.supplier!.name} for ${delivery.receivingNumber}.${data.credit > 0 ? ` ${peso(data.credit)} kept as credit.` : ""}`
+      );
+    } catch {
+      setError("Network error.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const input = "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
+        <div className="flex items-start justify-between border-b border-zinc-100 px-5 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900">Record payment</h2>
+            <p className="text-xs text-zinc-500">
+              {delivery.supplier!.name} · {delivery.receivingNumber}
+              {delivery.referenceNumber && ` · DR ${delivery.referenceNumber}`} · {peso(open)} to pay
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 px-5 py-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">Amount</label>
+            <input type="number" min={0} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className={input} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">Date paid</label>
+            <input type="date" value={paidOn} max={todayPH()} onChange={(e) => setPaidOn(e.target.value)} className={input} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">Paid by</label>
+            <select value={method} onChange={(e) => setMethod(e.target.value)} className={input}>
+              <option value="CASH">Cash</option>
+              <option value="BANK_TRANSFER">Bank transfer</option>
+              <option value="CHECK">Check</option>
+              <option value="E_WALLET">E-wallet</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">Reference</label>
+            <input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Check #, bank ref, OR #" className={input} />
+          </div>
+          {method === "CASH" && (
+            <div className="col-span-2">
+              <PaidFrom fromDrawer={fromDrawer} onChange={setFromDrawer} shiftId={shiftId} onShiftChange={setShiftId} />
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-zinc-100 bg-zinc-50 px-5 py-3">
+          <p className="min-w-0 text-sm text-red-600">{error}</p>
+          <div className="flex shrink-0 gap-2">
+            <button onClick={onClose} className="rounded-full border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-white">
+              Cancel
+            </button>
+            <button
+              onClick={save}
+              disabled={saving || !(Number(amount) > 0)}
+              className="flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Record {Number(amount) > 0 ? peso(Number(amount)) : "payment"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -292,6 +420,8 @@ function ReceiveDeliveryModal({
   const [paidNow, setPaidNow] = useState(false);
   const [paidMethod, setPaidMethod] = useState("CASH");
   const [paidRef, setPaidRef] = useState("");
+  const [paidFromDrawer, setPaidFromDrawer] = useState(true);
+  const [paidShiftId, setPaidShiftId] = useState<string | null>(null);
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [search, setSearch] = useState("");
   const query = useDebouncedValue(search.trim(), 250);
@@ -361,7 +491,7 @@ function ReceiveDeliveryModal({
           referenceNumber,
           receivedDate,
           notes,
-          paidNow: paidNow && sid ? { method: paidMethod, referenceNumber: paidRef } : null,
+          paidNow: paidNow && sid ? { method: paidMethod, referenceNumber: paidRef, fromDrawer: paidMethod === "CASH" && paidFromDrawer, shiftId: paidShiftId } : null,
           items: lines.map((l) => ({
             productId: l.productId,
             batchNumber: l.batchNumber,
@@ -563,6 +693,11 @@ function ReceiveDeliveryModal({
                     <option value="E_WALLET">E-wallet</option>
                   </select>
                   <input value={paidRef} onChange={(e) => setPaidRef(e.target.value)} placeholder="Reference (optional)" className="w-40 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm" />
+                  {paidMethod === "CASH" && (
+                    <div className="w-full">
+                      <PaidFrom fromDrawer={paidFromDrawer} onChange={setPaidFromDrawer} shiftId={paidShiftId} onShiftChange={setPaidShiftId} />
+                    </div>
+                  )}
                 </>
               )}
             </div>

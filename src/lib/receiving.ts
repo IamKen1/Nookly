@@ -19,7 +19,7 @@ export interface ReceivingInput {
   notes?: string | null;
   items: ReceivingLineInput[];
   // Paid when it arrived (cash on delivery): records the payment right away.
-  paidNow?: { method: string; referenceNumber?: string | null } | null;
+  paidNow?: { method: string; referenceNumber?: string | null; fromDrawer?: boolean; shiftId?: string | null } | null;
 }
 
 export class ReceivingError extends Error {
@@ -200,6 +200,7 @@ export async function receiveDelivery(params: {
                   referenceNumber: input.paidNow.referenceNumber?.trim().slice(0, 60) || null,
                   notes: `Paid on delivery (${receivingNumber})`,
                   recordedById: userId,
+                  shiftId: input.paidNow.shiftId ?? null,
                 },
               });
               await allocateCredit(tx, { tenantId, supplierId: supplier.id, amount: Number(receiving.totalCost), paymentId: payment.id, preferReceivingIds: [receiving.id] });

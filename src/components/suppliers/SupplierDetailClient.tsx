@@ -7,6 +7,7 @@ import { ArrowLeft, Ban, Loader2, Pencil, Search, Trash2, Undo2, Wallet, X } fro
 import { formatDate, peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import SupplierForm, { termsLabel, type SupplierDetails } from "./SupplierForm";
+import PaidFrom from "./PaidFrom";
 
 interface Delivery {
   id: string;
@@ -368,6 +369,8 @@ function PaymentModal({
   const [amount, setAmount] = useState(suggested ? String(suggested) : "");
   const [paidOn, setPaidOn] = useState(todayPH());
   const [method, setMethod] = useState("BANK_TRANSFER");
+  const [fromDrawer, setFromDrawer] = useState(true);
+  const [shiftId, setShiftId] = useState<string | null>(null);
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -386,7 +389,7 @@ function PaymentModal({
       const res = await fetch(`/api/suppliers/${supplierId}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: Number(amount), paidOn, method, referenceNumber, notes, receivingIds: picked }),
+        body: JSON.stringify({ amount: Number(amount), paidOn, method, referenceNumber, notes, receivingIds: picked, fromDrawer: method === "CASH" && fromDrawer, shiftId }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "Couldn't record the payment.");
@@ -443,6 +446,11 @@ function PaymentModal({
           <label className="mb-1 block text-xs font-medium text-zinc-600">Reference (check #, bank ref, OR #)</label>
           <input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} className={modalInput} />
         </div>
+        {method === "CASH" && (
+          <div className="sm:col-span-3">
+            <PaidFrom fromDrawer={fromDrawer} onChange={setFromDrawer} shiftId={shiftId} onShiftChange={setShiftId} />
+          </div>
+        )}
       </div>
 
       <div>

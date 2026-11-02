@@ -128,7 +128,7 @@ export async function purchaseLog(ctx: ReportContext): Promise<ReportResult> {
 
 export async function payablesAging(ctx: ReportContext): Promise<ReportResult> {
   const [balances, suppliers] = await Promise.all([
-    supplierBalances(ctx.tenantId),
+    supplierBalances(ctx.tenantId, undefined, ctx.storeIds),
     prisma.supplier.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true, name: true, paymentTermsDays: true } }),
   ]);
   const rows = suppliers
@@ -170,7 +170,9 @@ export async function payablesAging(ctx: ReportContext): Promise<ReportResult> {
       { key: "balance", label: "Balance", format: "money", total: true },
     ],
     rows,
-    note: "As of now, all branches (suppliers are paid by the business). Days are counted past each delivery's due date.",
+    note: ctx.storeIds
+      ? "As of now, for deliveries received at the selected branch. Days are counted past each delivery's due date. Credit with suppliers belongs to the whole business — choose All branches to see it."
+      : "As of now, all branches. Days are counted past each delivery's due date.",
   };
 }
 
@@ -244,6 +246,7 @@ export async function shiftSummary(ctx: ReportContext): Promise<ReportResult> {
       endingCash: true,
       user: { select: { firstName: true, lastName: true } },
       expenses: { select: { amount: true } },
+      supplierPayments: { where: { voidedAt: null }, select: { amount: true } },
     },
     orderBy: { openedAt: "desc" },
     take: 5000,
@@ -273,6 +276,7 @@ export async function shiftSummary(ctx: ReportContext): Promise<ReportResult> {
       cashSales: money(cashSales),
       eservices: money(cashIn - cashOut),
       expenses: money(s.expenses.reduce((t, e) => t + n(e.amount), 0)),
+      supplierPaid: money(s.supplierPayments.reduce((t, p) => t + n(p.amount), 0)),
       expected: expected === null ? null : money(expected),
       counted: counted === null ? null : money(counted),
       variance: expected !== null && counted !== null ? money(counted - expected) : null,
@@ -298,6 +302,7 @@ export async function shiftSummary(ctx: ReportContext): Promise<ReportResult> {
       { key: "cashSales", label: "Cash sales", format: "money", total: true },
       { key: "eservices", label: "E-services cash", format: "money", total: true },
       { key: "expenses", label: "Expenses", format: "money", total: true },
+      { key: "supplierPaid", label: "Paid to suppliers", format: "money", total: true },
       { key: "expected", label: "Expected", format: "money" },
       { key: "counted", label: "Counted", format: "money" },
       { key: "variance", label: "Over / short", format: "money", total: true },
@@ -356,7 +361,8 @@ const RX_STATUS: Record<string, string> = { FILLED: "Fully served", PARTIAL: "Pa
 
 export async function prescriptionsReport(ctx: ReportContext): Promise<ReportResult> {
   const rx = await prisma.prescription.findMany({
-    where: { tenantId: ctx.tenantId, createdAt: { gte: ctx.from, lt: ctx.to } },
+    // A branch's prescriptions are the ones filled in its sales.
+    where: { tenantId: ctx.tenantId, createdAt: { gte: ctx.from, lt: ctx.to }, ...(ctx.storeIds ? { sales: { some: { storeId: { in: ctx.storeIds } } } } : {}) },
     select: {
       prescriptionNumber: true,
       originalDate: true,
@@ -399,6 +405,6 @@ export async function prescriptionsReport(ctx: ReportContext): Promise<ReportRes
       { key: "status", label: "Status" },
     ],
     rows,
-    note: "Prescriptions recorded in the period (all branches).",
+    note: ctx.storeIds ? "Prescriptions recorded in the period and filled at the selected branch." : "Prescriptions recorded in the period, all branches.",
   };
 }

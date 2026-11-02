@@ -892,7 +892,7 @@ export default function PosClient({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <PriceCheck showBranches />
+            <PriceCheck showBranches startWithAllBranches />
           </div>
         </div>
       )}

@@ -887,6 +887,7 @@ model Shift {
   sales            Sale[]
   cashTransactions CashTransaction[]
   expenses         ShiftExpense[]
+  supplierPayments SupplierPayment[]
 
   @@index([tenantId, storeId, closedAt])
   @@index([userId, closedAt])
@@ -1190,12 +1191,15 @@ model SupplierPayment {
   method          String // CASH, BANK_TRANSFER, CHECK, E_WALLET
   referenceNumber String?
   notes           String?
+  // Set when the cash came out of a cash drawer: that shift's expected cash goes down.
+  shiftId         String?
   recordedById    String
   voidedAt        DateTime?
   createdAt       DateTime             @default(now())
   tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   supplier        Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   recordedBy      User                 @relation("SupplierPaymentRecordedBy", fields: [recordedById], references: [id])
+  shift           Shift?               @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   allocations     SupplierAllocation[]
 
   @@index([tenantId, supplierId, paidAt])

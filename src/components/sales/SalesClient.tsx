@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { paymentMethodLabel } from "@/lib/payment-methods";
 import { useRouter } from "next/navigation";
 import { Ban, ChevronDown, ChevronUp, Loader2, Printer, RotateCcw, Search, X } from "lucide-react";
-import { printReceipt } from "@/lib/receipt";
+import { printReceiptAnywhere } from "@/lib/printer/print-receipt";
 import { isCompleteDate } from "@/lib/date-input";
 import type { ReceiptData } from "@/types/receipt";
 
@@ -217,7 +217,7 @@ export default function SalesClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const receiptData: ReceiptData = { ...data, date: new Date(data.date) };
-      printReceipt(receiptData);
+      await printReceiptAnywhere(receiptData);
     } catch {
       alert("Failed to load receipt.");
     } finally {

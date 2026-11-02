@@ -287,6 +287,7 @@ export async function getMyCounter(session: SessionPayload) {
           eWallet: reading.eWallet,
           load: reading.load,
           expenses: reading.expenses.total,
+          supplierPayments: reading.supplierPayments.total,
           returnsAmount: reading.returnsAmount,
           expectedCash: reading.computedExpectedCash,
         }

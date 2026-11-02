@@ -45,21 +45,21 @@ export async function GET(request: NextRequest) {
   }
 
   const ctx = await buildContext({ tenantId: session.tenantId, storeIds, fromKey, toKey, saleVisibility: await saleVisibilityWhere(session) });
-  const result = await RUNNERS[key](ctx);
+  const result = await RUNNERS[key]({ ...ctx, canPay: p.suppliers_pay });
   const scope = storeIds === null ? "All branches" : storeIds.length === 1 ? stores.find((s) => s.id === storeIds![0])?.name ?? "" : `${storeIds.length} branches`;
   const period = POINT_IN_TIME.includes(key) ? `As of ${today}` : fromKey === toKey ? fromKey : `${fromKey} to ${toKey}`;
 
   const format = params.get("format");
   if (format === "xlsx" || format === "csv") {
     const tenant = await prisma.tenant.findUnique({ where: { id: session.tenantId }, select: { name: true } });
-    return exportFile(result, { title: meta.label, business: tenant?.name ?? "", scope, period, format, fileKey: `${key}-${fromKey}-to-${toKey}` });
+    return exportFile(result, { key, title: meta.label, business: tenant?.name ?? "", scope, period, format, fileKey: `${key}-${fromKey}-to-${toKey}` });
   }
   return NextResponse.json({ ...result, meta: { key, label: meta.label, scope, period, fromKey, toKey } });
 }
 
 function exportFile(
   result: ReportResult,
-  m: { title: string; business: string; scope: string; period: string; format: "xlsx" | "csv"; fileKey: string }
+  m: { key?: string; title: string; business: string; scope: string; period: string; format: "xlsx" | "csv"; fileKey: string }
 ) {
   const header = result.columns.map((c) => c.label || " ");
   const body = result.rows.map((r) =>
@@ -102,8 +102,12 @@ function exportFile(
   sheet["!cols"] = result.columns.map((c) => ({ wch: Math.min(40, Math.max(10, c.label.length + 2, ...body.slice(0, 200).map((r) => String(r[result.columns.indexOf(c)] ?? "").length + 1))) }));
   const summary = XLSX.utils.aoa_to_sheet([[m.title], [`${m.scope} · ${m.period}`], [], ...result.summary.map((s) => [s.label, s.value]), ...(result.note ? [[], [result.note]] : [])]);
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, "Report");
+  XLSX.utils.book_append_sheet(book, sheet, m.key === "overview" ? "Daily trend" : "Report");
   XLSX.utils.book_append_sheet(book, summary, "Summary");
+  for (const sec of result.sections ?? []) {
+    const aoa = [sec.columns.map((c) => c.label || " "), ...sec.rows.map((r) => sec.columns.map((c) => r[c.key] ?? ""))];
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(aoa), sec.title.slice(0, 31).replace(/[\/?*[\]:]/g, " "));
+  }
   const buffer = XLSX.write(book, { bookType: "xlsx", type: "buffer" });
   return new NextResponse(buffer, {
     headers: {

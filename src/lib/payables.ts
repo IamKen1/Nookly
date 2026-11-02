@@ -21,6 +21,23 @@ export const RETURN_SETTLEMENTS: Record<string, string> = {
   REFUND: "Refund",
 };
 
+// The cash drawer a cash payment comes out of: the user's own open shift at
+// the branch, else the latest open shift there (e.g. the owner paying a
+// supplier from the cashier's drawer). Null when no drawer is open.
+export async function drawerShiftFor(db: Tx | typeof prisma, tenantId: string, storeId: string, userId: string, chosenShiftId?: unknown) {
+  // A drawer picked on screen must be open at this branch.
+  if (typeof chosenShiftId === "string" && chosenShiftId) {
+    const chosen = await db.shift.findFirst({ where: { id: chosenShiftId, tenantId, storeId, closedAt: null }, select: { id: true } });
+    return chosen?.id ?? null;
+  }
+  const mine = await db.shift.findFirst({ where: { tenantId, storeId, userId, closedAt: null }, select: { id: true } });
+  if (mine) return mine.id;
+  const any = await db.shift.findFirst({ where: { tenantId, storeId, closedAt: null }, orderBy: { openedAt: "desc" }, select: { id: true } });
+  return any?.id ?? null;
+}
+
+export const NO_DRAWER_MESSAGE = "No shift is open at this branch, so there's no cash drawer to pay from. Start a shift, or choose Outside the drawer.";
+
 // When a delivery's payment falls due under the supplier's terms.
 export const dueDateFor = (receivedAt: Date, termsDays: number) => new Date(receivedAt.getTime() + Math.max(0, termsDays) * DAY_MS);
 
@@ -120,12 +137,14 @@ const bucketFor = (dueDate: Date | null, today: Date): BucketKey => {
 };
 
 // What the store owes each supplier: open deliveries by age, overdue, due this
-// week, unused credit, and the net balance.
-export async function supplierBalances(tenantId: string, supplierIds?: string[]) {
+// week, unused credit, and the net balance. With `storeIds`, only deliveries
+// received at those branches count, and credit (which belongs to the whole
+// business) is left out.
+export async function supplierBalances(tenantId: string, supplierIds?: string[], storeIds?: string[] | null) {
   const supplierWhere = supplierIds ? { in: supplierIds } : { not: null };
   const [deliveries, payments, returns, allocations] = await Promise.all([
     prisma.receiving.findMany({
-      where: { tenantId, supplierId: supplierWhere as never },
+      where: { tenantId, supplierId: supplierWhere as never, ...(storeIds ? { storeId: { in: storeIds } } : {}) },
       select: { supplierId: true, totalCost: true, amountPaid: true, dueDate: true, receivedAt: true },
     }),
     prisma.supplierPayment.groupBy({ by: ["supplierId"], where: { tenantId, voidedAt: null, ...(supplierIds ? { supplierId: { in: supplierIds } } : {}) }, _sum: { amount: true } }),
@@ -169,7 +188,7 @@ export async function supplierBalances(tenantId: string, supplierIds?: string[])
   for (const a of allocations) allocatedBySupplier.set(a.receiving.supplierId!, (allocatedBySupplier.get(a.receiving.supplierId!) ?? 0) + Number(a.amount));
   for (const p of payments) row(p.supplierId).credit += Number(p._sum.amount ?? 0);
   for (const rt of returns) row(rt.supplierId).credit += Number(rt._sum.totalCost ?? 0);
-  for (const [id, r] of rows) r.credit = money(Math.max(0, r.credit - (allocatedBySupplier.get(id) ?? 0)));
+  for (const [id, r] of rows) r.credit = storeIds ? 0 : money(Math.max(0, r.credit - (allocatedBySupplier.get(id) ?? 0)));
 
   return new Map(
     [...rows].map(([id, r]) => [

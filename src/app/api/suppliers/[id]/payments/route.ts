@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
-import { PAYMENT_METHODS, allocateCredit } from "@/lib/payables";
+import { NO_DRAWER_MESSAGE, PAYMENT_METHODS, allocateCredit, drawerShiftFor } from "@/lib/payables";
 
 const isDate = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 // Records a payment to a supplier: { amount, method, paidOn?, referenceNumber?,
-// notes?, receivingIds? }. It settles the chosen deliveries first, then the
+// notes?, receivingIds?, fromDrawer? }. Cash taken from the drawer lowers the
+// open shift's expected cash. It settles the chosen deliveries first, then the
 // oldest due; anything over stays as credit.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -27,6 +28,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (body.paidOn && !isDate(body.paidOn)) return NextResponse.json({ error: "The payment date is not valid." }, { status: 400 });
   const receivingIds = Array.isArray(body.receivingIds) ? body.receivingIds.filter((v: unknown): v is string => typeof v === "string") : [];
 
+  let shiftId: string | null = null;
+  if (body.method === "CASH" && body.fromDrawer) {
+    if (!session.storeId) return NextResponse.json({ error: NO_DRAWER_MESSAGE }, { status: 400 });
+    shiftId = await drawerShiftFor(prisma, session.tenantId, session.storeId, session.userId, body.shiftId);
+    if (!shiftId) return NextResponse.json({ error: NO_DRAWER_MESSAGE }, { status: 400 });
+  }
+
   const todayPH = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
   const paidAt = body.paidOn && body.paidOn !== todayPH ? new Date(`${body.paidOn}T12:00:00+08:00`) : new Date();
 
@@ -41,6 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         referenceNumber: typeof body.referenceNumber === "string" ? body.referenceNumber.trim().slice(0, 60) || null : null,
         notes: typeof body.notes === "string" ? body.notes.trim().slice(0, 500) || null : null,
         recordedById: session.userId,
+        shiftId,
       },
     });
     const left = await allocateCredit(tx, { tenantId: session.tenantId, supplierId: id, amount, paymentId: payment.id, preferReceivingIds: receivingIds });

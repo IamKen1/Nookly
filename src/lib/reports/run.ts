@@ -3,9 +3,11 @@ import type { ReportContext } from "./context";
 import { paymentMethods, salesByBranch, salesByCashier, salesByCategory, salesByHour, salesByProduct, salesSummary, voidsReturns } from "./sales";
 import { discountListing, expensesReport, profitLoss, vatSummary } from "./finance";
 import { expiry, inventoryValuation, reorder, slowMoving, stockMovement, transfers } from "./inventory";
+import { overview } from "./overview";
 import { eServices, payablesAging, prescriptionsReport, purchaseLog, purchasesBySupplier, shiftSummary, supplierReturns } from "./operations";
 
-export const RUNNERS: Record<ReportKey, (ctx: ReportContext) => Promise<ReportResult>> = {
+export const RUNNERS: Record<ReportKey, (ctx: ReportContext & { canPay?: boolean }) => Promise<ReportResult>> = {
+  overview,
   "sales-summary": salesSummary,
   "sales-by-product": salesByProduct,
   "sales-by-category": salesByCategory,

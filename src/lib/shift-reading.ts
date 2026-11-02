@@ -38,6 +38,12 @@ export interface ShiftReading {
     total: number;
     items: { id: string; description: string; amount: number; createdAt: string }[];
   };
+  // Cash paid to suppliers out of this drawer.
+  supplierPayments: {
+    count: number;
+    total: number;
+    items: { id: string; supplier: string; amount: number; paidAt: string }[];
+  };
   computedExpectedCash: number;
 }
 
@@ -48,11 +54,13 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
   });
   if (!shift) return null;
 
-  const [sales, cashTransactions, shiftExpenses] = await Promise.all([
+  const [sales, cashTransactions, shiftExpenses, supplierPayments] = await Promise.all([
     prisma.sale.findMany({ where: { shiftId } }),
     prisma.cashTransaction.findMany({ where: { shiftId } }),
     prisma.shiftExpense.findMany({ where: { shiftId }, orderBy: { createdAt: "asc" } }),
+    prisma.supplierPayment.findMany({ where: { shiftId, voidedAt: null }, orderBy: { paidAt: "asc" }, include: { supplier: { select: { name: true } } } }),
   ]);
+  const supplierPaidTotal = supplierPayments.reduce((sum, p) => sum + Number(p.amount), 0);
   const active = sales.filter((s) => s.status !== "CANCELLED");
   const completed = active.filter((s) => s.status === "COMPLETED");
   const returns = sales.filter((s) => s.status === "RETURNED" && s.originalSaleId);
@@ -131,6 +139,11 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
         createdAt: e.createdAt.toISOString(),
       })),
     },
-    computedExpectedCash: Number(shift.startingCash) + cashSalesTotal + netCashImpact - expensesTotal,
+    supplierPayments: {
+      count: supplierPayments.length,
+      total: supplierPaidTotal,
+      items: supplierPayments.map((p) => ({ id: p.id, supplier: p.supplier.name, amount: Number(p.amount), paidAt: p.paidAt.toISOString() })),
+    },
+    computedExpectedCash: Number(shift.startingCash) + cashSalesTotal + netCashImpact - expensesTotal - supplierPaidTotal,
   };
 }

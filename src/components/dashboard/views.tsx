@@ -615,6 +615,7 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
           ? [{ label: "Service fees earned", value: shift.eWallet.feesEarned + shift.load.feesEarned }]
           : []),
         ...(shift.expenses ? [{ label: "Expenses paid out", value: -shift.expenses }] : []),
+        ...(shift.supplierPayments ? [{ label: "Paid to suppliers", value: -shift.supplierPayments }] : []),
       ]
     : [];
 

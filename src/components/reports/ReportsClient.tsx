@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { ArrowDown, ArrowUp, Download, FileSpreadsheet, Loader2, Printer, Search } from "lucide-react";
-import { REPORTS, REPORT_GROUPS, POINT_IN_TIME, type CellFormat, type ReportKey, type ReportResult } from "@/lib/reports/registry";
+import { REPORTS, REPORT_GROUPS, POINT_IN_TIME, type CellFormat, type ReportKey, type ReportResult, type ReportSection } from "@/lib/reports/registry";
 
 type RunResult = ReportResult & { meta: { label: string; scope: string; period: string } };
 
@@ -283,7 +283,7 @@ export default function ReportsClient({
               />
             </>
           )}
-          {branches && report !== "payables-aging" && report !== "prescriptions" && (
+          {branches && (
             <select
               value={branch}
               onChange={(e) => {
@@ -316,7 +316,14 @@ export default function ReportsClient({
             {data.summary.map((s) => (
               <div key={s.label} className="min-w-0">
                 <dt className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">{s.label}</dt>
-                <dd className="text-sm font-semibold tabular-nums text-zinc-900">{fmt(s.value, s.format)}</dd>
+                <dd className="text-sm font-semibold tabular-nums text-zinc-900">
+                  {fmt(s.value, s.format)}
+                  {s.change !== undefined && s.change !== null && (
+                    <span className={`ml-1.5 text-[11px] font-medium ${s.change >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                      {s.change >= 0 ? "▲" : "▼"} {Math.abs(s.change).toFixed(1)}%
+                    </span>
+                  )}
+                </dd>
               </div>
             ))}
           </dl>
@@ -353,6 +360,7 @@ export default function ReportsClient({
                 ) : (
                   rows.slice(0, limit).map((r, i) => {
                     const kind = r.kind as string | undefined;
+                    const barMax = data.barKey ? Math.max(1, ...data.rows.map((x) => Number(x[data.barKey!] ?? 0))) : 1;
                     return (
                       <tr
                         key={i}
@@ -369,7 +377,7 @@ export default function ReportsClient({
                               }`}
                               title={!numeric(c.format) && String(v ?? "").length > 40 ? String(v) : undefined}
                             >
-                              {fmt(v, c.format)}
+                              {c.key === data.barKey ? <Bar value={Number(v ?? 0)} max={barMax} label={fmt(v, c.format)} /> : fmt(v, c.format)}
                             </td>
                           );
                         })}
@@ -412,7 +420,77 @@ export default function ReportsClient({
           </span>
           {data?.note && <span className="max-w-3xl text-zinc-400">{data.note}</span>}
         </div>
+
+        {data?.sections && data.sections.length > 0 && (
+          <div className={`mt-4 grid gap-4 xl:grid-cols-2 ${loading ? "opacity-60" : ""}`}>
+            {data.sections.map((sec) => (
+              <SectionTable key={sec.title} section={sec} />
+            ))}
+          </div>
+        )}
       </section>
+    </div>
+  );
+}
+
+// A value with a thin bar behind it, scaled to the column's largest value.
+function Bar({ value, max, label }: { value: number; max: number; label: string }) {
+  const w = Math.max(0, Math.min(100, (value / max) * 100));
+  return (
+    <span className="relative inline-flex w-full min-w-24 justify-end">
+      <span className="absolute inset-y-0 right-0 my-0.5 rounded-sm bg-emerald-100" style={{ width: `${w}%` }} />
+      <span className="relative">{label}</span>
+    </span>
+  );
+}
+
+// A compact titled table for the overview's breakdowns.
+function SectionTable({ section }: { section: ReportSection }) {
+  const max = section.barKey ? Math.max(1, ...section.rows.map((r) => Number(r[section.barKey!] ?? 0))) : 1;
+  return (
+    <div className="min-w-0 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <p className="border-b border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{section.title}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-100">
+              {section.columns.map((c) => (
+                <th key={c.key} className={`whitespace-nowrap px-3 py-1.5 font-semibold text-zinc-500 ${numeric(c.format) ? "text-right" : "text-left"}`}>
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {section.rows.length === 0 ? (
+              <tr>
+                <td colSpan={section.columns.length} className="px-3 py-4 text-center text-zinc-400">
+                  No data for this period.
+                </td>
+              </tr>
+            ) : (
+              section.rows.map((r, i) => {
+                const kind = r.kind as string | undefined;
+                return (
+                  <tr key={i} className={`border-b border-zinc-50 ${kind === "subtotal" ? "bg-zinc-50 font-semibold" : kind === "total" ? "bg-emerald-50 font-bold" : ""}`}>
+                    {section.columns.map((c) => {
+                      const v = r[c.key];
+                      return (
+                        <td
+                          key={c.key}
+                          className={`whitespace-nowrap px-3 py-1.5 ${numeric(c.format) ? "text-right tabular-nums" : "max-w-[16rem] truncate"} ${numeric(c.format) && Number(v) < 0 ? "text-red-600" : "text-zinc-800"}`}
+                        >
+                          {c.key === section.barKey ? <Bar value={Number(v ?? 0)} max={max} label={fmt(v, c.format)} /> : fmt(v, c.format)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

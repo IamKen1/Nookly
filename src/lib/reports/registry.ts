@@ -2,10 +2,11 @@
 // Reports screen and the ops console's plan checklist can both import it.
 // Keys are stored in Plan.enabledReports; never rename one without a migration.
 
-export const REPORT_GROUPS = ["Sales", "Tax & compliance", "Profit", "Inventory", "Purchasing", "Cash & other"] as const;
+export const REPORT_GROUPS = ["Overview", "Sales", "Tax & compliance", "Profit", "Inventory", "Purchasing", "Cash & other"] as const;
 export type ReportGroup = (typeof REPORT_GROUPS)[number];
 
 export const REPORTS = [
+  { key: "overview", group: "Overview", label: "Business overview", description: "Key figures vs. the previous period, daily trend, top products, categories, payments, cashiers, and branches" },
   { key: "sales-summary", group: "Sales", label: "Sales summary", description: "Daily gross sales, discounts, returns, net sales, VAT, and payment split" },
   { key: "sales-by-product", group: "Sales", label: "Sales by product", description: "Units and net sales per product, with cost, gross profit, and margin" },
   { key: "sales-by-category", group: "Sales", label: "Sales by category", description: "Net sales, gross profit, and share per category" },
@@ -17,7 +18,7 @@ export const REPORTS = [
   { key: "vat-summary", group: "Tax & compliance", label: "VAT summary", description: "VATable sales, output VAT, VAT-exempt (SC/PWD), and non-VAT sales per day" },
   { key: "discount-listing", group: "Tax & compliance", label: "Discount listing (SC/PWD)", description: "Each discounted sale with ID holder, ID number, VAT exemption, and discount" },
   { key: "profit-loss", group: "Profit", label: "Profit & loss", description: "Net sales, cost of goods sold, gross profit, expenses, and net income" },
-  { key: "expenses", group: "Profit", label: "Expenses", description: "Shift expenses by date, branch, and cashier" },
+  { key: "expenses", group: "Profit", label: "Expenses & payouts", description: "Counter expenses and payments to suppliers — all money paid out" },
   { key: "inventory-valuation", group: "Inventory", label: "Inventory valuation", description: "Stock on hand per product at cost and at selling price" },
   { key: "reorder", group: "Inventory", label: "Reorder suggestions", description: "Low stock with average daily sales, days of cover, and how much to order" },
   { key: "expiry", group: "Inventory", label: "Expiry report", description: "Every lot with stock by expiry date, days left, and value at cost" },
@@ -51,9 +52,20 @@ export interface ReportColumn {
   total?: boolean;
 }
 
+export interface ReportSection {
+  title: string;
+  columns: ReportColumn[];
+  rows: Record<string, string | number | null>[];
+  // Column drawn as a small bar behind its value, scaled to the largest row.
+  barKey?: string;
+}
+
 export interface ReportResult {
-  // Short figures shown above the table.
-  summary: { label: string; value: number | string; format?: CellFormat }[];
+  // Short figures shown above the table; `change` is % vs. the previous period.
+  summary: { label: string; value: number | string; format?: CellFormat; change?: number | null }[];
+  // Extra tables shown under the main one (the overview).
+  sections?: ReportSection[];
+  barKey?: string;
   columns: ReportColumn[];
   rows: Record<string, string | number | null>[];
   // Shown under the table, e.g. how a figure was computed.

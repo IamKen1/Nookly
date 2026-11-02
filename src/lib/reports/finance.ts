@@ -215,41 +215,87 @@ export async function profitLoss(ctx: ReportContext): Promise<ReportResult> {
       { key: "change", label: "Change", format: "pct" },
     ],
     rows,
-    note: "Cost of goods sold uses the cost saved at the time of each sale (older sales use the product's current cost). Expenses are the shift expenses recorded at the counter.",
+    note: "Cost of goods sold uses the cost saved at the time of each sale (older sales use the product's current cost). Expenses are those recorded at the counter; payments to suppliers aren't expenses here because the stock they buy is counted in cost of goods sold (see the Expenses report for cash paid out).",
   };
 }
 
+const PAY_METHODS: Record<string, string> = { CASH: "Cash", BANK_TRANSFER: "Bank transfer", CHECK: "Check", E_WALLET: "E-wallet" };
+
+// Money going out: expenses recorded at the counter, and payments to suppliers
+// (from the cash drawer or from outside it).
 export async function expensesReport(ctx: ReportContext): Promise<ReportResult> {
-  const expenses = await prisma.shiftExpense.findMany({
-    where: { tenantId: ctx.tenantId, createdAt: { gte: ctx.from, lt: ctx.to }, shift: storeWhere(ctx) },
-    select: { description: true, amount: true, createdAt: true, shift: { select: { storeId: true, user: { select: { firstName: true, lastName: true } } } } },
-    orderBy: { createdAt: "desc" },
-    take: 10000,
-  });
-  const rows = expenses.map((e) => ({
-    date: e.createdAt.toISOString(),
-    description: e.description,
-    branch: storeName(ctx, e.shift.storeId),
-    cashier: `${e.shift.user.firstName} ${e.shift.user.lastName}`.trim(),
-    amount: money(n(e.amount)),
-  }));
-  const total = rows.reduce((s, r) => s + r.amount, 0);
-  const top = new Map<string, number>();
-  for (const r of rows) top.set(r.description.toLowerCase(), (top.get(r.description.toLowerCase()) ?? 0) + r.amount);
-  const biggest = [...top.entries()].sort((a, b) => b[1] - a[1])[0];
+  const [expenses, payments] = await Promise.all([
+    prisma.shiftExpense.findMany({
+      where: { tenantId: ctx.tenantId, createdAt: { gte: ctx.from, lt: ctx.to }, shift: storeWhere(ctx) },
+      select: { description: true, amount: true, createdAt: true, shift: { select: { storeId: true, user: { select: { firstName: true, lastName: true } } } } },
+      orderBy: { createdAt: "desc" },
+      take: 10000,
+    }),
+    prisma.supplierPayment.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        voidedAt: null,
+        paidAt: { gte: ctx.from, lt: ctx.to },
+        // A branch's payments: from its drawer, or for its deliveries.
+        ...(ctx.storeIds
+          ? { OR: [{ shift: { storeId: { in: ctx.storeIds } } }, { shiftId: null, allocations: { some: { receiving: { storeId: { in: ctx.storeIds } } } } }] }
+          : {}),
+      },
+      select: {
+        amount: true,
+        paidAt: true,
+        method: true,
+        referenceNumber: true,
+        shift: { select: { storeId: true } },
+        supplier: { select: { name: true } },
+        recordedBy: { select: { firstName: true, lastName: true } },
+        allocations: { select: { receiving: { select: { receivingNumber: true, storeId: true } } } },
+      },
+      orderBy: { paidAt: "desc" },
+      take: 10000,
+    }),
+  ]);
+  const rows = [
+    ...expenses.map((e) => ({
+      date: e.createdAt.toISOString(),
+      type: "Expense",
+      description: e.description,
+      paidFrom: "Cash drawer",
+      branch: storeName(ctx, e.shift.storeId),
+      by: `${e.shift.user.firstName} ${e.shift.user.lastName}`.trim(),
+      amount: money(n(e.amount)),
+    })),
+    ...payments.map((p) => {
+      const deliveries = [...new Set(p.allocations.map((a) => a.receiving.receivingNumber))];
+      return {
+        date: p.paidAt.toISOString(),
+        type: "Supplier payment",
+        description: `${p.supplier.name}${deliveries.length ? ` · ${deliveries.join(", ")}` : " · credit"}${p.referenceNumber ? ` · Ref ${p.referenceNumber}` : ""}`,
+        paidFrom: p.shift ? "Cash drawer" : PAY_METHODS[p.method] ?? p.method,
+        branch: storeName(ctx, p.shift?.storeId ?? p.allocations[0]?.receiving.storeId ?? null),
+        by: `${p.recordedBy.firstName} ${p.recordedBy.lastName}`.trim(),
+        amount: money(n(p.amount)),
+      };
+    }),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+  const sum = (type?: string) => money(rows.filter((r) => !type || r.type === type).reduce((s, r) => s + r.amount, 0));
   return {
     summary: [
-      { label: "Expenses", value: rows.length, format: "int" },
-      { label: "Total", value: money(total), format: "money" },
-      { label: "Biggest item", value: biggest ? biggest[0] : "—" },
+      { label: "Operating expenses", value: sum("Expense"), format: "money" },
+      { label: "Supplier payments", value: sum("Supplier payment"), format: "money" },
+      { label: "Total paid out", value: sum(), format: "money" },
+      { label: "From cash drawers", value: money(rows.filter((r) => r.paidFrom === "Cash drawer").reduce((s, r) => s + r.amount, 0)), format: "money" },
     ],
     columns: [
       { key: "date", label: "Date", format: "datetime" },
+      { key: "type", label: "Type" },
       { key: "description", label: "Description" },
+      { key: "paidFrom", label: "Paid from" },
       ...(ctx.storeIds?.length === 1 ? [] : [{ key: "branch", label: "Branch" }]),
-      { key: "cashier", label: "Recorded by" },
+      { key: "by", label: "Recorded by" },
       { key: "amount", label: "Amount", format: "money", total: true },
     ],
     rows,
+    note: "Supplier payments pay for stock, so the Profit & loss counts that stock as cost of goods sold when it's sold — they're listed here as cash paid out, not added to expenses there.",
   };
 }

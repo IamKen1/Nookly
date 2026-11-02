@@ -37,6 +37,7 @@ interface ShiftReading {
     total: number;
     items: { id: string; description: string; amount: number; createdAt: string }[];
   };
+  supplierPayments?: { count: number; total: number; items: { id: string; supplier: string; amount: number; paidAt: string }[] };
   computedExpectedCash: number;
 }
 
@@ -333,6 +334,14 @@ export default function ShiftModal({
                     <div className="mt-2 space-y-0.5 border-t pt-2 text-xs text-gray-500">
                       <p className="font-medium text-gray-700">Expenses</p>
                       <div className="flex justify-between"><span>Total ({reading?.expenses.count})</span><span>-{peso(reading?.expenses.total ?? 0)}</span></div>
+                    </div>
+                  )}
+                  {(reading?.supplierPayments?.count ?? 0) > 0 && (
+                    <div className="mt-2 space-y-0.5 border-t pt-2 text-xs text-gray-500">
+                      <p className="font-medium text-gray-700">Paid to suppliers from the drawer</p>
+                      {reading?.supplierPayments?.items.map((p) => (
+                        <div key={p.id} className="flex justify-between"><span>{p.supplier}</span><span>-{peso(p.amount)}</span></div>
+                      ))}
                     </div>
                   )}
                   <div className="flex justify-between border-t pt-1 font-semibold text-emerald-700"><span>Expected cash in drawer</span><span>{peso(reading?.computedExpectedCash ?? 0)}</span></div>

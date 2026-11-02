@@ -9,7 +9,7 @@ import { invalidateCached } from "@/lib/route-cache";
 import { runInBackground } from "@/lib/background";
 import { notifyStockThresholdReached } from "@/lib/notifications";
 import { ReceivingError, receiveDelivery, validateReceiving, type ReceivingInput } from "@/lib/receiving";
-import { PAYMENT_METHODS } from "@/lib/payables";
+import { NO_DRAWER_MESSAGE, PAYMENT_METHODS, drawerShiftFor } from "@/lib/payables";
 
 // Deliveries received at this branch (or every branch for owners/admins with
 // ?branch=all), newest first, with their lines.
@@ -110,6 +110,12 @@ export async function POST(request: NextRequest) {
       if (!supplier) throw new ReceivingError("Choose the supplier you paid.");
       if (!(await hasPermission(session.tenantId, session.role, "suppliers_pay"))) throw new ReceivingError("You don't have permission to record supplier payments.", 403);
       if (!PAYMENT_METHODS.includes(input.paidNow.method as never)) throw new ReceivingError("Choose how the supplier was paid.");
+      const chosen = input.paidNow.shiftId;
+      input.paidNow.shiftId = null;
+      if (input.paidNow.method === "CASH" && input.paidNow.fromDrawer) {
+        input.paidNow.shiftId = await drawerShiftFor(prisma, session.tenantId, session.storeId, session.userId, chosen);
+        if (!input.paidNow.shiftId) throw new ReceivingError(NO_DRAWER_MESSAGE);
+      }
     }
 
     const { receiving, stockChanges } = await receiveDelivery({
