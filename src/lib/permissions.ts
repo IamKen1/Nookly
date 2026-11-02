@@ -24,13 +24,15 @@ export {
 // ("Sales") is also allowed, so unticking a module switches off everything in it.
 export const hasPermission = async (tenantId: string, role: string, module: PermissionModuleKey): Promise<boolean> => {
   if (role === "OWNER") return true;
-  if (!isConfigurableRole(role)) return false;
+  if (!isConfigurableRole(role) && role !== "ORDER_TAKER") return false;
   return (await getRolePermissions(tenantId, role))[module];
 };
 
 // Resolves every module for one role in a single query — for call sites
 // (e.g. the sidebar) that need several checks at once.
-export const getRolePermissions = async (tenantId: string, role: string): Promise<Record<PermissionModuleKey, boolean>> => {
+export const getRolePermissions = async (tenantId: string, rawRole: string): Promise<Record<PermissionModuleKey, boolean>> => {
+  // Order taker is no longer a role; accounts still carrying it are cashiers.
+  const role = rawRole === "ORDER_TAKER" ? "CASHIER" : rawRole;
   const raw = {} as Record<PermissionModuleKey, boolean>;
   const allTrue = role === "OWNER";
   const defaults = isConfigurableRole(role) ? DEFAULT_PERMISSIONS[role] : [];

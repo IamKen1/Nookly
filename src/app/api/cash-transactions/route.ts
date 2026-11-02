@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
-import { hasPermission } from "@/lib/permissions";
+import { getRolePermissions, hasPermission } from "@/lib/permissions";
 import { canCollectPayment } from "@/lib/permissions-shared";
 
 export async function GET(request: NextRequest) {
@@ -68,8 +68,8 @@ export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
-  if (!canCollectPayment(session.role)) {
-    return NextResponse.json({ error: "Order takers don't handle the cash drawer." }, { status: 403 });
+  if (!canCollectPayment(session.role, await getRolePermissions(session.tenantId, session.role))) {
+    return NextResponse.json({ error: "Your role can't take payment, so it doesn't handle the cash drawer." }, { status: 403 });
   }
 
   const body = await request.json();

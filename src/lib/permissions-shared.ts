@@ -11,7 +11,9 @@
 export const PERMISSION_MODULES = [
   { key: "dashboard", parent: null, path: "/dashboard", label: "Dashboard", description: "Today's sales, stock alerts, and plan" },
   { key: "all_branches", parent: "dashboard", path: null, label: "See all branches", description: "Unticked: Dashboard and Sales show only their own branch" },
-  { key: "pos", parent: null, path: "/pos", label: "POS", description: "Ring up sales, or send orders to a cashier (Order Takers)" },
+  { key: "pos", parent: null, path: "/pos", label: "POS", description: "Ring up sales, or send orders to a cashier" },
+  { key: "pos_checkout", parent: "pos", path: null, label: "Checkout & collect payment", description: "Unticked: can build carts but not take payment (send them to a cashier instead)" },
+  { key: "pos_send_to_cashier", parent: "pos", path: null, label: "Send to cashier", description: "Can send a cart to the cashier queue as an order, for someone else to collect payment" },
   { key: "pos_shift_required", parent: "pos", path: null, label: "Must start & end a shift", description: "Ticked: can't sell without an open shift, or log out without ending it" },
   { key: "products", parent: null, path: "/products", label: "Products", description: "Browse the product catalog" },
   { key: "products_edit", parent: "products", path: null, label: "Edit products & prices", description: "Add, edit, and delete products and their prices" },
@@ -37,7 +39,10 @@ export type PermissionModuleKey = (typeof PERMISSION_MODULES)[number]["key"];
 export const homePathFor = (permissions: Record<PermissionModuleKey, boolean>): string | null =>
   PERMISSION_MODULES.find((m) => m.path && permissions[m.key])?.path ?? null;
 
-export const CONFIGURABLE_ROLES = ["ADMIN", "MANAGER", "PHARMACIST", "PHARMACY_TECH", "CASHIER", "ORDER_TAKER"] as const;
+// "Order taker" is no longer a role — any role can be allowed to send orders
+// to a cashier (pos_send_to_cashier). ORDER_TAKER stays in the database enum
+// only for history; such accounts are treated as cashiers.
+export const CONFIGURABLE_ROLES = ["ADMIN", "MANAGER", "PHARMACIST", "PHARMACY_TECH", "CASHIER"] as const;
 export type ConfigurableRole = (typeof CONFIGURABLE_ROLES)[number];
 export const isConfigurableRole = (role: string): role is ConfigurableRole => (CONFIGURABLE_ROLES as readonly string[]).includes(role);
 
@@ -47,7 +52,6 @@ export const ROLE_LABELS: Record<ConfigurableRole, string> = {
   PHARMACIST: "Pharmacist",
   PHARMACY_TECH: "Pharmacy Tech",
   CASHIER: "Cashier",
-  ORDER_TAKER: "Order Taker",
 };
 
 export const ROLE_DESCRIPTIONS: Record<ConfigurableRole, string> = {
@@ -56,26 +60,26 @@ export const ROLE_DESCRIPTIONS: Record<ConfigurableRole, string> = {
   PHARMACIST: "Dispenses medicine and manages stock",
   PHARMACY_TECH: "Assists the pharmacist",
   CASHIER: "Collects payment at the counter",
-  ORDER_TAKER: "Prepares orders for the cashier",
 };
 
-// Order takers prepare orders at the POS and send them to a cashier; they can
-// never collect payment themselves, so every sale has a separate person
-// accountable for taking the order and for handling the money.
-export const canCollectPayment = (role: string) => role !== "ORDER_TAKER";
+// Whether this user can check out and take payment at the POS. The owner
+// always can; other roles unless "Checkout & collect payment" is unticked
+// (e.g. someone who only prepares orders for the cashier).
+export const canCollectPayment = (role: string, permissions: Partial<Record<PermissionModuleKey, boolean>>) =>
+  role === "OWNER" || Boolean(permissions.pos_checkout);
 
 // "Must start & end a shift" is a requirement, not an access right, so the
 // owner (who otherwise has every permission) is never held to it, and order
 // takers never handle the cash drawer. Off for every role unless ticked.
 export const isShiftRequired = (role: string, permissions: Partial<Record<PermissionModuleKey, boolean>>) =>
-  role !== "OWNER" && canCollectPayment(role) && Boolean(permissions.pos_shift_required);
+  role !== "OWNER" && canCollectPayment(role, permissions) && Boolean(permissions.pos_shift_required);
 
 // Philippine calendar day of an instant, to tell a shift left open from an earlier day.
 export const phDayOf = (d: Date | string) => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
 // Includes OWNER (not a configurable role, but still needs a display label
 // wherever the logged-in user's role is shown in the UI).
-export const ALL_ROLE_LABELS: Record<string, string> = { OWNER: "Owner", ...ROLE_LABELS };
+export const ALL_ROLE_LABELS: Record<string, string> = { OWNER: "Owner", ...ROLE_LABELS, ORDER_TAKER: "Cashier" };
 
 // Used whenever a tenant hasn't saved its own choice for a role + permission.
 // Front-counter roles (Cashier, Order Taker) start limited to their own work:
@@ -83,17 +87,16 @@ export const ALL_ROLE_LABELS: Record<string, string> = { OWNER: "Owner", ...ROLE
 // can open up more from Settings > User Access.
 export const DEFAULT_PERMISSIONS: Record<ConfigurableRole, PermissionModuleKey[]> = {
   ADMIN: [
-    "dashboard", "all_branches", "pos", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "suppliers_pay",
+    "dashboard", "all_branches", "pos", "pos_checkout", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "suppliers_pay",
     "prescriptions", "sales", "sales_view_all", "sales_void", "reports", "users", "shifts", "settings", "support",
   ],
   MANAGER: [
-    "dashboard", "pos", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "prescriptions",
+    "dashboard", "pos", "pos_checkout", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "prescriptions",
     "sales", "sales_view_all", "sales_void", "reports", "shifts", "support",
   ],
-  PHARMACIST: ["dashboard", "pos", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "prescriptions", "sales", "sales_view_all", "reports"],
-  PHARMACY_TECH: ["dashboard", "pos", "products", "inventory", "prescriptions", "sales", "sales_view_all", "reports"],
-  CASHIER: ["dashboard", "pos", "products", "prescriptions", "sales", "reports"],
-  ORDER_TAKER: ["pos"],
+  PHARMACIST: ["dashboard", "pos", "pos_checkout", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "prescriptions", "sales", "sales_view_all", "reports"],
+  PHARMACY_TECH: ["dashboard", "pos", "pos_checkout", "products", "inventory", "prescriptions", "sales", "sales_view_all", "reports"],
+  CASHIER: ["dashboard", "pos", "pos_checkout", "products", "prescriptions", "sales", "reports"],
 };
 
 export type PermissionMatrix = Record<ConfigurableRole, Record<PermissionModuleKey, boolean>>;

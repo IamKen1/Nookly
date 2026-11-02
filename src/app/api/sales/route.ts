@@ -79,8 +79,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "You don't have access to the POS." }, { status: 403 });
   }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
-  if (!canCollectPayment(session.role)) {
-    return NextResponse.json({ error: "Order takers can't collect payment. Send the order to a cashier instead." }, { status: 403 });
+  if (!canCollectPayment(session.role, await getRolePermissions(session.tenantId, session.role))) {
+    return NextResponse.json({ error: "Your role can't collect payment. Send the order to a cashier instead." }, { status: 403 });
   }
 
   const body = await request.json();

@@ -67,8 +67,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await hasPermission(session.tenantId, session.role, "pos"))) {
-    return NextResponse.json({ error: "You don't have access to the POS." }, { status: 403 });
+  if (!(await hasPermission(session.tenantId, session.role, "pos_send_to_cashier"))) {
+    return NextResponse.json({ error: "You can't send orders to the cashier." }, { status: 403 });
   }
   if (!session.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
 

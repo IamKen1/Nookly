@@ -21,7 +21,7 @@ interface UserRow {
   isActive: boolean;
 }
 
-const ROLES = ["OWNER", "ADMIN", "PHARMACIST", "PHARMACY_TECH", "CASHIER", "MANAGER", "ORDER_TAKER"];
+const ROLES = ["OWNER", "ADMIN", "PHARMACIST", "PHARMACY_TECH", "CASHIER", "MANAGER"];
 
 const emptyForm = {
   email: "",

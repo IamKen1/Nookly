@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { canCollectPayment } from "@/lib/permissions-shared";
+import { getRolePermissions } from "@/lib/permissions";
 
 // Cancels an open order. The order taker who created it can cancel their own;
 // anyone who can collect payment (cashiers and up) can cancel any at the branch.
@@ -15,7 +16,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const order = await prisma.pendingOrder.findFirst({ where: { id, tenantId: session.tenantId, storeId: session.storeId ?? undefined } });
   if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
-  if (order.createdById !== session.userId && !canCollectPayment(session.role)) {
+  if (order.createdById !== session.userId && !canCollectPayment(session.role, await getRolePermissions(session.tenantId, session.role))) {
     return NextResponse.json({ error: "You can only cancel orders you created." }, { status: 403 });
   }
 

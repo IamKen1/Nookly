@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import type { SessionPayload } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getPermissionMatrix } from "@/lib/permissions";
 
 // Where-clause for the batches physically held at a branch. A batch with no
 // branch (recorded before branches existed) belongs to the tenant's primary
@@ -43,11 +44,23 @@ export function reportStoreId(session: SessionPayload, searchParams: URLSearchPa
   return session.storeId ?? undefined;
 }
 
-// Whether anyone at this branch takes orders for a cashier. Only then do
+// Roles in this workspace allowed to send carts to the cashier queue
+// ("Send to cashier" in User Access). The owner isn't counted: they can, but
+// that alone shouldn't make every cashier screen poll.
+export async function rolesThatSendOrders(tenantId: string): Promise<string[]> {
+  const matrix = await getPermissionMatrix(tenantId);
+  return Object.entries(matrix)
+    .filter(([, m]) => m.pos && m.pos_send_to_cashier)
+    .map(([role]) => role);
+}
+
+// Whether anyone at this branch sends orders to a cashier. Only then do
 // cashier screens poll for waiting orders — every poll is a database read,
-// and most workspaces have no order takers at all.
-export async function branchHasOrderTakers(tenantId: string, storeId: string | null): Promise<boolean> {
+// and most workspaces never use orders at all.
+export async function branchHasOrderSenders(tenantId: string, storeId: string | null): Promise<boolean> {
   if (!storeId) return false;
-  const count = await prisma.user.count({ where: { tenantId, storeId, role: "ORDER_TAKER", isActive: true } });
+  const roles = await rolesThatSendOrders(tenantId);
+  if (roles.length === 0) return false;
+  const count = await prisma.user.count({ where: { tenantId, storeId, role: { in: roles as never[] }, isActive: true } });
   return count > 0;
 }

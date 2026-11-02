@@ -64,7 +64,7 @@ export default async function DashboardPage() {
     body = <ManagerDashboard scope={scope} info={info} />;
   } else if (kind === "pharmacist") {
     body = <PharmacistDashboard scope={scope} info={info} />;
-  } else if (kind === "orderTaker") {
+  } else if (kind === "orderTaker" || (kind === "cashier" && !scope.permissions.pos_checkout && scope.permissions.pos_send_to_cashier)) {
     body = <OrderTakerDashboard scope={scope} info={info} />;
   } else {
     body = <CashierDashboard scope={scope} info={info} />;

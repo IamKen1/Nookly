@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   if (!email || !username || !firstName || !lastName || !password) {
     return NextResponse.json({ error: "email, username, firstName, lastName and password are required." }, { status: 400 });
   }
-  if (role !== undefined && role !== "" && !Object.values(UserRole).includes(role)) {
+  if (role !== undefined && role !== "" && !Object.values(UserRole).includes(role) || role === "ORDER_TAKER") {
     return NextResponse.json({ error: "Invalid role." }, { status: 400 });
   }
   if (role === "OWNER" && session.role !== "OWNER") {

@@ -38,7 +38,7 @@ import {
 import { CountUp, DailySalesBars, HourlySalesLine } from "./charts";
 import { AlertRow, Card, DeltaChip, PaymentMix, RankBars, StatTile } from "./widgets";
 import { LiveWaitingOrders, PriceCheck, ReprintButton } from "./cashier-tools";
-import { branchHasOrderTakers } from "@/lib/branch-scope";
+import { branchHasOrderSenders } from "@/lib/branch-scope";
 
 const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
 const phHourNow = () => new Date(Date.now() + PH_OFFSET_MS).getUTCHours();
@@ -611,7 +611,7 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
   const [me, orders, hasOrderTakers] = await Promise.all([
     getMyCounter(scope.session),
     getWaitingOrders(scope.session),
-    branchHasOrderTakers(scope.session.tenantId, scope.session.storeId),
+    branchHasOrderSenders(scope.session.tenantId, scope.session.storeId),
   ]);
   const shift = me.shift;
   // Same parts the shift close adds up, so the total matches end-of-shift.
@@ -657,7 +657,7 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
         </div>
       </Hero>
 
-      {/* Live list where order takers work; elsewhere there are never orders to show. */}
+      {/* Live list where orders are sent to the cashier; elsewhere there are never orders to show. */}
       {hasOrderTakers && <LiveWaitingOrders initial={orders} canOpenPos={p.pos} />}
 
       <div className={`grid gap-6 ${shift ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>

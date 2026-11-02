@@ -104,6 +104,7 @@ export default function PosClient({
   permissions,
   branches,
   pollOrders = false,
+  canSendToCashier = false,
   canRecordPrescriptions = false,
 }: {
   categories: Category[];
@@ -113,8 +114,10 @@ export default function PosClient({
   permissions: Record<PermissionModuleKey, boolean>;
   // Only passed when the tenant has more than one branch.
   branches?: { currentStoreId: string | null; currentName: string; switchable: { id: string; name: string }[] | null };
-  // True when this branch has active order takers; only then does the POS watch for their orders.
+  // True when someone at this branch can send orders to a cashier; only then does the POS watch for them.
   pollOrders?: boolean;
+  // "Send to cashier" in User Access: can queue the cart as an order for a cashier.
+  canSendToCashier?: boolean;
   // Plan includes prescriptions; otherwise checkout doesn't offer to record one.
   canRecordPrescriptions?: boolean;
 }) {
@@ -156,11 +159,12 @@ export default function PosClient({
   const [heldOpen, setHeldOpen] = useState(false);
   const [holdLabel, setHoldLabel] = useState<string | null>(null);
   const { data: heldCarts = [], mutate: refreshHeld } = useSWR<HeldCart[]>("/api/held-carts", { revalidateOnFocus: true });
-  const isOrderTaker = !canCollectPayment(role ?? "");
+  // Without "Checkout & collect payment" the cart can only be sent to a cashier.
+  const isOrderTaker = !canCollectPayment(role ?? "", permissions);
   const shiftRequired = isShiftRequired(role ?? "", permissions);
 
-  // Cashiers watch for orders sent by order takers — but only at branches that
-  // have order takers, since every check is a database read. SWR pauses while
+  // Cashiers watch for orders sent to them — but only at branches where some
+  // role can send orders, since every check is a database read. SWR pauses while
   // the tab is hidden and checks again the moment the cashier comes back.
   const seenOrderIds = useRef<Set<string> | null>(null);
   const [newOrderPulse, setNewOrderPulse] = useState(false);
@@ -341,7 +345,7 @@ export default function PosClient({
   const startHold = () => {
     if (cart.length === 0) return;
     if (activeOrder) {
-      showNotification("This cart is an order from an order taker — finish or clear it instead.", "error");
+      showNotification("This cart is an order sent to the cashier — finish or clear it instead.", "error");
       return;
     }
     setHoldLabel("");
@@ -495,6 +499,8 @@ export default function PosClient({
   };
 
   const checkoutLabel = isOrderTaker ? (sendingOrder ? "Sending..." : "Send to cashier") : "Checkout";
+  // Both options: Checkout stays the main button, Send to cashier sits under it.
+  const sendLabel = !isOrderTaker && canSendToCashier ? (sendingOrder ? "Sending..." : "Send to cashier") : undefined;
   const cartNotice = shiftBlock
     ? shiftBlock
     : activeOrder
@@ -787,6 +793,8 @@ export default function PosClient({
           onRemove={removeLine}
           onClear={clearCart}
           onHold={startHold}
+          onSendToCashier={sendLabel ? sendToCashier : undefined}
+          sendLabel={sendLabel}
           onOpenCheckout={isOrderTaker ? sendToCashier : openCheckout}
           subtotal={subtotal}
           vatableSales={vatableSales}
@@ -835,6 +843,15 @@ export default function PosClient({
               setMobileCartOpen(false);
               startHold();
             }}
+            onSendToCashier={
+              sendLabel
+                ? () => {
+                    setMobileCartOpen(false);
+                    sendToCashier();
+                  }
+                : undefined
+            }
+            sendLabel={sendLabel}
             onOpenCheckout={() => {
               setMobileCartOpen(false);
               if (isOrderTaker) sendToCashier();

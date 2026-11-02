@@ -195,8 +195,8 @@ interface PendingOrderResponse {
 
 const timePH = (iso: string) => new Date(iso).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" });
 
-// Orders from order takers, kept current without a reload. Only rendered for
-// branches that have order takers, so other workspaces never poll.
+// Orders sent to the cashier, kept current without a reload. Only rendered for
+// branches where some role can send orders, so other workspaces never poll.
 export function LiveWaitingOrders({ initial, canOpenPos }: { initial: WaitingOrder[]; canOpenPos: boolean }) {
   const { data } = useSWR<PendingOrderResponse[]>("/api/pending-orders", { refreshInterval: 4000, revalidateOnFocus: true });
   const orders: WaitingOrder[] = data

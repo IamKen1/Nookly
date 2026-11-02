@@ -170,8 +170,8 @@ export default function UserAccessForm() {
                     <input type="checkbox" checked={m.key !== "pos_shift_required"} disabled className="h-4 w-4 accent-emerald-600 opacity-40" aria-label={`Owner: ${m.label}`} />
                   </td>
                   {CONFIGURABLE_ROLES.map((role) => {
-                    // Order takers never handle the cash drawer, so the shift requirement doesn't apply to them.
-                    const notApplicable = m.key === "pos_shift_required" && role === "ORDER_TAKER";
+                    // The shift requirement only matters for roles that take payment.
+                    const notApplicable = m.key === "pos_shift_required" && !matrix[role].pos_checkout;
                     const parentOff = notApplicable || (m.parent !== null && !matrix[role][m.parent]);
                     return (
                       <td key={role} className="px-1 py-3 text-center">
@@ -180,7 +180,7 @@ export default function UserAccessForm() {
                           checked={Boolean(matrix[role]?.[m.key]) && !parentOff}
                           disabled={parentOff}
                           onChange={() => toggle(role, m.key)}
-                          title={notApplicable ? "Order takers don't handle the cash drawer" : parentOff ? `Tick ${PERMISSION_MODULES.find((x) => x.key === m.parent)?.label} first` : undefined}
+                          title={notApplicable ? "Only for roles that can checkout & collect payment" : parentOff ? `Tick ${PERMISSION_MODULES.find((x) => x.key === m.parent)?.label} first` : undefined}
                           aria-label={`${ROLE_LABELS[role]}: ${m.label}`}
                           className="h-4 w-4 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-30"
                         />

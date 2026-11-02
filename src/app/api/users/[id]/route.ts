@@ -26,7 +26,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   // Role and owner safety: no one changes their own role or deactivates
   // themselves, only an owner can touch an owner account or create another
   // owner, and a workspace always keeps at least one active owner.
-  if (role !== undefined && !Object.values(UserRole).includes(role)) {
+  if (role !== undefined && !Object.values(UserRole).includes(role) || role === "ORDER_TAKER") {
     return NextResponse.json({ error: "Invalid role." }, { status: 400 });
   }
   const isSelf = existing.id === session.userId;

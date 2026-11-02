@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X, PauseCircle } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, X, PauseCircle, Send } from "lucide-react";
 import { peso } from "@/lib/format";
 
 export interface CartLine {
@@ -24,12 +24,15 @@ interface CartPanelProps {
   onClear: () => void;
   // Sets the cart aside to serve the next customer.
   onHold?: () => void;
+  // Queues the cart for a cashier, for users who can also check out themselves.
+  onSendToCashier?: () => void;
+  sendLabel?: string;
   onOpenCheckout: () => void;
   subtotal: number;
   vatableSales: number;
   vatAmount: number;
   nonVatableSales: number;
-  // Order takers send the cart to a cashier instead of checking out.
+  // Roles that can't take payment send the cart to a cashier instead of checking out.
   checkoutLabel?: string;
   // Shown above the items, e.g. which pending order the cart was loaded from.
   notice?: React.ReactNode;
@@ -77,6 +80,8 @@ export default function CartPanel({
   onRemove,
   onClear,
   onHold,
+  onSendToCashier,
+  sendLabel,
   onOpenCheckout,
   subtotal,
   vatableSales,
@@ -211,6 +216,15 @@ export default function CartPanel({
                   <CreditCard className="h-4 w-4" />
                   {checkoutLabel}
                 </button>
+                {onSendToCashier && (
+                  <button
+                    onClick={onSendToCashier}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-600 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                  >
+                    <Send className="h-4 w-4" />
+                    {sendLabel}
+                  </button>
+                )}
                 <div className={onHold ? "grid grid-cols-2 gap-1.5" : ""}>
                   {onHold && (
                     <button
