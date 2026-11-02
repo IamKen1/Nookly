@@ -4,7 +4,14 @@ import { useRef, useState } from "react";
 import { Printer, Usb, Bluetooth, X, Loader2 } from "lucide-react";
 import { usePrinterConnection } from "@/lib/printer/usePrinterConnection";
 
-export default function PrinterConnectButton({ printer }: { printer: ReturnType<typeof usePrinterConnection> }) {
+export default function PrinterConnectButton({
+  printer,
+  tone = "dark",
+}: {
+  printer: ReturnType<typeof usePrinterConnection>;
+  // "dark" for the POS's green header, "light" for the white header on other pages.
+  tone?: "dark" | "light";
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [connectingKind, setConnectingKind] = useState<"usb" | "bluetooth" | null>(null);
@@ -16,7 +23,13 @@ export default function PrinterConnectButton({ printer }: { printer: ReturnType<
       <button
         onClick={() => setMenuOpen((v) => !v)}
         className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-          connection ? "bg-white/15 text-white hover:bg-white/25" : "text-emerald-100 hover:bg-white/10"
+          tone === "light"
+            ? connection
+              ? "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+              : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+            : connection
+            ? "bg-white/15 text-white hover:bg-white/25"
+            : "text-emerald-100 hover:bg-white/10"
         }`}
         title={connection ? `Printer: ${connection.name}` : "Connect a receipt printer"}
       >

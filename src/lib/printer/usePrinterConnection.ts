@@ -1,44 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { isUsbSupported, reconnectUsbPrinter, requestUsbPrinter } from "./usb";
-import { isBluetoothSupported, reconnectBluetoothPrinter, requestBluetoothPrinter } from "./bluetooth";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { isUsbSupported, requestUsbPrinter } from "./usb";
+import { isBluetoothSupported, requestBluetoothPrinter } from "./bluetooth";
 import { textToEscPosBytes } from "./encode";
-import type { PrinterConnection } from "./types";
+import { ensurePrinter, getPrinter, setPrinter, subscribePrinter } from "./store";
 
 export function usePrinterConnection() {
-  const [connection, setConnection] = useState<PrinterConnection | null>(null);
+  // Shared across pages (see ./store), so leaving the POS keeps the printer.
+  const connection = useSyncExternalStore(subscribePrinter, getPrinter, () => null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const connectionRef = useRef<PrinterConnection | null>(null);
 
   useEffect(() => {
-    connectionRef.current = connection;
-  }, [connection]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const usb = await reconnectUsbPrinter().catch(() => null);
-      if (usb) {
-        if (!cancelled) setConnection(usb);
-        return;
-      }
-      const bt = await reconnectBluetoothPrinter().catch(() => null);
-      if (bt && !cancelled) setConnection(bt);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    ensurePrinter();
   }, []);
 
   const connectUsb = useCallback(async () => {
     setConnecting(true);
     setError(null);
     try {
-      const next = await requestUsbPrinter();
-      await connectionRef.current?.disconnect().catch(() => {});
-      setConnection(next);
+      // Let go of any current printer first (it may be the same device).
+      await getPrinter()?.disconnect().catch(() => {});
+      setPrinter(null);
+      setPrinter(await requestUsbPrinter());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect to USB printer.");
     } finally {
@@ -50,9 +35,10 @@ export function usePrinterConnection() {
     setConnecting(true);
     setError(null);
     try {
-      const next = await requestBluetoothPrinter();
-      await connectionRef.current?.disconnect().catch(() => {});
-      setConnection(next);
+      // Let go of any current printer first (it may be the same device).
+      await getPrinter()?.disconnect().catch(() => {});
+      setPrinter(null);
+      setPrinter(await requestBluetoothPrinter());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect to Bluetooth printer.");
     } finally {
@@ -61,13 +47,14 @@ export function usePrinterConnection() {
   }, []);
 
   const disconnect = useCallback(async () => {
-    await connectionRef.current?.disconnect().catch(() => {});
-    setConnection(null);
+    await getPrinter()?.disconnect().catch(() => {});
+    setPrinter(null);
   }, []);
 
   const printText = useCallback(async (text: string) => {
-    if (!connectionRef.current) throw new Error("No printer connected.");
-    await connectionRef.current.send(textToEscPosBytes(text));
+    const printer = getPrinter();
+    if (!printer) throw new Error("No printer connected.");
+    await printer.send(textToEscPosBytes(text));
   }, []);
 
   return {

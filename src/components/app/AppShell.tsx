@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BarChart3, Boxes, ClipboardPlus, LayoutDashboard, Leaf, LifeBuoy, Package, Receipt, Settings, ShoppingCart, Truck, Users, Wallet } from "lucide-react";
 import LogoutButton from "./LogoutButton";
+import HeaderPrinterButton from "./HeaderPrinterButton";
 import OnboardingTourLoader from "@/components/onboarding/OnboardingTourLoader";
 import { getRolePermissions, type PermissionModuleKey } from "@/lib/permissions";
 import { ALL_ROLE_LABELS } from "@/lib/permissions-shared";
@@ -91,7 +92,10 @@ export default async function AppShell({
                 )
               ))}
           </div>
-          <LogoutButton />
+          <div className="flex items-center gap-2">
+            <HeaderPrinterButton />
+            <LogoutButton />
+          </div>
         </header>
         <main className="flex-1 p-6">{children}</main>
       </div>
