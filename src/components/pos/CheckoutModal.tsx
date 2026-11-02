@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import useSWR from "swr";
-import { X, CreditCard, Calculator } from "lucide-react";
+import { X, CreditCard, Calculator, Send } from "lucide-react";
 import { calculateVatInclusiveTotals, getComputationLines } from "@/lib/vat-calculations";
 import { discountCalcInput, discountDisplay } from "@/lib/discount-math";
 import type { DiscountDTO } from "@/lib/discounts";
@@ -31,6 +31,15 @@ interface CheckoutModalProps {
   // Already entered before checkout (by whoever took the order, or in the cart):
   // shown instead of the form. Without a selection it's the order's own, which the server applies.
   attachedPrescription?: { label: string; selection?: PrescriptionSelection };
+  // Whether this user can take payment ("Checkout & collect payment"); without it only Send to cashier shows.
+  canPay?: boolean;
+  // Opens ready to send to the cashier (payment hidden) rather than to take payment.
+  startMode?: "pay" | "send";
+  // Sends the order — with the discount, notes and prescription filled in here — to the cashier.
+  onSendToCashier?: (payload: OrderPayload) => Promise<{ ok: boolean; error?: string; orderNumber?: string }>;
+  // Filled in by whoever took the order; the cashier starts from it.
+  initialDiscount?: { discountId: string; idNumber: string; holderName: string } | null;
+  initialRemarks?: string | null;
   onProcessSale: (payload: {
     paymentMethod: string;
     cashReceived?: number;
@@ -47,6 +56,15 @@ interface CheckoutModalProps {
 }
 
 
+export interface OrderPayload {
+  discountId?: string;
+  discountIdNumber?: string;
+  discountHolderName?: string;
+  orderRemarks?: string;
+  prescriptionId?: string;
+  prescriptionDraft?: PrescriptionDraft;
+}
+
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
 // "20%", "₱50 off", "10% · max ₱100" — compact, for the discount buttons.
@@ -61,8 +79,14 @@ export default function CheckoutModal({
   canRecordPrescriptions,
   linkedPrescriptionId,
   attachedPrescription,
+  canPay = true,
+  startMode = "pay",
+  onSendToCashier,
+  initialDiscount,
+  initialRemarks,
   onProcessSale,
 }: CheckoutModalProps) {
+  const [mode, setMode] = useState<"pay" | "send">("pay");
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "E_WALLET">("CASH");
   const [cashReceived, setCashReceived] = useState("");
   const [walletProvider, setWalletProvider] = useState<string>("GCash");
@@ -84,16 +108,19 @@ export default function CheckoutModal({
       setCashReceived("");
       setWalletProvider("GCash");
       setWalletReference("");
-      setDiscountId("");
-      setDiscountIdNumber("");
-      setDiscountHolderName("");
-      setRemarks("");
+      setMode(canPay && (startMode === "pay" || !onSendToCashier) ? "pay" : "send");
+      setDiscountId(initialDiscount?.discountId ?? "");
+      setDiscountIdNumber(initialDiscount?.idNumber ?? "");
+      setDiscountHolderName(initialDiscount?.holderName ?? "");
+      setRemarks(initialRemarks ?? "");
       setPrescriptionSelection(null);
       setPrescriptionIncomplete(null);
       setIsProcessing(false);
       setError(null);
       setSuccess(null);
     }
+    // Reset only when it opens; the initial values are read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const vatableTotal = cart.filter((i) => i.isVatable).reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -118,6 +145,39 @@ export default function CheckoutModal({
     setCashReceived(parts.length > 2 ? `${parts[0]}.${parts[1]}` : sanitized);
   };
 
+  const orderPayload = (): OrderPayload => ({
+    discountId: discount?.id,
+    discountIdNumber: discount?.asksForId ? discountIdNumber.trim() || undefined : undefined,
+    discountHolderName: discount?.asksForId ? discountHolderName.trim() || undefined : undefined,
+    orderRemarks: remarks.trim() || undefined,
+    ...(attachedPrescription
+      ? { prescriptionId: attachedPrescription.selection?.prescriptionId, prescriptionDraft: attachedPrescription.selection?.prescriptionDraft }
+      : { prescriptionId: prescriptionSelection?.prescriptionId, prescriptionDraft: prescriptionSelection?.prescriptionDraft }),
+  });
+
+  const handleSend = async () => {
+    if (!onSendToCashier) return;
+    setError(null);
+    if (prescriptionIncomplete && !attachedPrescription) {
+      setError(prescriptionIncomplete);
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const result = await onSendToCashier(orderPayload());
+      if (!result.ok) {
+        setError(result.error ?? "Failed to send the order.");
+        return;
+      }
+      setSuccess(`Order ${result.orderNumber} sent to the cashier`);
+      setTimeout(() => onClose(), 1000);
+    } catch {
+      setError("Network error. The order was not sent.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleProcess = async () => {
     setError(null);
     if (prescriptionIncomplete && !attachedPrescription) {
@@ -135,14 +195,8 @@ export default function CheckoutModal({
         cashReceived: paymentMethod === "CASH" ? cashAmount : undefined,
         paymentProvider: paymentMethod === "E_WALLET" ? walletProvider : undefined,
         paymentReference: paymentMethod === "E_WALLET" ? walletReference.trim() : undefined,
-        discountId: discount?.id,
+        ...orderPayload(),
         discountType: discount?.code,
-        discountIdNumber: discount?.asksForId ? discountIdNumber.trim() || undefined : undefined,
-        discountHolderName: discount?.asksForId ? discountHolderName.trim() || undefined : undefined,
-        orderRemarks: remarks.trim() || undefined,
-        ...(attachedPrescription
-          ? { prescriptionId: attachedPrescription.selection?.prescriptionId, prescriptionDraft: attachedPrescription.selection?.prescriptionDraft }
-          : { prescriptionId: prescriptionSelection?.prescriptionId, prescriptionDraft: prescriptionSelection?.prescriptionDraft }),
       });
       if (!result.ok) {
         setError(result.error ?? "Payment processing failed.");
@@ -165,7 +219,7 @@ export default function CheckoutModal({
         <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <CreditCard className="h-4 w-4 text-emerald-600" />
-            <h2 className="text-base font-semibold">Checkout</h2>
+            <h2 className="text-base font-semibold">{mode === "send" ? "Checkout · send to cashier" : "Checkout"}</h2>
           </div>
           <button onClick={onClose} className="p-1 text-gray-400 transition-colors hover:text-gray-600">
             <X className="h-4 w-4" />
@@ -322,6 +376,12 @@ export default function CheckoutModal({
             )}
           </div>
 
+          {mode === "send" ? (
+            <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              The cashier takes payment. The discount, notes and prescription above go with the order.
+            </p>
+          ) : (
+          <>
           <div>
             <h3 className="mb-2 text-sm font-semibold text-gray-900">Payment Method</h3>
             <div className="grid grid-cols-2 gap-2">
@@ -439,6 +499,8 @@ export default function CheckoutModal({
               </div>
             </div>
           )}
+          </>
+          )}
 
           {prescriptionIncomplete && !attachedPrescription && !error && <p className="text-sm text-amber-700">{prescriptionIncomplete}</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -452,6 +514,28 @@ export default function CheckoutModal({
           >
             Cancel
           </button>
+          {onSendToCashier && mode === "send" && canPay && (
+            <button
+              onClick={() => setMode("pay")}
+              disabled={isProcessing || Boolean(success)}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 sm:mr-auto"
+            >
+              Take payment here instead
+            </button>
+          )}
+          {onSendToCashier && (mode === "send" || canPay) && (
+            <button
+              onClick={mode === "send" ? handleSend : () => setMode("send")}
+              disabled={isProcessing || Boolean(success)}
+              className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                mode === "send" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "border border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+              }`}
+            >
+              <Send className="h-4 w-4" />
+              {mode === "send" ? (isProcessing ? "Sending..." : "Send to cashier") : "Send to cashier instead"}
+            </button>
+          )}
+          {mode === "pay" && (
           <button
             onClick={handleProcess}
             disabled={isProcessing || !isValidPayment || Boolean(success)}
@@ -469,6 +553,7 @@ export default function CheckoutModal({
               </>
             )}
           </button>
+          )}
         </div>
       </div>
     </div>

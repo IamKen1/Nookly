@@ -22,6 +22,8 @@ export interface PendingOrder {
   orderRemarks: string | null;
   // Label of the prescription entered with the order, if any.
   prescription?: string | null;
+  // Discount picked with the order; checkout starts with it selected.
+  discount?: { discountId: string; name: string; idNumber: string; holderName: string } | null;
   createdAt: string;
   createdBy: { id: string; name: string };
   items: PendingOrderLine[];
@@ -216,6 +218,13 @@ export default function PendingOrdersModal({
                 {selected.prescription && (
                   <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
                     <span className="font-semibold">Prescription:</span> {selected.prescription}
+                  </p>
+                )}
+                {selected.discount && (
+                  <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                    <span className="font-semibold">Discount:</span> {selected.discount.name}
+                    {selected.discount.holderName ? ` · ${selected.discount.holderName}` : ""}
+                    {selected.discount.idNumber ? ` · ID ${selected.discount.idNumber}` : ""}
                   </p>
                 )}
                 {selected.orderRemarks && (

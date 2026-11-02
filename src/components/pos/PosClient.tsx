@@ -42,8 +42,7 @@ import type { ReceiptData } from "@/types/receipt";
 import type { DiscountType } from "@/lib/vat-calculations";
 import { ALL_ROLE_LABELS, canCollectPayment, isShiftRequired, phDayOf, type PermissionModuleKey } from "@/lib/permissions-shared";
 import CartPanel, { type CartLine } from "./CartPanel";
-import CheckoutModal, { type PrescriptionDraft } from "./CheckoutModal";
-import PrescriptionFields, { type PrescriptionSelection } from "./PrescriptionFields";
+import CheckoutModal, { type OrderPayload, type PrescriptionDraft } from "./CheckoutModal";
 import ShiftModal from "./ShiftModal";
 import CashTransactionModal from "./CashTransactionModal";
 import PrinterConnectButton from "./PrinterConnectButton";
@@ -151,19 +150,20 @@ export default function PosClient({
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [cashTxnModalOpen, setCashTxnModalOpen] = useState(false);
   const [ordersModalOpen, setOrdersModalOpen] = useState(false);
-  const [sendingOrder, setSendingOrder] = useState(false);
-  // Sending is confirmed first, so a stray tap doesn't send (and clear) the cart.
-  const [confirmSend, setConfirmSend] = useState(false);
+  // Checkout opens either to take payment or to send the order to a cashier —
+  // the same screen (discounts, prescription, notes) either way, so sending is
+  // reviewed before it goes and a stray tap can't send the cart.
+  const [checkoutMode, setCheckoutMode] = useState<"pay" | "send">("pay");
   // The pending order the cart was loaded from, so checkout records its order taker
-  // (and uses the prescription entered with it, if any).
-  const [activeOrder, setActiveOrder] = useState<{ id: string; orderNumber: string; takerName: string; prescription: string | null } | null>(null);
-  // A prescription entered in the cart before sending the order. The form stays
-  // mounted (just hidden) while it's attached, so editing keeps what was typed
-  // and it re-checks itself as the cart changes.
-  const [rxFormMounted, setRxFormMounted] = useState(false);
-  const [rxFormOpen, setRxFormOpen] = useState(false);
-  const [cartRx, setCartRx] = useState<PrescriptionSelection | null>(null);
-  const [cartRxIncomplete, setCartRxIncomplete] = useState<string | null>(null);
+  // and starts from what was filled in with it (prescription, discount, notes).
+  const [activeOrder, setActiveOrder] = useState<{
+    id: string;
+    orderNumber: string;
+    takerName: string;
+    prescription: string | null;
+    discount: { discountId: string; idNumber: string; holderName: string } | null;
+    remarks: string | null;
+  } | null>(null);
   // Set when the cart came from a prescription's Reorder; `continues` means
   // this sale counts toward that prescription.
   const [linkedRx, setLinkedRx] = useState<{ id: string; prescriptionNumber: string; customerName: string; continues: boolean } | null>(null);
@@ -216,17 +216,14 @@ export default function PosClient({
       : phDayOf(shiftData.openShift.openedAt) !== phDayOf(new Date())
       ? "Your shift from an earlier day is still open — end it, then start today's."
       : null;
-  const openCheckout = () => {
-    if (shiftBlock) {
+  const openCheckout = (mode: "pay" | "send") => {
+    if (cart.length === 0) return;
+    if (mode === "pay" && shiftBlock) {
       showNotification(shiftBlock, "error");
       setShiftModalOpen(true);
       return;
     }
-    if (cartRxIncomplete) {
-      showNotification(cartRxIncomplete, "error");
-      setRxFormOpen(true);
-      return;
-    }
+    setCheckoutMode(mode);
     setShowCheckout(true);
   };
   const openShiftId = shiftData?.openShift?.id ?? null;
@@ -320,17 +317,10 @@ export default function PosClient({
   };
 
   const removeLine = (productId: string) => setCart((prev) => prev.filter((l) => l.productId !== productId));
-  const removeCartRx = () => {
-    setRxFormMounted(false);
-    setRxFormOpen(false);
-    setCartRx(null);
-    setCartRxIncomplete(null);
-  };
   const clearCart = () => {
     setCart([]);
     setActiveOrder(null);
     setLinkedRx(null);
-    removeCartRx();
   };
 
   // Saved lines (held cart, prescription) → cart lines, capped at today's stock.
@@ -371,7 +361,6 @@ export default function PosClient({
       showNotification("This cart is an order sent to the cashier — finish or clear it instead.", "error");
       return;
     }
-    if (rxFormMounted && (cartRx || cartRxIncomplete) && !confirm("Held carts don't keep the prescription. Hold anyway?")) return;
     setHoldLabel("");
   };
 
@@ -441,53 +430,37 @@ export default function PosClient({
         requiresPrescription: i.requiresPrescription,
       }));
     setCart(lines);
-    setActiveOrder({ id: order.id, orderNumber: order.orderNumber, takerName: order.createdBy.name, prescription: order.prescription ?? null });
+    setActiveOrder({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      takerName: order.createdBy.name,
+      prescription: order.prescription ?? null,
+      discount: order.discount ?? null,
+      remarks: order.orderRemarks,
+    });
     setLinkedRx(null);
-    removeCartRx();
     setOrdersModalOpen(false);
     const short = order.items.some((i) => i.quantity > i.currentStock);
     showNotification(short ? `Loaded ${order.orderNumber} — some items were reduced to available stock` : `Loaded ${order.orderNumber}`, short ? "error" : "success");
   };
 
-  // The prescription that goes with the order: the one entered in the cart, or
-  // the one a Reorder continues.
-  const rxForOrder: PrescriptionSelection | null = cartRx ?? (linkedRx?.continues ? { prescriptionId: linkedRx.id, label: `${linkedRx.prescriptionNumber} · ${linkedRx.customerName}` } : null);
-
-  const askSendToCashier = () => {
-    if (cart.length === 0 || sendingOrder) return;
-    if (cartRxIncomplete) {
-      showNotification(cartRxIncomplete, "error");
-      setRxFormOpen(true);
-      return;
-    }
-    setConfirmSend(true);
-  };
-
-  const sendToCashier = async () => {
-    if (cart.length === 0 || sendingOrder) return;
-    setSendingOrder(true);
-    try {
-      const res = await fetch("/api/pending-orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })),
-          ...(rxForOrder ? { prescription: { prescriptionId: rxForOrder.prescriptionId, prescriptionDraft: rxForOrder.prescriptionDraft } } : {}),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showNotification(data.error ?? "Failed to send the order.", "error");
-        return;
-      }
-      clearCart();
-      setConfirmSend(false);
-      showNotification(`Order ${data.orderNumber} sent to the cashier`, "success");
-    } catch {
-      showNotification("Network error. The order was not sent.", "error");
-    } finally {
-      setSendingOrder(false);
-    }
+  // Sends the cart, with what was filled in at checkout, to the cashier queue.
+  const sendToCashier = async (payload: OrderPayload): Promise<{ ok: boolean; error?: string; orderNumber?: string }> => {
+    const { prescriptionId, prescriptionDraft, ...rest } = payload;
+    const res = await fetch("/api/pending-orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+        ...rest,
+        ...(prescriptionId || prescriptionDraft ? { prescription: { prescriptionId, prescriptionDraft } } : {}),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { ok: false, error: data.error ?? "Failed to send the order." };
+    clearCart();
+    showNotification(`Order ${data.orderNumber} sent to the cashier`, "success");
+    return { ok: true, orderNumber: data.orderNumber };
   };
 
   const filteredProducts = useMemo(
@@ -506,13 +479,6 @@ export default function PosClient({
   const { data: pendingPrescriptions = [] } = useSWR<PendingPrescription[]>(
     canRecordPrescriptions ? `/api/prescriptions?status=PENDING,PARTIAL&here=1${linkedRx ? `&alsoId=${linkedRx.id}` : ""}` : null
   );
-  // Whoever can send orders to the cashier can also enter the prescription with it.
-  const canAttachRx = canRecordPrescriptions && (isOrderTaker || canSendToCashier) && !activeOrder;
-  const openRxForm = () => {
-    setRxFormMounted(true);
-    setRxFormOpen(true);
-  };
-  const cartRxLabel = !rxFormMounted ? null : cartRxIncomplete ? "" : cartRx?.label ?? null;
 
   const handleProcessSale = async (payload: {
     paymentMethod: string;
@@ -551,9 +517,9 @@ export default function PosClient({
     return { ok: true, saleNumber: data.saleNumber, totalAmount: Number(data.totalAmount) };
   };
 
-  const checkoutLabel = isOrderTaker ? (sendingOrder ? "Sending..." : "Send to cashier") : "Checkout";
+  const checkoutLabel = isOrderTaker ? "Send to cashier" : "Checkout";
   // Both options: Checkout stays the main button, Send to cashier sits under it.
-  const sendLabel = !isOrderTaker && canSendToCashier ? (sendingOrder ? "Sending..." : "Send to cashier") : undefined;
+  const sendLabel = !isOrderTaker && canSendToCashier && !activeOrder ? "Send to cashier" : undefined;
   const cartNotice = shiftBlock
     ? shiftBlock
     : activeOrder
@@ -846,11 +812,9 @@ export default function PosClient({
           onRemove={removeLine}
           onClear={clearCart}
           onHold={startHold}
-          onSendToCashier={sendLabel ? askSendToCashier : undefined}
+          onSendToCashier={sendLabel ? () => openCheckout("send") : undefined}
           sendLabel={sendLabel}
-          onPrescription={canAttachRx ? openRxForm : undefined}
-          prescriptionLabel={cartRxLabel}
-          onOpenCheckout={isOrderTaker ? askSendToCashier : openCheckout}
+          onOpenCheckout={() => openCheckout(isOrderTaker ? "send" : "pay")}
           subtotal={subtotal}
           vatableSales={vatableSales}
           vatAmount={vatAmount}
@@ -902,24 +866,14 @@ export default function PosClient({
               sendLabel
                 ? () => {
                     setMobileCartOpen(false);
-                    askSendToCashier();
+                    openCheckout("send");
                   }
                 : undefined
             }
             sendLabel={sendLabel}
-            onPrescription={
-              canAttachRx
-                ? () => {
-                    setMobileCartOpen(false);
-                    openRxForm();
-                  }
-                : undefined
-            }
-            prescriptionLabel={cartRxLabel}
             onOpenCheckout={() => {
               setMobileCartOpen(false);
-              if (isOrderTaker) askSendToCashier();
-              else openCheckout();
+              openCheckout(isOrderTaker ? "send" : "pay");
             }}
             subtotal={subtotal}
             vatableSales={vatableSales}
@@ -938,13 +892,13 @@ export default function PosClient({
         pendingPrescriptions={pendingPrescriptions}
         canRecordPrescriptions={canRecordPrescriptions}
         linkedPrescriptionId={linkedRx?.continues ? linkedRx.id : undefined}
-        attachedPrescription={
-          activeOrder?.prescription
-            ? { label: activeOrder.prescription }
-            : rxFormMounted && cartRx?.label && !cartRxIncomplete
-              ? { label: cartRx.label, selection: cartRx }
-              : undefined
-        }
+        attachedPrescription={activeOrder?.prescription ? { label: activeOrder.prescription } : undefined}
+        canPay={!isOrderTaker}
+        startMode={checkoutMode}
+        // An order already loaded from the queue is paid here, not sent again.
+        onSendToCashier={(isOrderTaker || canSendToCashier) && !activeOrder ? sendToCashier : undefined}
+        initialDiscount={activeOrder?.discount}
+        initialRemarks={activeOrder?.remarks}
         onProcessSale={handleProcessSale}
       />
 
@@ -992,120 +946,6 @@ export default function PosClient({
               </button>
             </div>
           </form>
-        </div>
-      )}
-
-      {rxFormMounted && (
-        <div
-          className={`fixed inset-0 z-50 items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[6vh] ${rxFormOpen ? "flex" : "hidden"}`}
-          onClick={() => setRxFormOpen(false)}
-        >
-          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-gray-900">Prescription for this order</h2>
-                <p className="text-xs text-gray-500">Goes with the order to the cashier and is saved when it&apos;s paid.</p>
-              </div>
-              <button onClick={() => setRxFormOpen(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <PrescriptionFields
-              pendingPrescriptions={pendingPrescriptions}
-              cart={cart}
-              initialExistingId={linkedRx?.continues ? linkedRx.id : undefined}
-              onChange={setCartRx}
-              onIncompleteChange={setCartRxIncomplete}
-            />
-            {cartRxIncomplete && <p className="mt-2 text-xs text-amber-700">{cartRxIncomplete}</p>}
-            <div className="mt-4 flex justify-between gap-2">
-              <button type="button" onClick={removeCartRx} className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50">
-                Remove prescription
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (cartRxIncomplete) return;
-                  if (!cartRx) removeCartRx();
-                  else setRxFormOpen(false);
-                }}
-                disabled={Boolean(cartRxIncomplete)}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmSend && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !sendingOrder && setConfirmSend(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-base font-bold text-gray-900">Send this order to the cashier?</h2>
-            <p className="mt-1 text-xs text-gray-500">The cart will be cleared here and the order will wait for payment at the cashier.</p>
-            {/* The same breakdown as the cart, so whoever takes the order can tell the customer the total. */}
-            <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm">
-              <ul className="max-h-48 space-y-1 overflow-y-auto">
-                {cart.map((l) => (
-                  <li key={l.productId} className="flex justify-between gap-3">
-                    <span className="min-w-0 truncate text-gray-700">
-                      {l.name} <span className="text-xs text-gray-400">· {l.quantity} × {peso(l.price)}</span>
-                    </span>
-                    <span className="shrink-0 tabular-nums text-gray-900">{peso(l.price * l.quantity)}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-2 space-y-0.5 border-t border-gray-200 pt-2 text-xs text-gray-600">
-                <div className="flex justify-between">
-                  <span>Subtotal ({cart.reduce((sum, l) => sum + l.quantity, 0)} pcs)</span>
-                  <span className="tabular-nums">{peso(subtotal)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>VAT Sales</span>
-                  <span className="tabular-nums">{peso(vatableSales)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>12% VAT</span>
-                  <span className="tabular-nums">{peso(vatAmount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Non-VAT Sales</span>
-                  <span className="tabular-nums">{peso(nonVatableTotal)}</span>
-                </div>
-              </div>
-              <div className="mt-2 flex justify-between border-t border-gray-200 pt-2">
-                <span className="font-bold text-gray-900">Total</span>
-                <span className="font-bold tabular-nums text-emerald-700">{peso(subtotal)}</span>
-              </div>
-              <p className="mt-1 text-[11px] text-gray-400">Before any discount (Senior/PWD etc.), which the cashier applies at payment.</p>
-            </div>
-            {rxForOrder?.label && (
-              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                <span className="font-semibold">Prescription:</span> {rxForOrder.label}
-              </p>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                // Focus Cancel, not Send: a barcode scan ends with Enter.
-                autoFocus
-                onClick={() => setConfirmSend(false)}
-                disabled={sendingOrder}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={sendToCashier}
-                disabled={sendingOrder}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {sendingOrder ? "Sending..." : "Send to cashier"}
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

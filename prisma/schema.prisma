@@ -860,6 +860,9 @@ model PendingOrder {
   // { prescriptionDraft }, plus a label for the cashier. Saved as a real
   // prescription only when the order is paid.
   prescription Json?
+  // Discount chosen by whoever took the order: { discountId, idNumber?, holderName? }.
+  // The cashier's checkout starts with it selected.
+  discount     Json?
   status       PendingOrderStatus @default(OPEN)
   createdById  String
   saleId       String?            @unique

@@ -5,6 +5,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { parsePendingItems } from "@/lib/pending-orders";
 import { hasPermission } from "@/lib/permissions";
 import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
+import { isDiscountAvailable } from "@/lib/discounts";
 import { prepareOrderPrescription, readOrderPrescription, type OrderPrescription } from "@/lib/order-prescription";
 
 // Open orders waiting for a cashier at the current branch, with each line
@@ -21,6 +22,14 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "asc" },
   });
   if (orders.length === 0) return NextResponse.json([]);
+
+  const discountOf = (value: unknown) => {
+    if (!value || typeof value !== "object") return null;
+    const v = value as Record<string, unknown>;
+    return typeof v.discountId === "string"
+      ? { discountId: v.discountId, name: String(v.name ?? ""), idNumber: String(v.idNumber ?? ""), holderName: String(v.holderName ?? "") }
+      : null;
+  };
 
   const productIds = [...new Set(orders.flatMap((o) => parsePendingItems(o.items).map((i) => i.productId)))];
   const products = await prisma.product.findMany({
@@ -47,6 +56,7 @@ export async function GET(request: NextRequest) {
       createdBy: { id: o.createdBy.id, name: `${o.createdBy.firstName} ${o.createdBy.lastName}`.trim() },
       // Only the label: the cashier sees it, the sale reads the rest from the order.
       prescription: readOrderPrescription(o.prescription)?.label ?? null,
+      discount: discountOf(o.discount),
       items: parsePendingItems(o.items).flatMap((i) => {
         const p = productMap.get(i.productId);
         if (!p) return [];
@@ -107,6 +117,17 @@ export async function POST(request: NextRequest) {
     prescription = prepared.value;
   }
 
+  // The discount picked when taking the order; the cashier's checkout starts with it.
+  let discount: { discountId: string; name: string; idNumber?: string; holderName?: string } | null = null;
+  if (typeof body.discountId === "string" && body.discountId) {
+    const found = await prisma.discount.findFirst({ where: { id: body.discountId, tenantId: session.tenantId } });
+    if (!found || !isDiscountAvailable(found, session.storeId)) {
+      return NextResponse.json({ error: "That discount isn't available right now. Choose another one." }, { status: 400 });
+    }
+    const text = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, 100) : "");
+    discount = { discountId: found.id, name: found.name, idNumber: text(body.discountIdNumber) || undefined, holderName: text(body.discountHolderName) || undefined };
+  }
+
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
@@ -125,6 +146,7 @@ export async function POST(request: NextRequest) {
           items: items as unknown as Prisma.InputJsonValue,
           orderRemarks: orderRemarks || null,
           prescription: prescription ? (prescription as unknown as Prisma.InputJsonValue) : undefined,
+          discount: discount ? (discount as unknown as Prisma.InputJsonValue) : undefined,
           createdById: session.userId,
         },
       });
