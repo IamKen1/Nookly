@@ -42,6 +42,7 @@ import { branchHasOrderTakers } from "@/lib/branch-scope";
 const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
 const phHourNow = () => new Date(Date.now() + PH_OFFSET_MS).getUTCHours();
 const timePH = (iso: string) => new Date(iso).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" });
+const datePH = (iso: string) => new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" });
 
 export interface HeroInfo {
   firstName: string;
@@ -713,7 +714,7 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-zinc-800">{s.saleNumber}</p>
                   <p className="text-xs text-zinc-400">
-                    {timePH(s.saleDate)} · {s.items} item{s.items === 1 ? "" : "s"} · {methodLabel(s.paymentMethod).toLowerCase()}
+                    {datePH(s.saleDate)}, {timePH(s.saleDate)} · {s.items} item{s.items === 1 ? "" : "s"} · {methodLabel(s.paymentMethod).toLowerCase()}
                     {s.status !== "COMPLETED" && ` · ${s.status.toLowerCase()}`}
                   </p>
                 </div>
