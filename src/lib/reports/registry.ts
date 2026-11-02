@@ -6,7 +6,7 @@ export const REPORT_GROUPS = ["Overview", "Sales", "Tax & compliance", "Profit",
 export type ReportGroup = (typeof REPORT_GROUPS)[number];
 
 export const REPORTS = [
-  { key: "overview", group: "Overview", label: "Business overview", description: "Key figures vs. the previous period, daily trend, top products, categories, payments, cashiers, and branches" },
+  { key: "overview", group: "Overview", label: "Business overview", description: "Net sales, expenses, and net income vs. the previous period, by day, with top products and payments" },
   { key: "sales-summary", group: "Sales", label: "Sales summary", description: "Daily gross sales, discounts, returns, net sales, VAT, and payment split" },
   { key: "sales-by-product", group: "Sales", label: "Sales by product", description: "Units and net sales per product, with cost, gross profit, and margin" },
   { key: "sales-by-category", group: "Sales", label: "Sales by category", description: "Net sales, gross profit, and share per category" },

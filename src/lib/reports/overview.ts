@@ -1,77 +1,69 @@
-import { prisma } from "@/lib/prisma";
-import { supplierBalances } from "@/lib/payables";
-import { getInventoryValue } from "@/lib/dashboard-data";
 import type { ReportResult } from "./registry";
-import { type ReportContext, money, saleWhere } from "./context";
-import { paymentMethods, salesByBranch, salesByCashier, salesByCategory, salesByProduct, salesSummary } from "./sales";
-import { profitLoss } from "./finance";
+import { type ReportContext, money, phDay } from "./context";
+import { paymentMethods, salesByBranch, salesByProduct, salesSummary } from "./sales";
+import { expensesReport } from "./finance";
 
 const pct = (a: number, b: number) => (b ? money(((a - b) / Math.abs(b)) * 100) : null);
 
-// One page of everything an owner checks first: key figures against the
-// previous period of the same length, then the breakdowns behind them.
-export async function overview(ctx: ReportContext & { canPay?: boolean }): Promise<ReportResult> {
-  const [summary, pl, products, categories, payments, cashiers, branches, prevCount, stock, payables] = await Promise.all([
+// The first thing an owner checks: what came in, what went out, and what's
+// left — net sales less expenses (counter expenses and payments to
+// suppliers) — against the previous period of the same length.
+export async function overview(ctx: ReportContext): Promise<ReportResult> {
+  const span = ctx.to.getTime() - ctx.from.getTime();
+  const prevCtx = { ...ctx, from: new Date(ctx.from.getTime() - span), to: ctx.from, fromKey: phDay(new Date(ctx.from.getTime() - span)), toKey: phDay(new Date(ctx.from.getTime() - 1)) };
+  const [summary, expenses, prevSummary, prevExpenses, products, payments, branches] = await Promise.all([
     salesSummary(ctx),
-    profitLoss(ctx),
+    expensesReport(ctx),
+    salesSummary(prevCtx),
+    expensesReport(prevCtx),
     salesByProduct(ctx),
-    salesByCategory(ctx),
     paymentMethods(ctx),
-    salesByCashier(ctx),
     ctx.storeIds?.length === 1 ? null : salesByBranch(ctx),
-    (async () => {
-      const days = ctx.to.getTime() - ctx.from.getTime();
-      const prev = { ...ctx, from: new Date(ctx.from.getTime() - days), to: ctx.from };
-      return prisma.sale.count({ where: saleWhere(prev, "sales") });
-    })(),
-    getInventoryValue({ session: { tenantId: ctx.tenantId }, storeId: ctx.storeIds?.length === 1 ? ctx.storeIds[0] : null }),
-    ctx.canPay ? supplierBalances(ctx.tenantId) : null,
   ]);
 
-  const line = (label: string) => pl.rows.find((r) => r.line === label) as { amount: number; previous: number } | undefined;
-  const v = (label: string) => line(label)?.amount ?? 0;
-  const p = (label: string) => line(label)?.previous ?? 0;
-  const tx = summary.rows.reduce((s, r) => s + Number(r.transactions ?? 0), 0);
-  const net = v("Net sales (VAT-inclusive)");
-  const netPrev = p("Net sales (VAT-inclusive)");
-  const gp = v("Gross profit");
-  const netOfVat = v("Net sales (net of VAT)");
-  const owed = payables ? [...payables.values()].reduce((s, b) => s + Math.max(0, b.balance), 0) : null;
-  const overdue = payables ? [...payables.values()].reduce((s, b) => s + b.overdue, 0) : null;
+  const total = (rows: Record<string, string | number | null>[], key: string) => money(rows.reduce((s, r) => s + Number(r[key] ?? 0), 0));
+  const net = total(summary.rows, "net");
+  const tx = total(summary.rows, "transactions");
+  const spent = total(expenses.rows, "amount");
+  const prevNet = total(prevSummary.rows, "net");
+  const prevTx = total(prevSummary.rows, "transactions");
+  const prevSpent = total(prevExpenses.rows, "amount");
 
-  const trend = summary.rows.map((r) => ({ date: r.date, transactions: r.transactions, net: r.net, average: r.average }));
-  const top = (rows: Record<string, string | number | null>[], n: number) => rows.slice(0, n);
+  // Expenses per day, to sit beside each day's sales.
+  const spentByDay = new Map<string, number>();
+  for (const e of expenses.rows) {
+    const day = phDay(new Date(String(e.date)));
+    spentByDay.set(day, (spentByDay.get(day) ?? 0) + Number(e.amount ?? 0));
+  }
+  // Only days with sales or expenses, so a quiet month stays short.
+  const rows = summary.rows
+    .map((r) => {
+      const out = money(spentByDay.get(String(r.date)) ?? 0);
+      return { date: r.date, transactions: r.transactions, net: r.net, expenses: out, income: money(Number(r.net) - out) };
+    })
+    .filter((r) => Number(r.transactions) > 0 || Number(r.net) !== 0 || r.expenses !== 0);
 
   return {
     summary: [
-      { label: "Net sales", value: money(net), format: "money", change: pct(net, netPrev) },
-      { label: "Transactions", value: tx, format: "int", change: pct(tx, prevCount) },
-      { label: "Average sale", value: tx ? money(net / tx) : 0, format: "money", change: pct(tx ? net / tx : 0, prevCount ? netPrev / prevCount : 0) },
-      { label: "Gross profit", value: money(gp), format: "money", change: pct(gp, p("Gross profit")) },
-      { label: "Gross margin", value: netOfVat ? money((gp / netOfVat) * 100) : 0, format: "pct" },
-      { label: "Net income", value: money(v("Net income")), format: "money", change: pct(v("Net income"), p("Net income")) },
-      { label: "Discounts + SC/PWD VAT", value: money(-(v("Less: discounts") + v("Less: VAT exemption (SC/PWD)"))), format: "money" },
-      { label: "Returns", value: money(-v("Less: returns")), format: "money" },
-      { label: "Output VAT", value: money(-v("Less: output VAT")), format: "money" },
-      { label: "Cost of inventory", value: money(stock.cost), format: "money" },
-      ...(owed !== null ? [{ label: "Owed to suppliers", value: money(owed), format: "money" as const }, { label: "Overdue to suppliers", value: money(overdue ?? 0), format: "money" as const }] : []),
+      { label: "Net sales", value: net, format: "money", change: pct(net, prevNet) },
+      { label: "Expenses", value: spent, format: "money", change: pct(spent, prevSpent) },
+      { label: "Net income", value: money(net - spent), format: "money", change: pct(net - spent, prevNet - prevSpent) },
+      { label: "Transactions", value: tx, format: "int", change: pct(tx, prevTx) },
     ],
     columns: [
       { key: "date", label: "Date", format: "date" },
       { key: "transactions", label: "Trans.", format: "int", total: true },
       { key: "net", label: "Net sales", format: "money", total: true },
-      { key: "average", label: "Avg sale", format: "money" },
+      { key: "expenses", label: "Expenses", format: "money", total: true },
+      { key: "income", label: "Net income", format: "money", total: true },
     ],
-    rows: trend,
+    rows,
     barKey: "net",
     sections: [
-      { title: "Profit & loss", columns: pl.columns, rows: pl.rows },
-      { title: "Top 10 products", columns: products.columns.filter((c) => ["product", "netQty", "net", "profit", "margin"].includes(c.key)), rows: top(products.rows, 10), barKey: "net" },
-      { title: "Sales by category", columns: categories.columns.filter((c) => ["category", "net", "profit", "share"].includes(c.key)), rows: categories.rows, barKey: "net" },
-      { title: "Payment methods", columns: payments.columns.filter((c) => ["method", "provider", "transactions", "amount", "share"].includes(c.key)), rows: payments.rows, barKey: "amount" },
-      { title: "Cashiers", columns: cashiers.columns.filter((c) => ["cashier", "transactions", "net", "average", "voids"].includes(c.key)), rows: cashiers.rows, barKey: "net" },
-      ...(branches ? [{ title: "Branches", columns: branches.columns.filter((c) => ["branch", "transactions", "net", "profit", "margin", "share"].includes(c.key)), rows: branches.rows, barKey: "net" }] : []),
+      { title: "Top 10 products", columns: products.columns.filter((c) => ["product", "netQty", "net"].includes(c.key)), rows: products.rows.slice(0, 10), barKey: "net" },
+      { title: "Payment methods", columns: payments.columns.filter((c) => ["method", "provider", "transactions", "amount"].includes(c.key)), rows: payments.rows, barKey: "amount" },
+      ...(branches ? [{ title: "Branches", columns: branches.columns.filter((c) => ["branch", "transactions", "net", "share"].includes(c.key)), rows: branches.rows, barKey: "net" }] : []),
     ],
-    note: "Changes compare with the previous period of the same length. Net sales are after discounts, SC/PWD VAT exemption, and returns.",
+    note: "Net income = net sales − expenses. Expenses are those recorded at the counter plus payments to suppliers (see Expenses & payouts). Changes compare with the previous period of the same length.",
   };
 }
