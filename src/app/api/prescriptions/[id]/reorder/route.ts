@@ -4,8 +4,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
 import { resolveCartLines } from "@/lib/cart-lines";
 
-// The cart lines for re-ordering a prescription at the POS: what's still left
-// to serve, or — when it was fully served — the full prescribed amounts again.
+// The cart lines for re-ordering a prescription at the POS: what's still left to serve.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,9 +23,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!rx) return NextResponse.json({ error: "Prescription not found." }, { status: 404 });
 
   const remaining = rx.items.map((i) => ({ productId: i.productId, quantity: Math.max(0, i.quantity - i.servedQuantity) })).filter((i) => i.quantity > 0);
-  // Still being served: the sale continues this prescription. Otherwise it's a new purchase of the same items.
-  const continues = (rx.status === "PENDING" || rx.status === "PARTIAL") && remaining.length > 0;
-  const wanted = continues ? remaining : rx.items.map((i) => ({ productId: i.productId, quantity: i.quantity }));
+  // Only a prescription still being served can be reordered; a fully served one is done.
+  if (!(rx.status === "PENDING" || rx.status === "PARTIAL") || remaining.length === 0) {
+    return NextResponse.json({ error: `${rx.prescriptionNumber} is fully served — there's nothing left to reorder.` }, { status: 400 });
+  }
+  const continues = true;
+  const wanted = remaining;
 
   return NextResponse.json({
     prescription: {

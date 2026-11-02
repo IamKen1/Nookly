@@ -49,7 +49,7 @@ export default function PrescriptionsClient({ canReorder }: { canReorder: boolea
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900">Prescriptions</h1>
-          <p className="mt-1 text-sm text-zinc-500">Prescriptions recorded at checkout. Reorder puts a prescription&apos;s items in the POS cart.</p>
+          <p className="mt-1 text-sm text-zinc-500">Prescriptions recorded at checkout. Reorder puts what&apos;s left to serve of a prescription in the POS cart.</p>
         </div>
         <a
           href={`/api/prescriptions/export${qs ? `?${qs}` : ""}`}
@@ -152,13 +152,15 @@ export default function PrescriptionsClient({ canReorder }: { canReorder: boolea
                     </td>
                     {canReorder && (
                       <td className="px-4 py-3 text-right">
+                        {(p.status === "PARTIAL" || p.status === "PENDING") && (
                         <a
                           href={`/pos?rx=${p.id}`}
                           className="inline-flex items-center gap-1 rounded-full border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
-                          title={p.status === "PARTIAL" ? "Adds what's left to serve to the POS cart" : "Adds these items to the POS cart"}
+                          title="Adds what's left to serve to the POS cart"
                         >
                           <RotateCcw className="h-3.5 w-3.5" /> Reorder
                         </a>
+                        )}
                       </td>
                     )}
                   </tr>

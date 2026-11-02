@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CartLine } from "./CartPanel";
 
 export interface PrescriptionDraft {
@@ -213,8 +213,10 @@ export default function PrescriptionFields({
   // The items this prescription covers (Rx-flagged ones if any, else the whole
   // cart) and how many of each were prescribed — more than bought now means
   // it stays "partially served" until the rest is bought.
-  const flagged = cart.filter((l) => l.requiresPrescription);
-  const rxLines = flagged.length > 0 ? flagged : cart;
+  const rxLines = useMemo(() => {
+    const flagged = cart.filter((l) => l.requiresPrescription);
+    return flagged.length > 0 ? flagged : cart;
+  }, [cart]);
   const [prescribed, setPrescribed] = useState<Record<string, string>>({});
 
   const [customer, setCustomer] = useState<PersonMatch | null>(null);
@@ -257,9 +259,7 @@ export default function PrescriptionFields({
         writtenDate,
         instructions: instructions.trim() || undefined,
         refillsAllowed,
-        prescribedQuantities: Object.fromEntries(
-          rxLines.map((l) => [l.productId, Math.max(l.quantity, parseInt(prescribed[l.productId] ?? "", 10) || l.quantity)])
-        ),
+        prescribedQuantities: Object.fromEntries(rxLines.map((l) => [l.productId, parseInt(prescribed[l.productId] ?? "", 10) || 0])),
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,8 +275,14 @@ export default function PrescriptionFields({
     if (!touched) return onIncompleteChange(null);
     if (customerUnfinished || !hasCustomer) return onIncompleteChange("Prescription: choose the customer from the list or add them as new — or clear it.");
     if (doctorUnfinished || !hasDoctor) return onIncompleteChange("Prescription: choose the doctor from the list or add them as new — or clear it.");
+    // The amount is read off the prescription, never assumed — a guessed 1/1
+    // would mark it fully served when the doctor prescribed more.
+    const missing = rxLines.find((l) => !(parseInt(prescribed[l.productId] ?? "", 10) > 0));
+    if (missing) return onIncompleteChange(`Prescription: enter how many ${missing.name} the doctor prescribed.`);
+    const tooLow = rxLines.find((l) => parseInt(prescribed[l.productId], 10) < l.quantity);
+    if (tooLow) return onIncompleteChange(`Prescription: ${tooLow.name} — the customer is buying ${tooLow.quantity}, more than the ${prescribed[tooLow.productId]} prescribed.`);
     onIncompleteChange(null);
-  }, [mode, customer, newCustomer, doctor, newDoctor, instructions, customerUnfinished, doctorUnfinished, onIncompleteChange]);
+  }, [mode, customer, newCustomer, doctor, newDoctor, instructions, customerUnfinished, doctorUnfinished, onIncompleteChange, prescribed, rxLines]);
 
   return (
     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
@@ -364,7 +370,7 @@ export default function PrescriptionFields({
           </div>
           {rxLines.length > 0 && (
             <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-700">Prescribed quantity</label>
+              <label className="mb-1 block text-xs font-semibold text-gray-700">Prescribed quantity (as written on the prescription)</label>
               <ul className="space-y-1.5">
                 {rxLines.map((l) => (
                   <li key={l.productId} className="flex items-center justify-between gap-2 text-sm">
@@ -374,15 +380,18 @@ export default function PrescriptionFields({
                     <input
                       type="number"
                       min={l.quantity}
-                      value={prescribed[l.productId] ?? String(l.quantity)}
+                      value={prescribed[l.productId] ?? ""}
                       onChange={(e) => setPrescribed((prev) => ({ ...prev, [l.productId]: e.target.value }))}
+                      placeholder="e.g. 10"
                       aria-label={`Prescribed quantity of ${l.name}`}
-                      className="w-20 shrink-0 rounded-lg border border-gray-300 p-1.5 text-right text-sm focus:border-emerald-500"
+                      className={`w-20 shrink-0 rounded-lg border p-1.5 text-right text-sm focus:border-emerald-500 ${
+                        prescribed[l.productId] ? "border-gray-300" : "border-amber-400 bg-white"
+                      }`}
                     />
                   </li>
                 ))}
               </ul>
-              <p className="mt-1 text-[11px] text-gray-500">If the doctor prescribed more than the customer buys now, it stays partially served until the rest is bought.</p>
+              <p className="mt-1 text-[11px] text-gray-500">Enter the amount on the prescription. If it&apos;s more than the customer buys now, it stays partially served until the rest is bought.</p>
             </div>
           )}
           <input
