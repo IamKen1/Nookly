@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { canManageAllBranches } from "@/lib/branch-scope";
 import { invalidateCached } from "@/lib/route-cache";
+import { sellingBelowCostMessage } from "@/lib/price-rules";
 
 // Per-branch settings for one product: its price at each branch (null = the
 // product's own price) and whether that branch sells it at all.
@@ -15,12 +16,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const { id } = await params;
-  const product = await prisma.product.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true } });
+  const product = await prisma.product.findFirst({ where: { id, tenantId: session.tenantId }, select: { id: true, costPrice: true } });
   if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
 
   const body = await request.json();
   const entries: { storeId: string; price: number | null; sold?: boolean }[] = Array.isArray(body.prices) ? body.prices : [];
-  const stores = await prisma.store.findMany({ where: { tenantId: session.tenantId }, select: { id: true } });
+  const stores = await prisma.store.findMany({ where: { tenantId: session.tenantId }, select: { id: true, name: true } });
   const storeIds = new Set(stores.map((s) => s.id));
 
   for (const e of entries) {
@@ -28,6 +29,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (e.price !== null && !(typeof e.price === "number" && Number.isFinite(e.price) && e.price >= 0)) {
       return NextResponse.json({ error: "Prices must be zero or more." }, { status: 400 });
     }
+    // A branch's own price follows the same rule as the product's.
+    const belowCost = e.price === null ? null : sellingBelowCostMessage(Number(product.costPrice), e.price, `The price at ${stores.find((s) => s.id === e.storeId)?.name ?? "a branch"}`);
+    if (belowCost) return NextResponse.json({ error: belowCost }, { status: 400 });
   }
 
   await prisma.$transaction(

@@ -5,6 +5,7 @@ import { getCached, invalidateCached } from "@/lib/route-cache";
 import { hasPermission } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
 import { parsePage, parseProductSort, productPageIds } from "@/lib/product-list";
+import { sellingBelowCostMessage } from "@/lib/price-rules";
 
 const PRODUCT_SELECT = {
   id: true,
@@ -168,6 +169,9 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+
+  const belowCost = sellingBelowCostMessage(Number(costPrice), Number(sellingPrice));
+  if (belowCost) return NextResponse.json({ error: belowCost }, { status: 400 });
 
   const trimmedBatchNumber = typeof batchNumber === "string" ? batchNumber.trim() : "";
   if (Boolean(trimmedBatchNumber) !== Boolean(expirationDate)) {

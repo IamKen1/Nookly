@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import type { SessionPayload } from "@/lib/auth";
 import { DrugSchedule, Prisma } from "@prisma/client";
+import { sellingBelowCostMessage } from "@/lib/price-rules";
 import { invalidateCached } from "@/lib/route-cache";
 import { getMaxProducts } from "@/lib/plan-gating";
 import { hasPermission } from "@/lib/permissions";
@@ -386,6 +387,11 @@ async function processAddProduct(
     errors.push({ row: rowNumber, field: "Selling Price", message: "A valid selling price is required" });
     return "skipped";
   }
+  const belowCost = sellingBelowCostMessage(payload.costPrice, payload.sellingPrice);
+  if (belowCost) {
+    errors.push({ row: rowNumber, field: "Selling Price", message: belowCost });
+    return "skipped";
+  }
   if (payload.hasInvalidBatchExpiration) {
     warnings.push({
       row: rowNumber,
@@ -500,6 +506,19 @@ async function processUpdateProduct(
   if (resolvedCategoryId) categoryId = resolvedCategoryId;
 
   const payload = buildProductPayload(row, categoryId);
+
+  const costGiven = getFieldValue(row, ["Cost Price", "Cost Price Per Piece", "COST PRICE PER PIECE"]) !== undefined;
+  const sellingGiven = getFieldValue(row, ["Selling Price", "Selling Price Per Piece", "SELLING PRICE PER PIECE"]) !== undefined;
+  if (costGiven || sellingGiven) {
+    const belowCost = sellingBelowCostMessage(
+      costGiven ? payload.costPrice : Number(product.costPrice),
+      sellingGiven ? payload.sellingPrice : Number(product.sellingPrice)
+    );
+    if (belowCost) {
+      errors.push({ row: rowNumber, field: "Selling Price", message: `${product.name}: ${belowCost}` });
+      return "skipped";
+    }
+  }
 
   if (dryRun) return "updated";
 

@@ -7,6 +7,7 @@ import ImageUpload from "./ImageUpload";
 import CategoryManager from "./CategoryManager";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { getOptimizedImageUrl } from "@/lib/cloudinary";
+import { sellingBelowCostMessage } from "@/lib/price-rules";
 import { Pager, SortableTh, useSortState } from "@/components/app/SortableHeader";
 
 interface Category {
@@ -248,6 +249,12 @@ export default function ProductsClient({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    const belowCost = sellingBelowCostMessage(parseFloat(form.costPrice) || 0, parseFloat(form.sellingPrice) || 0);
+    if (belowCost) {
+      setError(belowCost);
+      return;
+    }
 
     if (!editingProduct && Boolean(form.batchNumber.trim()) !== Boolean(form.expirationDate)) {
       setError("Provide both a batch number and an expiration date, or leave both blank.");
