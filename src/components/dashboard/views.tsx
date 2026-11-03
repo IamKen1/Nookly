@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   AlarmClock,
+  AlertTriangle,
   BadgePercent,
   Boxes,
   ClipboardPlus,
@@ -39,6 +40,7 @@ import { CountUp, DailySalesBars, HourlySalesLine } from "./charts";
 import { AlertRow, Card, DeltaChip, PaymentMix, RankBars, StatTile } from "./widgets";
 import { LiveWaitingOrders, PriceCheck, ReprintButton } from "./cashier-tools";
 import { branchHasOrderSenders } from "@/lib/branch-scope";
+import { belowCostProductIds } from "@/lib/below-cost";
 
 const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
 const phHourNow = () => new Date(Date.now() + PH_OFFSET_MS).getUTCHours();
@@ -270,7 +272,7 @@ export async function OwnerDashboard({
   plan: { name: string; detail: string | null } | null;
 }) {
   const p = scope.permissions;
-  const [today, trend, mtd, top, mix, low, expiring, stockValue] = await Promise.all([
+  const [today, trend, mtd, top, mix, low, expiring, stockValue, belowCost] = await Promise.all([
     getTodayVsYesterday(scope),
     getSalesTrend(scope, 7),
     getMonthToDate(scope),
@@ -279,10 +281,27 @@ export async function OwnerDashboard({
     p.inventory ? getLowStock(scope, 0) : null,
     p.inventory ? getExpiring(scope, 60, 0) : null,
     p.inventory ? getInventoryValue(scope) : null,
+    p.products_edit ? belowCostProductIds(scope.session.tenantId).then((ids) => ids.length) : 0,
   ]);
 
   return (
     <div className="space-y-6">
+      {belowCost > 0 && (
+        // Selling at or below cost is allowed (e.g. a promo) but loses money on every sale.
+        <Link
+          href="/products?belowCost=1"
+          className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 hover:bg-amber-100"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+          <span className="flex-1">
+            <span className="font-semibold">
+              {belowCost.toLocaleString("en-PH")} product{belowCost === 1 ? "" : "s"} sell at or below cost.
+            </span>{" "}
+            Each sale loses money unless that&apos;s intended.
+          </span>
+          <span className="shrink-0 font-semibold underline">Review prices</span>
+        </Link>
+      )}
       {info.isMultiBranch && !scope.storeId && (
         // Owners see every branch combined here, whichever branch is picked in the header.
         <p className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">

@@ -388,10 +388,7 @@ async function processAddProduct(
     return "skipped";
   }
   const belowCost = sellingBelowCostMessage(payload.costPrice, payload.sellingPrice);
-  if (belowCost) {
-    errors.push({ row: rowNumber, field: "Selling Price", message: belowCost });
-    return "skipped";
-  }
+  if (belowCost) warnings.push({ row: rowNumber, field: "Selling Price", message: `${belowCost} It will sell at a loss.` });
   if (payload.hasInvalidBatchExpiration) {
     warnings.push({
       row: rowNumber,
@@ -514,10 +511,7 @@ async function processUpdateProduct(
       costGiven ? payload.costPrice : Number(product.costPrice),
       sellingGiven ? payload.sellingPrice : Number(product.sellingPrice)
     );
-    if (belowCost) {
-      errors.push({ row: rowNumber, field: "Selling Price", message: `${product.name}: ${belowCost}` });
-      return "skipped";
-    }
+    if (belowCost) warnings.push({ row: rowNumber, field: "Selling Price", message: `${product.name}: ${belowCost} It will sell at a loss.` });
   }
 
   if (dryRun) return "updated";

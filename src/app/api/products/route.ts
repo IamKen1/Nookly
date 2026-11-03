@@ -5,7 +5,7 @@ import { getCached, invalidateCached } from "@/lib/route-cache";
 import { hasPermission } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
 import { parsePage, parseProductSort, productPageIds } from "@/lib/product-list";
-import { sellingBelowCostMessage } from "@/lib/price-rules";
+import { belowCostProductIds } from "@/lib/below-cost";
 
 const PRODUCT_SELECT = {
   id: true,
@@ -47,15 +47,20 @@ export async function GET(request: NextRequest) {
   // The POS grid can grow to a few hundred with "Load more"; other lists page by 50.
   const page = parsePage(searchParams, 600);
   const order = parseProductSort(searchParams);
+  // ?belowCost=1: only products selling at or below cost (owners fix these).
+  const belowCostOnly = searchParams.get("belowCost") === "1";
   const take = searchParams.has("take") ? Math.min(200, Math.max(1, Math.trunc(Number(searchParams.get("take"))) || 50)) : undefined;
 
-  const cacheKey = `products:${session.tenantId}:${session.storeId ?? ""}:${search}:${categoryId}:${forSale ? "sale" : "all"}:${
+  const cacheKey = `products:${session.tenantId}:${session.storeId ?? ""}:${search}:${categoryId}:${forSale ? "sale" : "all"}:${belowCostOnly ? "below" : ""}:${
     page ? `${page.offset}-${page.limit}-${order.sort}-${order.dir}` : `t${take ?? ""}`
   }`;
   const result = await getCached(cacheKey, 3000, async () => {
+    // Paged lists mark each row that sells at or below cost; the filter uses the same set.
+    const belowCost = page || belowCostOnly ? new Set(await belowCostProductIds(session.tenantId)) : null;
     const where: Prisma.ProductWhereInput = {
       tenantId: session.tenantId,
       isActive: true,
+      ...(belowCostOnly ? { id: { in: [...belowCost!] } } : {}),
       ...(forSale ? { NOT: { stocks: { some: { storeId: session.storeId!, isHidden: true } } } } : {}),
       ...(categoryId ? { categoryId } : {}),
       ...(search
@@ -93,7 +98,8 @@ export async function GET(request: NextRequest) {
       const { ids, total } = await productPageIds(where, session.storeId ?? null, order, page.offset, page.limit);
       const found = await prisma.product.findMany({ where: { id: { in: ids } }, select });
       const byId = new Map(found.map((f) => [f.id, f]));
-      return { rows: shape(ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []))), total };
+      const rows = shape(ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])));
+      return { rows: rows.map((r) => ({ ...r, belowCost: belowCost!.has(r.id) })), total };
     }
 
     return shape(await prisma.product.findMany({ where, select, orderBy: { name: "asc" }, ...(take ? { take } : {}) }));
@@ -169,9 +175,6 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-
-  const belowCost = sellingBelowCostMessage(Number(costPrice), Number(sellingPrice));
-  if (belowCost) return NextResponse.json({ error: belowCost }, { status: 400 });
 
   const trimmedBatchNumber = typeof batchNumber === "string" ? batchNumber.trim() : "";
   if (Boolean(trimmedBatchNumber) !== Boolean(expirationDate)) {

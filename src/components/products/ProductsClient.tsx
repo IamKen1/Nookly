@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Plus, Search, Settings, Trash2, X, Pencil, Loader2 } from "lucide-react";
+import { AlertTriangle, Plus, Search, Settings, Trash2, X, Pencil, Loader2 } from "lucide-react";
 import ImageUpload from "./ImageUpload";
 import CategoryManager from "./CategoryManager";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
@@ -35,6 +35,8 @@ interface Product {
   imageUrl: string | null;
   category: { id: string; name: string };
   supplier: { id: string; name: string } | null;
+  // Sells at or below cost (its own price, or a branch's own price).
+  belowCost?: boolean;
 }
 
 const ADD_NEW = "__new";
@@ -120,14 +122,18 @@ export default function ProductsClient({
   planName,
   maxProducts,
   canEdit,
+  initialBelowCost = false,
 }: {
   categories: Category[];
   planName: string;
   maxProducts: number;
   // From "Edit products & prices" in User Access; without it the page is browse-only.
   canEdit: boolean;
+  // Opened from the dashboard warning: list only products selling at or below cost.
+  initialBelowCost?: boolean;
 }) {
   const [search, setSearch] = useState("");
+  const [belowCostOnly, setBelowCostOnly] = useState(initialBelowCost);
   const [showForm, setShowForm] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -184,11 +190,12 @@ export default function ProductsClient({
   // One page at a time, sorted and searched by the server, so a catalog of
   // thousands stays quick. A new search or sort starts again at the first page.
   const { sort, toggle: toggleSort } = useSortState<"name" | "category" | "price" | "stock">();
-  const listKey = `${debouncedSearch}|${sort?.key ?? ""}|${sort?.dir ?? ""}`;
+  const listKey = `${debouncedSearch}|${sort?.key ?? ""}|${sort?.dir ?? ""}|${belowCostOnly}`;
   const [pageAt, setPageAt] = useState({ key: listKey, offset: 0 });
   const offset = pageAt.key === listKey ? pageAt.offset : 0;
   const pageParams = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
   if (debouncedSearch) pageParams.set("search", debouncedSearch);
+  if (belowCostOnly) pageParams.set("belowCost", "1");
   if (sort) {
     pageParams.set("sort", sort.key);
     pageParams.set("dir", sort.dir);
@@ -202,7 +209,9 @@ export default function ProductsClient({
   // The whole catalog's size, for the plan limit (not just what matches the search).
   const { data: catalog, mutate: refreshCatalog } = useSWR<{ total: number }>("/api/products?limit=1");
   const productCount = catalog?.total ?? page?.total ?? 0;
-  const refreshProducts = () => Promise.all([refreshPage(), refreshCatalog()]);
+  // How many sell at or below cost, for the warning (owners and whoever edits prices).
+  const { data: belowCostCount, mutate: refreshBelowCost } = useSWR<{ total: number }>(canEdit ? "/api/products?limit=1&belowCost=1" : null);
+  const refreshProducts = () => Promise.all([refreshPage(), refreshCatalog(), refreshBelowCost()]);
 
   const flashSuccess = (message: string) => {
     setSuccessMessage(message);
@@ -246,15 +255,14 @@ export default function ProductsClient({
     setShowForm(true);
   };
 
+  // Selling at or below cost is allowed, but shown as it's typed and the save
+  // button says so, so it's never saved by accident.
+  const priceWarning =
+    form.costPrice.trim() && form.sellingPrice.trim() ? sellingBelowCostMessage(parseFloat(form.costPrice), parseFloat(form.sellingPrice)) : null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-
-    const belowCost = sellingBelowCostMessage(parseFloat(form.costPrice) || 0, parseFloat(form.sellingPrice) || 0);
-    if (belowCost) {
-      setError(belowCost);
-      return;
-    }
 
     if (!editingProduct && Boolean(form.batchNumber.trim()) !== Boolean(form.expirationDate)) {
       setError("Provide both a batch number and an expiration date, or leave both blank.");
@@ -349,6 +357,29 @@ export default function ProductsClient({
       )}
       {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
+      {(belowCostOnly || (belowCostCount?.total ?? 0) > 0) && (
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+          <span className="flex-1">
+            {belowCostCount?.total ? (
+              <>
+                <span className="font-semibold">
+                  {belowCostCount.total.toLocaleString("en-PH")} product{belowCostCount.total === 1 ? "" : "s"} sell at or below cost.
+                </span>{" "}
+                {`Each sale of ${belowCostCount.total === 1 ? "it" : "these"} loses money unless that's intended (e.g. a promo).`}
+              </>
+            ) : belowCostCount ? (
+              "No products sell at or below cost."
+            ) : (
+              "Showing only products that sell at or below cost."
+            )}
+          </span>
+          <button onClick={() => setBelowCostOnly((v) => !v)} className="font-semibold text-amber-800 underline hover:text-amber-950">
+            {belowCostOnly ? "Show all products" : "Review them"}
+          </button>
+        </div>
+      )}
+
       <div className="mt-6 flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
         <Search className="h-4 w-4 text-zinc-400" />
         <input
@@ -407,7 +438,16 @@ export default function ProductsClient({
                     {p.category?.name}
                     {p.supplier && <span className="block text-xs text-zinc-400">{p.supplier.name}</span>}
                   </td>
-                  <td className="px-4 py-3 text-zinc-900">₱{Number(p.sellingPrice).toFixed(2)}</td>
+                  <td className="px-4 py-3">
+                    <span className={p.belowCost ? "font-semibold text-red-600" : "text-zinc-900"}>₱{Number(p.sellingPrice).toFixed(2)}</span>
+                    {p.belowCost && (
+                      <span className="block text-xs text-red-600">
+                        {Number(p.sellingPrice) <= Number(p.costPrice)
+                          ? `At or below cost (₱${Number(p.costPrice).toFixed(2)})`
+                          : "A branch price is at or below cost"}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={p.currentStock <= p.minimumStock ? "font-semibold text-amber-600" : "text-zinc-700"}>
                       {p.currentStock}
@@ -663,7 +703,16 @@ export default function ProductsClient({
             </div>
 
             <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-              {error && <p className="mr-auto text-sm text-red-600">{error}</p>}
+              {error ? (
+                <p className="mr-auto text-sm text-red-600">{error}</p>
+              ) : (
+                priceWarning && (
+                  <p className="mr-auto flex items-start gap-1.5 text-sm text-amber-700">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{priceWarning} This product will sell at a loss.</span>
+                  </p>
+                )
+              )}
               <button
                 type="button"
                 onClick={closeForm}
@@ -677,7 +726,7 @@ export default function ProductsClient({
                 className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {saving ? "Saving..." : editingProduct ? "Save changes" : "Save product"}
+                {saving ? "Saving..." : priceWarning ? "Save anyway" : editingProduct ? "Save changes" : "Save product"}
               </button>
             </div>
           </form>

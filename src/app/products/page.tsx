@@ -4,8 +4,9 @@ import { hasPermission } from "@/lib/permissions";
 import AppShell from "@/components/app/AppShell";
 import ProductsClient from "@/components/products/ProductsClient";
 
-export default async function ProductsPage() {
+export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ belowCost?: string }> }) {
   const session = await requirePagePermission("products");
+  const { belowCost } = await searchParams;
 
   const [tenant, categories] = await Promise.all([
     prisma.tenant.findUnique({
@@ -27,6 +28,7 @@ export default async function ProductsPage() {
         planName={tenant.subscription?.plan.name ?? ""}
         maxProducts={tenant.subscription?.plan.maxProducts ?? -1}
         canEdit={await hasPermission(session.tenantId, session.role, "products_edit")}
+        initialBelowCost={belowCost === "1"}
       />
     </AppShell>
   );

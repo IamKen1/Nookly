@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { invalidateCached } from "@/lib/route-cache";
 import { hasPermission } from "@/lib/permissions";
-import { sellingBelowCostMessage } from "@/lib/price-rules";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -41,11 +40,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     imageUrl,
     supplierId,
   } = body;
-
-  if (costPrice !== undefined || sellingPrice !== undefined) {
-    const belowCost = sellingBelowCostMessage(Number(costPrice ?? existing.costPrice), Number(sellingPrice ?? existing.sellingPrice));
-    if (belowCost) return NextResponse.json({ error: belowCost }, { status: 400 });
-  }
 
   // supplierId: a supplier's id sets the product's supplier, "" clears it, absent leaves it.
   const supplier =
