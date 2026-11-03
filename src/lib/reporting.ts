@@ -319,6 +319,7 @@ export const generateSalesDashboardReport = async (
       taxAmount: true,
       totalAmount: true,
       user: { select: { firstName: true, lastName: true } },
+      servedBy: { select: { firstName: true, lastName: true } },
       items: {
         select: {
           quantity: true,
@@ -432,7 +433,7 @@ export const generateSalesDashboardReport = async (
     paymentMethod: sale.paymentMethod,
     totalAmount: toNumber(sale.totalAmount),
     itemCount: sale.items.reduce((total, item) => total + item.quantity, 0),
-    cashierName: [sale.user.firstName, sale.user.lastName].filter(Boolean).join(" ").trim() || "Unknown User",
+    cashierName: [(sale.servedBy ?? sale.user).firstName, (sale.servedBy ?? sale.user).lastName].filter(Boolean).join(" ").trim() || "Unknown User",
   }));
 
   return {

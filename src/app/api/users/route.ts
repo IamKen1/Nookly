@@ -4,6 +4,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { hashPassword } from "@/lib/auth";
 import { UserRole } from "@prisma/client";
 import { hasPermission } from "@/lib/permissions";
+import { checkNewStaffCode, staffCodeRequired } from "@/lib/staff-code";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -21,11 +22,13 @@ export async function GET(request: NextRequest) {
       storeId: true,
       isActive: true,
       createdAt: true,
+      staffCodeHash: true,
     },
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json(users);
+  // Only whether a security code is set — never the code.
+  return NextResponse.json(users.map(({ staffCodeHash, ...u }) => ({ ...u, hasStaffCode: Boolean(staffCodeHash) })));
 }
 
 export async function POST(request: NextRequest) {
@@ -36,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { email, username, firstName, lastName, role, password, storeId } = body;
+  const { email, username, firstName, lastName, role, password, storeId, staffCode } = body;
 
   if (!email || !username || !firstName || !lastName || !password) {
     return NextResponse.json({ error: "email, username, firstName, lastName and password are required." }, { status: 400 });
@@ -51,6 +54,14 @@ export async function POST(request: NextRequest) {
   if (storeId && !(await prisma.store.findFirst({ where: { id: storeId, tenantId: session.tenantId, isActive: true } }))) {
     return NextResponse.json({ error: "Branch not found." }, { status: 400 });
   }
+
+  // Security code: required for new users while the owner requires codes; optional otherwise.
+  const code = typeof staffCode === "string" ? staffCode.trim() : "";
+  if (!code && (await staffCodeRequired(session.tenantId))) {
+    return NextResponse.json({ error: "Set a security code for this user (4 to 6 digits)." }, { status: 400 });
+  }
+  const codeCheck = code ? await checkNewStaffCode(session.tenantId, code) : null;
+  if (codeCheck && "error" in codeCheck) return NextResponse.json({ error: codeCheck.error }, { status: codeCheck.status });
 
   const [plan, userCount] = await Promise.all([
     prisma.subscription.findUnique({ where: { tenantId: session.tenantId }, include: { plan: true } }),
@@ -75,6 +86,7 @@ export async function POST(request: NextRequest) {
         role: role || "CASHIER",
         password: await hashPassword(password),
         storeId: storeId || session.storeId || null,
+        ...(codeCheck ? { staffCodeHash: codeCheck.hash } : {}),
       },
       select: {
         id: true,

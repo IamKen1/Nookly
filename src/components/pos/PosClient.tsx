@@ -115,6 +115,7 @@ export default function PosClient({
   pollOrders = false,
   canSendToCashier = false,
   canRecordPrescriptions = false,
+  requireStaffCode = false,
 }: {
   categories: Category[];
   tenantName: string;
@@ -129,6 +130,8 @@ export default function PosClient({
   canSendToCashier?: boolean;
   // Plan includes prescriptions; otherwise checkout doesn't offer to record one.
   canRecordPrescriptions?: boolean;
+  // Security codes on (Empire, 2+ branches, owner's switch): asked before sending or taking payment.
+  requireStaffCode?: boolean;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -461,7 +464,7 @@ export default function PosClient({
   };
 
   // Sends the cart, with what was filled in at checkout, to the cashier queue.
-  const sendToCashier = async (payload: OrderPayload): Promise<{ ok: boolean; error?: string; orderNumber?: string }> => {
+  const sendToCashier = async (payload: OrderPayload): Promise<{ ok: boolean; error?: string; orderNumber?: string; codeError?: boolean }> => {
     const { prescriptionId, prescriptionDraft, ...rest } = payload;
     const res = await fetch("/api/pending-orders", {
       method: "POST",
@@ -473,7 +476,7 @@ export default function PosClient({
       }),
     });
     const data = await res.json();
-    if (!res.ok) return { ok: false, error: data.error ?? "Failed to send the order." };
+    if (!res.ok) return { ok: false, error: data.error ?? "Failed to send the order.", codeError: data.code === "STAFF_CODE" };
     clearCart();
     showNotification(`Order ${data.orderNumber} sent to the cashier`, "success");
     return { ok: true, orderNumber: data.orderNumber };
@@ -506,6 +509,7 @@ export default function PosClient({
     orderRemarks?: string;
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;
+    staffCode?: string;
   }) => {
     const res = await fetch("/api/sales", {
       method: "POST",
@@ -517,7 +521,7 @@ export default function PosClient({
       }),
     });
     const data = await res.json();
-    if (!res.ok) return { ok: false, error: data.error ?? "Checkout failed." };
+    if (!res.ok) return { ok: false, error: data.error ?? "Checkout failed.", codeError: data.code === "STAFF_CODE" };
     clearCart();
     refreshProducts();
     if (activeOrder) refreshPendingOrders();
@@ -928,6 +932,7 @@ export default function PosClient({
         onSendToCashier={(isOrderTaker || canSendToCashier) && !activeOrder ? sendToCashier : undefined}
         initialDiscount={activeOrder?.discount}
         initialRemarks={activeOrder?.remarks}
+        requireStaffCode={requireStaffCode}
         onProcessSale={handleProcessSale}
       />
 

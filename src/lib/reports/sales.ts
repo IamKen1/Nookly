@@ -10,6 +10,8 @@ const saleSelect = {
   status: true,
   storeId: true,
   userId: true,
+  servedById: true,
+  orderTakerId: true,
   subtotal: true,
   discountAmount: true,
   taxAmount: true,
@@ -236,28 +238,36 @@ export async function salesByCategory(ctx: ReportContext): Promise<ReportResult>
 
 export async function salesByCashier(ctx: ReportContext): Promise<ReportResult> {
   const { sales, returns } = await loadSales(ctx);
-  const voids = await prisma.sale.findMany({ where: saleWhere(ctx, "voids"), select: { userId: true, totalAmount: true } });
+  const voids = await prisma.sale.findMany({ where: saleWhere(ctx, "voids"), select: { userId: true, servedById: true, totalAmount: true } });
   const users = await prisma.user.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true, firstName: true, lastName: true, role: true } });
   const nameOf = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
-  const by = new Map<string, { transactions: number; net: number; discounts: number; returns: number; voids: number; voidAmount: number }>();
+  const by = new Map<string, { transactions: number; net: number; discounts: number; returns: number; voids: number; voidAmount: number; orders: number; orderSales: number }>();
   const row = (id: string) => {
     let r = by.get(id);
-    if (!r) by.set(id, (r = { transactions: 0, net: 0, discounts: 0, returns: 0, voids: 0, voidAmount: 0 }));
+    if (!r) by.set(id, (r = { transactions: 0, net: 0, discounts: 0, returns: 0, voids: 0, voidAmount: 0, orders: 0, orderSales: 0 }));
     return r;
   };
+  // Orders each person took (sent to the cashier), credited separately from payments taken.
   for (const s of sales) {
-    const r = row(s.userId);
+    if (!s.orderTakerId) continue;
+    const r = row(s.orderTakerId);
+    r.orders++;
+    r.orderSales += n(s.totalAmount);
+  }
+  // With security codes, the person who entered theirs; else the account.
+  for (const s of sales) {
+    const r = row(s.servedById ?? s.userId);
     r.transactions++;
     r.net += n(s.totalAmount);
     r.discounts += n(s.discountAmount);
   }
   for (const s of returns) {
-    const r = row(s.userId);
+    const r = row(s.servedById ?? s.userId);
     r.returns += -n(s.totalAmount);
     r.net += n(s.totalAmount);
   }
   for (const v of voids) {
-    const r = row(v.userId);
+    const r = row(v.servedById ?? v.userId);
     r.voids++;
     r.voidAmount += n(v.totalAmount);
   }
@@ -272,28 +282,33 @@ export async function salesByCashier(ctx: ReportContext): Promise<ReportResult> 
       returns: money(r.returns),
       voids: r.voids,
       voidAmount: money(r.voidAmount),
+      orders: r.orders,
+      orderSales: money(r.orderSales),
       share: total ? money((r.net / total) * 100) : null,
     }))
     .sort((a, b) => b.net - a.net);
   return {
     summary: [
-      { label: "Cashiers", value: rows.length, format: "int" },
+      { label: "Staff", value: rows.length, format: "int" },
       { label: "Net sales", value: money(total), format: "money" },
       { label: "Voids", value: rows.reduce((s, r) => s + r.voids, 0), format: "int" },
     ],
     columns: [
-      { key: "cashier", label: "Cashier" },
-      { key: "transactions", label: "Trans.", format: "int", total: true },
+      { key: "cashier", label: "Staff" },
+      { key: "transactions", label: "Sales taken", format: "int", total: true },
       { key: "net", label: "Net sales", format: "money", total: true },
       { key: "average", label: "Avg sale", format: "money" },
       { key: "discounts", label: "Discounts given", format: "money", total: true },
       { key: "returns", label: "Returns", format: "money", total: true },
       { key: "voids", label: "Voids", format: "int", total: true },
       { key: "voidAmount", label: "Voided amount", format: "money", total: true },
+      { key: "orders", label: "Orders taken", format: "int", total: true },
+      { key: "orderSales", label: "Order sales", format: "money", total: true },
       { key: "share", label: "Share", format: "pct" },
     ],
     rows,
-    note: "Each sale counts for the user who rang it up; returns and voids for the user who processed them.",
+    note:
+      "Sales taken count for whoever took payment (the person who entered their security code, else the login used). Orders taken count for whoever sent the order to the cashier. Returns and voids count for the user who processed them.",
   };
 }
 
@@ -438,6 +453,82 @@ export async function paymentMethods(ctx: ReportContext): Promise<ReportResult> 
     ],
     rows,
     note: "Match each e-wallet provider's total against the store's wallet statement for the same dates.",
+  };
+}
+
+const personName = (u: { firstName: string; lastName: string } | null | undefined) => (u ? `${u.firstName} ${u.lastName}`.trim() : "");
+
+// Every sale and return with everyone involved: who took the order (and from
+// which login), who took payment (and on which login).
+export async function salesRegister(ctx: ReportContext): Promise<ReportResult> {
+  const name = { select: { firstName: true, lastName: true } } as const;
+  const rows = await prisma.sale.findMany({
+    where: { OR: [saleWhere(ctx, "sales"), saleWhere(ctx, "returns"), saleWhere(ctx, "voids")] },
+    select: {
+      saleNumber: true,
+      saleDate: true,
+      status: true,
+      storeId: true,
+      totalAmount: true,
+      discountAmount: true,
+      paymentMethod: true,
+      paymentProvider: true,
+      originalSaleId: true,
+      userId: true,
+      servedById: true,
+      user: name,
+      servedBy: name,
+      orderTaker: name,
+      pendingOrder: { select: { orderNumber: true, createdById: true, takenById: true, createdBy: name } },
+      items: { select: { quantity: true } },
+    },
+    orderBy: { saleDate: "desc" },
+    take: 10000,
+  });
+  const out = rows.map((r) => {
+    const order = r.pendingOrder;
+    return {
+      date: r.saleDate.toISOString(),
+      number: r.saleNumber,
+      type: r.originalSaleId ? "Return" : r.status === "CANCELLED" ? "Voided" : r.status === "RETURNED" ? "Returned" : "Sale",
+      branch: storeName(ctx, r.storeId),
+      order: order?.orderNumber ?? "",
+      orderTakenBy: personName(r.orderTaker),
+      // The login the order was sent from, when someone else's code was used on it.
+      orderLogin: order && order.takenById && order.takenById !== order.createdById ? personName(order.createdBy) : "",
+      cashier: personName(r.servedBy ?? r.user),
+      cashierLogin: r.servedById && r.servedById !== r.userId ? personName(r.user) : "",
+      payment: r.paymentProvider ? `${paymentMethodLabel(r.paymentMethod)} · ${r.paymentProvider}` : paymentMethodLabel(r.paymentMethod),
+      items: r.items.reduce((s, i) => s + i.quantity, 0),
+      discount: money(n(r.discountAmount)),
+      total: money(n(r.totalAmount)),
+    };
+  });
+  const sales = out.filter((r) => r.type !== "Return" && r.type !== "Voided");
+  return {
+    summary: [
+      { label: "Transactions", value: out.length, format: "int" },
+      { label: "Net sales", value: money(out.filter((r) => r.type !== "Voided").reduce((s, r) => s + r.total, 0)), format: "money" },
+      { label: "From orders", value: sales.filter((r) => r.order).length, format: "int" },
+      { label: "Staff involved", value: new Set(out.flatMap((r) => [r.orderTakenBy, r.cashier]).filter(Boolean)).size, format: "int" },
+    ],
+    columns: [
+      { key: "date", label: "Date", format: "datetime" },
+      { key: "number", label: "AR #" },
+      { key: "type", label: "Type" },
+      ...(ctx.storeIds?.length === 1 ? [] : [{ key: "branch", label: "Branch" }]),
+      { key: "order", label: "Order #" },
+      { key: "orderTakenBy", label: "Order taken by" },
+      { key: "orderLogin", label: "Order sent from login" },
+      { key: "cashier", label: "Payment taken by" },
+      { key: "cashierLogin", label: "On login" },
+      { key: "payment", label: "Payment" },
+      { key: "items", label: "Items", format: "int", total: true },
+      { key: "discount", label: "Discount", format: "money", total: true },
+      { key: "total", label: "Total", format: "money", total: true },
+    ],
+    rows: out,
+    note: "The login columns are filled only when someone entered their own security code on another person's login. Voided sales are listed but not counted in net sales.",
   };
 }
 

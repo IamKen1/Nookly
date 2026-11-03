@@ -58,7 +58,14 @@ export default async function SalesPage({
   const [sales, todayAgg, cashiers] = await Promise.all([
     prisma.sale.findMany({
       where,
-      include: { items: { include: { product: true } }, user: true, orderTaker: { select: { firstName: true, lastName: true } }, store: { select: { name: true } } },
+      include: {
+        items: { include: { product: true } },
+        user: true,
+        servedBy: { select: { id: true, firstName: true, lastName: true } },
+        orderTaker: { select: { firstName: true, lastName: true } },
+        pendingOrder: { select: { orderNumber: true, createdById: true, takenById: true, createdBy: { select: { firstName: true, lastName: true } } } },
+        store: { select: { name: true } },
+      },
       orderBy: { saleDate: "desc" },
       take: 100,
     }),
@@ -98,9 +105,17 @@ export default async function SalesPage({
           status: s.status,
           isReturnRecord: Boolean(s.originalSaleId),
           saleDate: s.saleDate.toISOString(),
-          cashierName: `${s.user.firstName} ${s.user.lastName}`,
+          // With security codes, the person who entered theirs; else the account.
+          cashierName: `${(s.servedBy ?? s.user).firstName} ${(s.servedBy ?? s.user).lastName}`.trim(),
+          accountName: s.servedBy && s.servedBy.id !== s.userId ? `${s.user.firstName} ${s.user.lastName}`.trim() : null,
           branchName: s.store.name,
           orderTakerName: s.orderTaker ? `${s.orderTaker.firstName} ${s.orderTaker.lastName}`.trim() : null,
+          orderNumber: s.pendingOrder?.orderNumber ?? null,
+          // The login the order was sent from, when someone else's code was used on it.
+          orderLoginName:
+            s.pendingOrder?.takenById && s.pendingOrder.takenById !== s.pendingOrder.createdById
+              ? `${s.pendingOrder.createdBy.firstName} ${s.pendingOrder.createdBy.lastName}`.trim()
+              : null,
           itemCount: s.items.length,
           items: s.items.map((i) => ({
             id: i.id,

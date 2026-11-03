@@ -4,6 +4,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { hashPassword } from "@/lib/auth";
 import { UserRole } from "@prisma/client";
 import { hasPermission } from "@/lib/permissions";
+import { checkNewStaffCode } from "@/lib/staff-code";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -17,7 +18,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!existing) return NextResponse.json({ error: "User not found." }, { status: 404 });
 
   const body = await request.json();
-  const { email, username, firstName, lastName, role, password, storeId, isActive } = body;
+  const { email, username, firstName, lastName, role, password, storeId, isActive, staffCode } = body;
 
   if (storeId && !(await prisma.store.findFirst({ where: { id: storeId, tenantId: session.tenantId, isActive: true } }))) {
     return NextResponse.json({ error: "Branch not found." }, { status: 400 });
@@ -46,6 +47,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
   }
 
+  // A new security code replaces the old one (they can't be read back, only reset).
+  const code = typeof staffCode === "string" ? staffCode.trim() : "";
+  const codeCheck = code ? await checkNewStaffCode(session.tenantId, code, id) : null;
+  if (codeCheck && "error" in codeCheck) return NextResponse.json({ error: codeCheck.error }, { status: codeCheck.status });
+
   try {
     const user = await prisma.user.update({
       where: { id },
@@ -58,6 +64,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         ...(storeId !== undefined ? { storeId } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
         ...(password ? { password: await hashPassword(password) } : {}),
+        ...(codeCheck ? { staffCodeHash: codeCheck.hash } : {}),
       },
       select: {
         id: true,
@@ -69,9 +76,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         storeId: true,
         isActive: true,
         createdAt: true,
+        staffCodeHash: true,
       },
     });
-    return NextResponse.json(user);
+    const { staffCodeHash, ...rest } = user;
+    return NextResponse.json({ ...rest, hasStaffCode: Boolean(staffCodeHash) });
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {
       return NextResponse.json({ error: "A user with this email or username already exists." }, { status: 409 });
@@ -103,8 +112,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   }
 
   const [salesCount, ordersTakenCount] = await Promise.all([
-    prisma.sale.count({ where: { OR: [{ userId: id }, { orderTakerId: id }] } }),
-    prisma.pendingOrder.count({ where: { createdById: id } }),
+    prisma.sale.count({ where: { OR: [{ userId: id }, { orderTakerId: id }, { servedById: id }] } }),
+    prisma.pendingOrder.count({ where: { OR: [{ createdById: id }, { takenById: id }] } }),
   ]);
   if (salesCount > 0 || ordersTakenCount > 0) {
     await prisma.user.update({ where: { id }, data: { isActive: false } });

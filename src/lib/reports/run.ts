@@ -1,6 +1,6 @@
 import type { ReportKey, ReportResult } from "./registry";
 import type { ReportContext } from "./context";
-import { paymentMethods, salesByBranch, salesByCashier, salesByCategory, salesByHour, salesByProduct, salesSummary, voidsReturns } from "./sales";
+import { paymentMethods, salesByBranch, salesByCashier, salesByCategory, salesByHour, salesByProduct, salesRegister, salesSummary, voidsReturns } from "./sales";
 import { discountListing, expensesReport, profitLoss, vatSummary } from "./finance";
 import { expiry, inventoryValuation, reorder, slowMoving, stockMovement, transfers } from "./inventory";
 import { overview } from "./overview";
@@ -15,6 +15,7 @@ export const RUNNERS: Record<ReportKey, (ctx: ReportContext & { canPay?: boolean
   "sales-by-branch": salesByBranch,
   "sales-by-hour": salesByHour,
   "payment-methods": paymentMethods,
+  "sales-register": salesRegister,
   "voids-returns": voidsReturns,
   "vat-summary": vatSummary,
   "discount-listing": discountListing,

@@ -6,6 +6,7 @@ import { parsePendingItems } from "@/lib/pending-orders";
 import { hasPermission } from "@/lib/permissions";
 import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
 import { isDiscountAvailable } from "@/lib/discounts";
+import { identifyStaff, staffCodeRequired } from "@/lib/staff-code";
 import { prepareOrderPrescription, readOrderPrescription, type OrderPrescription } from "@/lib/order-prescription";
 
 // Open orders waiting for a cashier at the current branch, with each line
@@ -18,7 +19,10 @@ export async function GET(request: NextRequest) {
 
   const orders = await prisma.pendingOrder.findMany({
     where: { tenantId: session.tenantId, storeId: session.storeId, status: "OPEN" },
-    include: { createdBy: { select: { id: true, firstName: true, lastName: true } } },
+    include: {
+      createdBy: { select: { id: true, firstName: true, lastName: true } },
+      takenBy: { select: { id: true, firstName: true, lastName: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
   if (orders.length === 0) return NextResponse.json([]);
@@ -53,7 +57,13 @@ export async function GET(request: NextRequest) {
       orderNumber: o.orderNumber,
       orderRemarks: o.orderRemarks,
       createdAt: o.createdAt.toISOString(),
-      createdBy: { id: o.createdBy.id, name: `${o.createdBy.firstName} ${o.createdBy.lastName}`.trim() },
+      // The person who took it: whoever entered their security code, else the account.
+      createdBy: {
+        id: (o.takenBy ?? o.createdBy).id,
+        name: `${(o.takenBy ?? o.createdBy).firstName} ${(o.takenBy ?? o.createdBy).lastName}`.trim(),
+      },
+      // The account it was sent from, when that's someone else's login.
+      sentFrom: o.takenBy && o.takenBy.id !== o.createdBy.id ? `${o.createdBy.firstName} ${o.createdBy.lastName}`.trim() : null,
       // Only the label: the cashier sees it, the sale reads the rest from the order.
       prescription: readOrderPrescription(o.prescription)?.label ?? null,
       discount: discountOf(o.discount),
@@ -128,6 +138,14 @@ export async function POST(request: NextRequest) {
     discount = { discountId: found.id, name: found.name, idNumber: text(body.discountIdNumber) || undefined, holderName: text(body.discountHolderName) || undefined };
   }
 
+  // With security codes on, the order is on record as whoever entered theirs.
+  let takenById: string | null = null;
+  if (await staffCodeRequired(session.tenantId)) {
+    const who = await identifyStaff(session.tenantId, session.userId, body.staffCode, "send");
+    if ("error" in who) return NextResponse.json({ error: who.error, code: "STAFF_CODE" }, { status: who.status });
+    takenById = who.user.id;
+  }
+
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
@@ -148,6 +166,7 @@ export async function POST(request: NextRequest) {
           prescription: prescription ? (prescription as unknown as Prisma.InputJsonValue) : undefined,
           discount: discount ? (discount as unknown as Prisma.InputJsonValue) : undefined,
           createdById: session.userId,
+          takenById,
         },
       });
       return NextResponse.json({ id: order.id, orderNumber: order.orderNumber }, { status: 201 });

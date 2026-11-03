@@ -34,7 +34,11 @@ interface Sale {
   isReturnRecord: boolean;
   saleDate: string;
   cashierName: string;
+  // The login it was rung up on, when someone else entered their security code.
+  accountName?: string | null;
   orderTakerName: string | null;
+  orderNumber?: string | null;
+  orderLoginName?: string | null;
   branchName: string;
   itemCount: number;
   items: SaleItem[];
@@ -385,6 +389,7 @@ export default function SalesClient({
                     </td>
                     <td className="px-4 py-3 text-zinc-600">
                       {s.cashierName}
+                      {s.accountName && <p className="text-xs text-zinc-400">on {s.accountName}&apos;s login</p>}
                       {s.orderTakerName && <p className="text-xs text-zinc-400">Order by {s.orderTakerName}</p>}
                     </td>
                     <td className="px-4 py-3 text-zinc-600">{s.itemCount}</td>
@@ -443,6 +448,26 @@ export default function SalesClient({
                   {expanded === s.id && (
                     <tr key={`${s.id}-detail`}>
                       <td colSpan={7} className="bg-zinc-50 px-6 py-4">
+                        {/* Everyone involved in this sale, for accountability. */}
+                        <dl className="mb-3 grid gap-x-6 gap-y-1 border-b border-zinc-200 pb-3 text-xs sm:grid-cols-2">
+                          {s.orderTakerName && (
+                            <div className="flex gap-2">
+                              <dt className="text-zinc-400">Order taken by</dt>
+                              <dd className="font-medium text-zinc-800">
+                                {s.orderTakerName}
+                                {s.orderLoginName && <span className="font-normal text-zinc-500"> on {s.orderLoginName}&apos;s login</span>}
+                                {s.orderNumber && <span className="font-normal text-zinc-400"> · {s.orderNumber}</span>}
+                              </dd>
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <dt className="text-zinc-400">Payment taken by</dt>
+                            <dd className="font-medium text-zinc-800">
+                              {s.cashierName}
+                              {s.accountName && <span className="font-normal text-zinc-500"> on {s.accountName}&apos;s login</span>}
+                            </dd>
+                          </div>
+                        </dl>
                         <div className="space-y-1 text-sm">
                           {s.items.map((item) => (
                             <div key={item.id} className="flex justify-between text-zinc-600">

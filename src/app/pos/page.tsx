@@ -1,5 +1,6 @@
 import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
+import { staffCodeRequired } from "@/lib/staff-code";
 import { getRolePermissions } from "@/lib/permissions";
 import { branchHasOrderSenders, canManageAllBranches, getBranchContext, rolesThatSendOrders } from "@/lib/branch-scope";
 import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
@@ -15,7 +16,7 @@ export default async function PosPage() {
 
   if (!tenant) return null;
 
-  const [categories, permissions, branchContext, pollOrders, canRecordPrescriptions, senderRoles] = await Promise.all([
+  const [categories, permissions, branchContext, pollOrders, canRecordPrescriptions, senderRoles, requireStaffCode] = await Promise.all([
     prisma.category.findMany({
       where: { tenantId: session.tenantId, isActive: true },
       orderBy: { name: "asc" },
@@ -25,6 +26,7 @@ export default async function PosPage() {
     branchHasOrderSenders(session.tenantId, session.storeId),
     getTenantPlanCode(session.tenantId).then((code) => hasFeature(code, "prescriptions")),
     rolesThatSendOrders(session.tenantId),
+    staffCodeRequired(session.tenantId),
   ]);
   // The owner may send orders too, but only gets the button once the workspace uses orders.
   const canSendToCashier = session.role === "OWNER" ? senderRoles.length > 0 : permissions.pos_send_to_cashier;
@@ -47,6 +49,7 @@ export default async function PosPage() {
       pollOrders={pollOrders}
       canSendToCashier={canSendToCashier}
       canRecordPrescriptions={canRecordPrescriptions}
+      requireStaffCode={requireStaffCode}
       categories={categories.map((c) => ({ id: c.id, name: c.name }))}
     />
   );

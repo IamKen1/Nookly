@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import useSWR from "swr";
-import { X, CreditCard, Calculator, Send } from "lucide-react";
+import { X, CreditCard, Calculator, KeyRound, Send } from "lucide-react";
 import { calculateVatInclusiveTotals, getComputationLines } from "@/lib/vat-calculations";
 import { discountCalcInput, discountDisplay } from "@/lib/discount-math";
 import type { DiscountDTO } from "@/lib/discounts";
@@ -36,7 +36,9 @@ interface CheckoutModalProps {
   // Opens ready to send to the cashier (payment hidden) rather than to take payment.
   startMode?: "pay" | "send";
   // Sends the order — with the discount, notes and prescription filled in here — to the cashier.
-  onSendToCashier?: (payload: OrderPayload) => Promise<{ ok: boolean; error?: string; orderNumber?: string }>;
+  onSendToCashier?: (payload: OrderPayload) => Promise<{ ok: boolean; error?: string; orderNumber?: string; codeError?: boolean }>;
+  // Security codes are on: whoever sends or takes payment enters theirs first.
+  requireStaffCode?: boolean;
   // Filled in by whoever took the order; the cashier starts from it.
   initialDiscount?: { discountId: string; idNumber: string; holderName: string } | null;
   initialRemarks?: string | null;
@@ -52,7 +54,8 @@ interface CheckoutModalProps {
     orderRemarks?: string;
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;
-  }) => Promise<{ ok: boolean; error?: string; saleNumber?: string; totalAmount?: number }>;
+    staffCode?: string;
+  }) => Promise<{ ok: boolean; error?: string; saleNumber?: string; totalAmount?: number; codeError?: boolean }>;
 }
 
 
@@ -63,6 +66,7 @@ export interface OrderPayload {
   orderRemarks?: string;
   prescriptionId?: string;
   prescriptionDraft?: PrescriptionDraft;
+  staffCode?: string;
 }
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
@@ -84,8 +88,13 @@ export default function CheckoutModal({
   onSendToCashier,
   initialDiscount,
   initialRemarks,
+  requireStaffCode = false,
   onProcessSale,
 }: CheckoutModalProps) {
+  // Asking for the security code before sending / taking payment.
+  const [codeFor, setCodeFor] = useState<"send" | "pay" | null>(null);
+  const [staffCode, setStaffCode] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
   const [mode, setMode] = useState<"pay" | "send">("pay");
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "E_WALLET">("CASH");
   const [cashReceived, setCashReceived] = useState("");
@@ -155,20 +164,39 @@ export default function CheckoutModal({
       : { prescriptionId: prescriptionSelection?.prescriptionId, prescriptionDraft: prescriptionSelection?.prescriptionDraft }),
   });
 
-  const handleSend = async () => {
+  // Ready to go: ask for the security code when it's on, else go straight ahead.
+  const askCode = (mode: "send" | "pay") => {
+    setStaffCode("");
+    setCodeError(null);
+    setCodeFor(mode);
+  };
+  // A wrong code keeps the code box open; anything else is shown on the form.
+  const failed = (result: { error?: string; codeError?: boolean }, fallback: string) => {
+    if (result.codeError) {
+      setCodeError(result.error ?? "Wrong security code.");
+      setStaffCode("");
+      return;
+    }
+    setCodeFor(null);
+    setError(result.error ?? fallback);
+  };
+
+  const handleSend = async (code?: string) => {
     if (!onSendToCashier) return;
     setError(null);
     if (prescriptionIncomplete && !attachedPrescription) {
       setError(prescriptionIncomplete);
       return;
     }
+    if (requireStaffCode && code === undefined) return askCode("send");
     setIsProcessing(true);
     try {
-      const result = await onSendToCashier(orderPayload());
+      const result = await onSendToCashier({ ...orderPayload(), ...(code !== undefined ? { staffCode: code } : {}) });
       if (!result.ok) {
-        setError(result.error ?? "Failed to send the order.");
+        failed(result, "Failed to send the order.");
         return;
       }
+      setCodeFor(null);
       setSuccess(`Order ${result.orderNumber} sent to the cashier`);
       setTimeout(() => onClose(), 1000);
     } catch {
@@ -178,7 +206,7 @@ export default function CheckoutModal({
     }
   };
 
-  const handleProcess = async () => {
+  const handleProcess = async (code?: string) => {
     setError(null);
     if (prescriptionIncomplete && !attachedPrescription) {
       setError(prescriptionIncomplete);
@@ -188,6 +216,7 @@ export default function CheckoutModal({
       setError(paymentMethod === "CASH" ? "Insufficient cash amount." : "Enter the e-wallet reference number.");
       return;
     }
+    if (requireStaffCode && code === undefined) return askCode("pay");
     setIsProcessing(true);
     try {
       const result = await onProcessSale({
@@ -197,11 +226,13 @@ export default function CheckoutModal({
         paymentReference: paymentMethod === "E_WALLET" ? walletReference.trim() : undefined,
         ...orderPayload(),
         discountType: discount?.code,
+        ...(code !== undefined ? { staffCode: code } : {}),
       });
       if (!result.ok) {
-        setError(result.error ?? "Payment processing failed.");
+        failed(result, "Payment processing failed.");
         return;
       }
+      setCodeFor(null);
       setSuccess(`Sale ${result.saleNumber} completed — total ${peso(result.totalAmount ?? finalTotal)}`);
       setTimeout(() => onClose(), 1200);
     } catch {
@@ -215,6 +246,53 @@ export default function CheckoutModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2">
+      {codeFor && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <form
+            className="w-full max-w-xs rounded-2xl bg-white p-5 text-center shadow-2xl"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!/^\d{4,6}$/.test(staffCode)) {
+                setCodeError("Enter your 4–6 digit security code.");
+                return;
+              }
+              if (codeFor === "send") handleSend(staffCode);
+              else handleProcess(staffCode);
+            }}
+          >
+            <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+              <KeyRound className="h-5 w-5" />
+            </span>
+            <h3 className="mt-2 text-base font-semibold text-gray-900">Enter your security code</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              {codeFor === "send" ? "This order will be recorded as taken by you." : "This sale will be recorded as yours."}
+            </p>
+            <input
+              autoFocus
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={6}
+              aria-label="Security code"
+              value={staffCode}
+              onChange={(e) => {
+                setStaffCode(e.target.value.replace(/\D/g, ""));
+                setCodeError(null);
+              }}
+              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-center text-xl tracking-[0.5em] focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            />
+            {codeError && <p className="mt-2 text-xs text-red-600">{codeError}</p>}
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setCodeFor(null)} disabled={isProcessing} className="flex-1 rounded-lg border border-gray-300 py-2 text-sm text-gray-700 disabled:opacity-50">
+                Cancel
+              </button>
+              <button type="submit" disabled={isProcessing} className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                {isProcessing ? "Checking..." : codeFor === "send" ? "Send" : "Complete"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       <div className="flex max-h-[90vh] w-full max-w-md flex-col rounded-lg bg-white sm:max-w-lg md:max-w-xl">
         <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
@@ -525,7 +603,7 @@ export default function CheckoutModal({
           )}
           {onSendToCashier && (mode === "send" || canPay) && (
             <button
-              onClick={mode === "send" ? handleSend : () => setMode("send")}
+              onClick={mode === "send" ? () => handleSend() : () => setMode("send")}
               disabled={isProcessing || Boolean(success)}
               className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 mode === "send" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "border border-emerald-600 text-emerald-700 hover:bg-emerald-50"
@@ -537,7 +615,7 @@ export default function CheckoutModal({
           )}
           {mode === "pay" && (
           <button
-            onClick={handleProcess}
+            onClick={() => handleProcess()}
             disabled={isProcessing || !isValidPayment || Boolean(success)}
             className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
           >

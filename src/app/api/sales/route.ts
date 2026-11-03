@@ -13,6 +13,7 @@ import { canCollectPayment, isShiftRequired, phDayOf } from "@/lib/permissions-s
 import { batchesAtStore } from "@/lib/branch-scope";
 import { getRolePermissions, hasPermission, saleVisibilityWhere } from "@/lib/permissions";
 import { readOrderPrescription } from "@/lib/order-prescription";
+import { identifyStaff, staffCodeRequired } from "@/lib/staff-code";
 
 class PendingOrderTakenError extends Error {}
 
@@ -150,7 +151,7 @@ export async function POST(request: NextRequest) {
   const pendingOrder = pendingOrderId
     ? await prisma.pendingOrder.findFirst({
         where: { id: pendingOrderId, tenantId: session.tenantId, storeId: session.storeId },
-        select: { id: true, status: true, createdById: true, orderRemarks: true, prescription: true },
+        select: { id: true, status: true, createdById: true, takenById: true, orderRemarks: true, prescription: true },
       })
     : null;
   if (pendingOrderId && !pendingOrder) {
@@ -158,6 +159,14 @@ export async function POST(request: NextRequest) {
   }
   if (pendingOrder && pendingOrder.status !== "OPEN") {
     return NextResponse.json({ error: `This order was already ${pendingOrder.status.toLowerCase()}.` }, { status: 409 });
+  }
+
+  // With security codes on, the sale is on record as whoever entered theirs.
+  let servedById: string | null = null;
+  if (await staffCodeRequired(session.tenantId)) {
+    const who = await identifyStaff(session.tenantId, session.userId, body.staffCode, "checkout");
+    if ("error" in who) return NextResponse.json({ error: who.error, code: "STAFF_CODE" }, { status: who.status });
+    servedById = who.user.id;
   }
 
   const productIds = items.map((item) => item.productId);
@@ -428,7 +437,8 @@ export async function POST(request: NextRequest) {
         orderRemarks: orderRemarks || pendingOrder?.orderRemarks || null,
         customerId: resolvedCustomerId,
         userId: session.userId,
-        orderTakerId: pendingOrder?.createdById ?? null,
+        orderTakerId: pendingOrder ? pendingOrder.takenById ?? pendingOrder.createdById : null,
+        servedById,
         prescriptionId: resolvedPrescriptionId,
         shiftId: openShift?.id ?? null,
       },

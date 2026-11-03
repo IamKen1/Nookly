@@ -14,6 +14,7 @@ export const REPORTS = [
   { key: "sales-by-branch", group: "Sales", label: "Sales by branch", description: "Branches side by side: sales, profit, average sale, and share", multiBranch: true },
   { key: "sales-by-hour", group: "Sales", label: "Sales by hour & day", description: "When customers buy — by hour of day and by day of week" },
   { key: "payment-methods", group: "Sales", label: "Payment methods", description: "Cash and e-wallet by provider, with counts and shares" },
+  { key: "sales-register", group: "Sales", label: "Sales register", description: "Every sale and return: who took the order, who took payment, on which login, and how it was paid" },
   { key: "voids-returns", group: "Sales", label: "Voids & returns", description: "Every voided sale and return, with who, when, and how much" },
   { key: "vat-summary", group: "Tax & compliance", label: "VAT summary", description: "VATable sales, output VAT, VAT-exempt (SC/PWD), and non-VAT sales per day" },
   { key: "discount-listing", group: "Tax & compliance", label: "Discount listing (SC/PWD)", description: "Each discounted sale with ID holder, ID number, VAT exemption, and discount" },

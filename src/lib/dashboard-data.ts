@@ -233,17 +233,25 @@ export async function getOpenShifts(scope: DashboardScope) {
 
 // Today's sales per staff member, best first.
 export async function getStaffLeaderboard(scope: DashboardScope, take = 5) {
-  const rows = await prisma.sale.groupBy({
-    by: ["userId"],
+  // Credited to whoever entered their security code, else the account.
+  const grouped = await prisma.sale.groupBy({
+    by: ["userId", "servedById"],
     where: { ...scope.saleWhere, saleDate: { gte: startOfTodayPH() } },
     _sum: { totalAmount: true },
     _count: true,
-    orderBy: { _sum: { totalAmount: "desc" } },
-    take,
   });
-  const users = await prisma.user.findMany({ where: { id: { in: rows.map((r) => r.userId) } }, select: { id: true, firstName: true, lastName: true } });
+  const byPerson = new Map<string, { total: number; count: number }>();
+  for (const g of grouped) {
+    const id = g.servedById ?? g.userId;
+    const r = byPerson.get(id) ?? { total: 0, count: 0 };
+    r.total += Number(g._sum.totalAmount ?? 0);
+    r.count += g._count;
+    byPerson.set(id, r);
+  }
+  const rows = [...byPerson.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, take);
+  const users = await prisma.user.findMany({ where: { id: { in: rows.map(([id]) => id) } }, select: { id: true, firstName: true, lastName: true } });
   const nameOf = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
-  return rows.map((r) => ({ id: r.userId, name: nameOf.get(r.userId) ?? "Former staff", total: Number(r._sum.totalAmount ?? 0), count: r._count }));
+  return rows.map(([id, r]) => ({ id, name: nameOf.get(id) ?? "Former staff", total: r.total, count: r.count }));
 }
 
 // Things waiting on someone: prescriptions, stock requests, cashier orders.

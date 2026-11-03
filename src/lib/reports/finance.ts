@@ -87,6 +87,8 @@ export async function discountListing(ctx: ReportContext): Promise<ReportResult>
       totalAmount: true,
       status: true,
       user: { select: { firstName: true, lastName: true } },
+      servedBy: { select: { firstName: true, lastName: true } },
+      orderTaker: { select: { firstName: true, lastName: true } },
     },
     orderBy: { saleDate: "asc" },
     take: 10000,
@@ -104,7 +106,9 @@ export async function discountListing(ctx: ReportContext): Promise<ReportResult>
     net: money(n(s.totalAmount)),
     status: s.status === "RETURNED" ? "Returned" : "",
     branch: storeName(ctx, s.storeId),
-    cashier: `${s.user.firstName} ${s.user.lastName}`.trim(),
+    // Whoever took payment (by security code, else the login), and who took the order.
+    cashier: `${(s.servedBy ?? s.user).firstName} ${(s.servedBy ?? s.user).lastName}`.trim(),
+    orderTakenBy: s.orderTaker ? `${s.orderTaker.firstName} ${s.orderTaker.lastName}`.trim() : "",
   }));
   const scPwd = sales.filter((s) => s.discountType === "SENIOR" || s.discountType === "PWD");
   const missingId = scPwd.filter((s) => !s.discountIdNumber?.trim()).length;
@@ -126,6 +130,7 @@ export async function discountListing(ctx: ReportContext): Promise<ReportResult>
       { key: "amount", label: "Discount", format: "money", total: true },
       { key: "net", label: "Net amount", format: "money", total: true },
       ...(ctx.storeIds?.length === 1 ? [] : [{ key: "branch", label: "Branch" }]),
+      { key: "orderTakenBy", label: "Order taken by" },
       { key: "cashier", label: "Cashier" },
       { key: "status", label: "Note" },
     ],

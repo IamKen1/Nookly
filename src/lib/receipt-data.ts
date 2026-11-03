@@ -36,6 +36,7 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
       orderRemarks: true,
       customer: { select: { firstName: true, lastName: true } },
       user: { select: { firstName: true, lastName: true } },
+      servedBy: { select: { firstName: true, lastName: true } },
       store: { select: { name: true, address: true, city: true, isMainBranch: true } },
       items: {
         select: {
@@ -101,7 +102,7 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
     changeGiven: sale.changeGiven ? toNumber(sale.changeGiven) : undefined,
     orderRemarks: sale.orderRemarks,
     customer: sale.customer ?? undefined,
-    cashier: { firstName: sale.user.firstName, lastName: sale.user.lastName },
+    cashier: { firstName: (sale.servedBy ?? sale.user).firstName, lastName: (sale.servedBy ?? sale.user).lastName },
     store,
     ...(vatExemptSales !== undefined ? { vatExemptSales } : {}),
   };

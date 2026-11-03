@@ -34,6 +34,9 @@ model Plan {
   featureAlerts        Boolean             @default(false)
   featureMultiBranch   Boolean             @default(false)
   featureApiAccess     Boolean             @default(false)
+  // Staff security codes: whoever sends an order or completes a sale enters
+  // their own code, so it's on record as theirs even on a shared login.
+  featureStaffCode     Boolean             @default(false)
   isActive             Boolean             @default(true)
   sortOrder            Int                 @default(0)
   createdAt            DateTime            @default(now())
@@ -94,6 +97,9 @@ model Tenant {
   currency             String                    @default("PHP")
   isActive             Boolean                   @default(true)
   onboardingStep       Int                       @default(0) // drives setup wizard progress
+  // Settings › User access: require a staff security code to send orders and
+  // complete sales. Only offered when the plan has it and there are 2+ branches.
+  requireStaffCode     Boolean                   @default(false)
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   subscription         Subscription?
@@ -346,13 +352,16 @@ model User {
   hasSeenTour           Boolean                @default(false) // drives the first-time-user guided tour
   isActive              Boolean                @default(true)
   isPlatformAdmin       Boolean                @default(false) // grants access to the platform ops console, independent of tenant role
+  // Staff security code (4–6 digits), stored as a keyed hash so it can be
+  // looked up but never read back. Null until the owner sets one.
+  staffCodeHash         String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   store                 Store?                 @relation(fields: [storeId], references: [id])
   sales                 Sale[]                 @relation("SaleCashier")
   ordersTaken           Sale[]                 @relation("SaleOrderTaker")
-  pendingOrders         PendingOrder[]
+  pendingOrders         PendingOrder[]         @relation("PendingOrderCreatedBy")
   stockRequestsMade     StockRequest[]         @relation("StockRequestRequestedBy")
   stockRequestsHandled  StockRequest[]         @relation("StockRequestHandledBy")
   stockMovements        StockMovement[]
@@ -367,8 +376,11 @@ model User {
   heldCarts             HeldCart[]             @relation("HeldCartUser")
   supplierPayments      SupplierPayment[]      @relation("SupplierPaymentRecordedBy")
   supplierReturns       SupplierReturn[]       @relation("SupplierReturnCreatedBy")
+  ordersTakenByCode     PendingOrder[]         @relation("PendingOrderTakenBy")
+  salesServed           Sale[]                 @relation("SaleServedBy")
 
   @@unique([tenantId, email])
+  @@unique([tenantId, staffCodeHash])
   @@map("users")
 }
 
@@ -796,6 +808,9 @@ model Sale {
   // Set when an order taker prepared the order and a cashier completed it, so
   // both people are on record. Null for sales rung up start-to-finish by one user.
   orderTakerId             String?
+  // The person who entered their security code to complete the sale (null
+  // without codes). userId stays the account it was rung up on (its drawer/shift).
+  servedById               String?
   tenant                   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   store                    Store         @relation(fields: [storeId], references: [id])
   items                    SaleItem[]
@@ -803,6 +818,7 @@ model Sale {
   prescription             Prescription? @relation(fields: [prescriptionId], references: [id])
   user                     User          @relation("SaleCashier", fields: [userId], references: [id])
   orderTaker               User?         @relation("SaleOrderTaker", fields: [orderTakerId], references: [id])
+  servedBy                 User?         @relation("SaleServedBy", fields: [servedById], references: [id])
   discount                 Discount?     @relation(fields: [discountId], references: [id], onDelete: SetNull)
   pendingOrder             PendingOrder?
   originalSale             Sale?         @relation("SaleReturns", fields: [originalSaleId], references: [id])
@@ -870,7 +886,11 @@ model PendingOrder {
   updatedAt    DateTime           @updatedAt
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   store        Store              @relation(fields: [storeId], references: [id])
-  createdBy    User               @relation(fields: [createdById], references: [id])
+  createdBy    User               @relation("PendingOrderCreatedBy", fields: [createdById], references: [id])
+  // The person who entered their security code to send it (null without codes);
+  // createdBy stays the account/device it was sent from.
+  takenById    String?
+  takenBy      User?              @relation("PendingOrderTakenBy", fields: [takenById], references: [id])
   sale         Sale?              @relation(fields: [saleId], references: [id])
 
   @@unique([tenantId, orderNumber])

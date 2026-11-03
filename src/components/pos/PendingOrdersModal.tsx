@@ -25,7 +25,10 @@ export interface PendingOrder {
   // Discount picked with the order; checkout starts with it selected.
   discount?: { discountId: string; name: string; idNumber: string; holderName: string } | null;
   createdAt: string;
+  // Who took it (by security code when those are on, else the account).
   createdBy: { id: string; name: string };
+  // The login it was sent from, when that's someone else's.
+  sentFrom?: string | null;
   items: PendingOrderLine[];
 }
 
@@ -183,7 +186,8 @@ export default function PendingOrdersModal({
                     )}
                   </p>
                   <p className="text-xs text-gray-500">
-                    Taken by {selected.createdBy.name} · {timeOf(selected.createdAt)}
+                    Taken by {selected.createdBy.name}
+                    {selected.sentFrom ? ` on ${selected.sentFrom}'s login` : ""} · {timeOf(selected.createdAt)}
                   </p>
                 </div>
                 <p className="shrink-0 text-lg font-bold tabular-nums text-emerald-700">{peso(orderTotal(selected))}</p>

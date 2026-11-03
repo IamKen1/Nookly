@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus, X } from "lucide-react";
+import useSWR from "swr";
+import { KeyRound, Loader2, Plus, X } from "lucide-react";
 import UsernameField from "@/components/shared/UsernameField";
 import { ALL_ROLE_LABELS } from "@/lib/permissions-shared";
 import { SortableTh, useTableSort } from "@/components/app/SortableHeader";
@@ -20,6 +21,7 @@ interface UserRow {
   role: string;
   storeId: string | null;
   isActive: boolean;
+  hasStaffCode?: boolean;
 }
 
 const ROLES = ["OWNER", "ADMIN", "PHARMACIST", "PHARMACY_TECH", "CASHIER", "MANAGER"];
@@ -32,6 +34,17 @@ const emptyForm = {
   role: "CASHIER",
   password: "",
   storeId: "",
+  staffCode: "",
+};
+
+// 4–6 digits, typed on a number pad.
+const CODE_INPUT = {
+  type: "password",
+  inputMode: "numeric" as const,
+  autoComplete: "off",
+  maxLength: 6,
+  pattern: "\\d{4,6}",
+  title: "4 to 6 digits",
 };
 
 export default function UsersClient({
@@ -57,6 +70,13 @@ export default function UsersClient({
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Staff security codes (Empire plan, 2+ branches): shown only when offered.
+  const { data: codeSetting, mutate: refreshCodeSetting } = useSWR<{ available: boolean; enabled: boolean; usersWithoutCode: number }>("/api/settings/staff-code");
+  const codesOn = Boolean(codeSetting?.available);
+  const [codeFor, setCodeFor] = useState<UserRow | null>(null);
+  const [codeValue, setCodeValue] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeSaving, setCodeSaving] = useState(false);
 
   const flashSuccess = (message: string) => {
     setSuccessMessage(message);
@@ -96,6 +116,7 @@ export default function UsersClient({
       setShowForm(false);
       setForm(emptyForm);
       await load();
+      refreshCodeSetting();
       flashSuccess("User added.");
     } catch {
       setError("Network error.");
@@ -205,6 +226,35 @@ export default function UsersClient({
     }
   };
 
+  const saveCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!codeFor) return;
+    setCodeSaving(true);
+    setCodeError(null);
+    try {
+      const res = await fetch(`/api/users/${codeFor.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffCode: codeValue }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCodeError(data.error ?? "Couldn't save the code.");
+        return;
+      }
+      const name = `${codeFor.firstName} ${codeFor.lastName}`;
+      setCodeFor(null);
+      setCodeValue("");
+      await load();
+      refreshCodeSetting();
+      flashSuccess(`Security code saved for ${name}.`);
+    } catch {
+      setCodeError("Network error.");
+    } finally {
+      setCodeSaving(false);
+    }
+  };
+
   const atLimit = maxUsers !== -1 && users.filter((u) => u.isActive).length >= maxUsers;
 
   return (
@@ -227,6 +277,12 @@ export default function UsersClient({
 
       {successMessage && <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{successMessage}</p>}
       {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      {codeSetting?.enabled && codeSetting.usersWithoutCode > 0 && (
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {codeSetting.usersWithoutCode} active user{codeSetting.usersWithoutCode === 1 ? " has" : "s have"} no security code, so they can&apos;t send orders or
+          complete sales. Use <span className="font-semibold">Set code</span> below.
+        </p>
+      )}
 
       <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
         <table className="w-full text-sm">
@@ -237,17 +293,18 @@ export default function UsersClient({
               <SortableTh label="Role" sortKey="role" sort={sort} onSort={toggle} />
               {multiBranch && <SortableTh label="Branch" sortKey="branch" sort={sort} onSort={toggle} />}
               <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggle} />
+              {codesOn && <th className="px-4 py-3">Security code</th>}
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={multiBranch ? 6 : 5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
+                <td colSpan={(multiBranch ? 6 : 5) + (codesOn ? 1 : 0)} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={multiBranch ? 6 : 5} className="px-4 py-8 text-center text-zinc-400">No users yet.</td>
+                <td colSpan={(multiBranch ? 6 : 5) + (codesOn ? 1 : 0)} className="px-4 py-8 text-center text-zinc-400">No users yet.</td>
               </tr>
             ) : (
               sortedUsers.map((u) => (
@@ -305,6 +362,25 @@ export default function UsersClient({
                       {u.isActive ? "Active" : "Inactive"}
                     </button>
                   </td>
+                  {codesOn && (
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-2">
+                        <span className={`text-xs font-semibold ${u.hasStaffCode ? "text-emerald-700" : "text-amber-700"}`}>{u.hasStaffCode ? "Set" : "Not set"}</span>
+                        {(u.role !== "OWNER" || currentRole === "OWNER") && (
+                          <button
+                            onClick={() => {
+                              setCodeFor(u);
+                              setCodeValue("");
+                              setCodeError(null);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-600 hover:border-zinc-300"
+                          >
+                            <KeyRound className="h-3 w-3" /> {u.hasStaffCode ? "Change" : "Set code"}
+                          </button>
+                        )}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-right">
                     {u.id !== currentUserId && (
                       <button
@@ -392,6 +468,21 @@ export default function UsersClient({
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
+                {codesOn && (
+                  <div className="col-span-2">
+                    <input
+                      {...CODE_INPUT}
+                      required={codeSetting?.enabled}
+                      placeholder={`Security code, 4–6 digits${codeSetting?.enabled ? "" : " (optional)"}`}
+                      value={form.staffCode}
+                      onChange={(e) => setForm({ ...form, staffCode: e.target.value.replace(/\D/g, "") })}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Their own code for sending orders and completing sales. Unique to them; give it to them privately.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {error && <p className="text-sm text-red-600">{error}</p>}
@@ -406,6 +497,43 @@ export default function UsersClient({
               </button>
             </form>
           </div>
+        </div>
+      )}
+
+      {codeFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !codeSaving && setCodeFor(null)}>
+          <form onSubmit={saveCode} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-zinc-900">
+              Security code for {codeFor.firstName} {codeFor.lastName}
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              4–6 digits, different from everyone else&apos;s. {codeFor.hasStaffCode ? "This replaces their current code." : ""} Codes can&apos;t be shown
+              again, so give it to them privately.
+            </p>
+            <input
+              {...CODE_INPUT}
+              autoFocus
+              required
+              placeholder="New security code"
+              value={codeValue}
+              onChange={(e) => setCodeValue(e.target.value.replace(/\D/g, ""))}
+              className="mt-4 w-full rounded-lg border border-zinc-300 px-3 py-2 text-center text-lg tracking-[0.4em]"
+            />
+            {codeError && <p className="mt-2 text-sm text-red-600">{codeError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setCodeFor(null)} disabled={codeSaving} className="rounded-full px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={codeSaving}
+                className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+              >
+                {codeSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save code
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

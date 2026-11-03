@@ -27,6 +27,7 @@ import {
   type PermissionMatrix,
   type PermissionModuleKey,
 } from "@/lib/permissions-shared";
+import StaffCodeSetting from "./StaffCodeSetting";
 
 // Same icons as the sidebar, so each row reads as the module it controls.
 const MODULE_ICONS: Partial<Record<PermissionModuleKey, typeof LayoutDashboard>> = {
@@ -121,6 +122,8 @@ export default function UserAccessForm() {
           Changes take effect on their next page load. The owner always has access to everything.
         </p>
       </div>
+
+      <StaffCodeSetting />
 
       <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <table className="w-full min-w-[780px] table-fixed text-sm">
