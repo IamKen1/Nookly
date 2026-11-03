@@ -8,6 +8,7 @@ import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import BranchStockPanel from "./BranchStockPanel";
 import ReceivingPanel from "./ReceivingPanel";
 import InventoryAnalytics from "./InventoryAnalytics";
+import { Pager, SortableTh, useSortState, useTableSort } from "@/components/app/SortableHeader";
 
 interface Product {
   id: string;
@@ -61,6 +62,7 @@ interface Batch {
 }
 
 type Tab = "stock" | "receiving" | "batches" | "movements" | "branches";
+const STOCK_PAGE_SIZE = 50;
 type BatchFilter = "all" | "expiring" | "expired";
 
 export default function InventoryClient({
@@ -110,12 +112,24 @@ export default function InventoryClient({
   const [batchMessage, setBatchMessage] = useState<string | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, 300);
-  const productsUrl = debouncedSearch ? `/api/products?search=${encodeURIComponent(debouncedSearch)}` : "/api/products";
+  // One page at a time, sorted and searched by the server, so a catalog of
+  // thousands stays quick. A new search or sort starts again at the first page.
+  const stockSort = useSortState<"name" | "category" | "stock" | "minimum">();
+  const stockKey = `${debouncedSearch}|${stockSort.sort?.key ?? ""}|${stockSort.sort?.dir ?? ""}`;
+  const [stockPageAt, setStockPageAt] = useState({ key: stockKey, offset: 0 });
+  const stockOffset = stockPageAt.key === stockKey ? stockPageAt.offset : 0;
+  const stockParams = new URLSearchParams({ limit: String(STOCK_PAGE_SIZE), offset: String(stockOffset) });
+  if (debouncedSearch) stockParams.set("search", debouncedSearch);
+  if (stockSort.sort) {
+    stockParams.set("sort", stockSort.sort.key);
+    stockParams.set("dir", stockSort.sort.dir);
+  }
   const {
-    data: products = [],
+    data: stockPage,
     isLoading: productsLoading,
     mutate: refreshProducts,
-  } = useSWR<Product[]>(tab === "stock" ? productsUrl : null, { keepPreviousData: true });
+  } = useSWR<{ rows: Product[]; total: number }>(tab === "stock" ? `/api/products?${stockParams}` : null, { keepPreviousData: true });
+  const products = stockPage?.rows ?? [];
 
   const { data: movements = [], isLoading: movementsLoading } = useSWR<StockMovement[]>(
     tab === "movements" ? "/api/inventory/stock-movements" : null
@@ -127,6 +141,23 @@ export default function InventoryClient({
     isLoading: batchesLoading,
     mutate: refreshBatches,
   } = useSWR<Batch[]>(tab === "batches" ? `/api/inventory/batches?status=${batchFilter}&days=90` : null);
+
+  const batchSort = useTableSort(batches, {
+    product: (b) => b.product.name,
+    batch: (b) => b.batchNumber,
+    supplier: (b) => b.supplier?.name,
+    expiry: (b) => new Date(b.expirationDate),
+    qty: (b) => b.quantity,
+    status: (b) => (b.isExpired ? 0 : b.isExpiringSoon ? 1 : 2),
+  });
+  const movementSort = useTableSort(movements, {
+    date: (m) => new Date(m.createdAt),
+    product: (m) => m.product.name,
+    type: (m) => m.type,
+    qty: (m) => m.quantity,
+    reason: (m) => m.reason,
+    by: (m) => (m.user ? `${m.user.firstName} ${m.user.lastName}` : null),
+  });
 
   const discardBatch = async (batch: Batch, movementReason: "expired" | "damaged") => {
     if (!confirm(`Discard batch ${batch.batchNumber} (${batch.quantity} units) as ${movementReason}?`)) return;
@@ -485,14 +516,14 @@ export default function InventoryClient({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                  <th className="px-4 py-3">Product</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Current stock</th>
-                  <th className="px-4 py-3">Minimum</th>
+                  <SortableTh label="Product" sortKey="name" sort={stockSort.sort} onSort={stockSort.toggle} />
+                  <SortableTh label="Category" sortKey="category" sort={stockSort.sort} onSort={stockSort.toggle} />
+                  <SortableTh label="Current stock" sortKey="stock" sort={stockSort.sort} onSort={stockSort.toggle} />
+                  <SortableTh label="Minimum" sortKey="minimum" sort={stockSort.sort} onSort={stockSort.toggle} />
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody className={`transition-opacity ${productsLoading && products.length > 0 ? "opacity-50" : ""}`}>
                 {productsLoading && products.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
@@ -535,6 +566,9 @@ export default function InventoryClient({
               </tbody>
             </table>
           </div>
+          {stockPage && (
+            <Pager offset={stockOffset} limit={STOCK_PAGE_SIZE} total={stockPage.total} onChange={(o) => setStockPageAt({ key: stockKey, offset: o })} />
+          )}
         </>
       )}
 
@@ -571,12 +605,12 @@ export default function InventoryClient({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                  <th className="px-4 py-3">Product</th>
-                  <th className="px-4 py-3">Batch #</th>
-                  <th className="px-4 py-3">Supplier</th>
-                  <th className="px-4 py-3">Expiry</th>
-                  <th className="px-4 py-3">Qty</th>
-                  <th className="px-4 py-3">Status</th>
+                  <SortableTh label="Product" sortKey="product" sort={batchSort.sort} onSort={batchSort.toggle} />
+                  <SortableTh label="Batch #" sortKey="batch" sort={batchSort.sort} onSort={batchSort.toggle} />
+                  <SortableTh label="Supplier" sortKey="supplier" sort={batchSort.sort} onSort={batchSort.toggle} />
+                  <SortableTh label="Expiry" sortKey="expiry" sort={batchSort.sort} onSort={batchSort.toggle} />
+                  <SortableTh label="Qty" sortKey="qty" sort={batchSort.sort} onSort={batchSort.toggle} />
+                  <SortableTh label="Status" sortKey="status" sort={batchSort.sort} onSort={batchSort.toggle} />
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -592,7 +626,7 @@ export default function InventoryClient({
                     </td>
                   </tr>
                 ) : (
-                  batches.map((b) => (
+                  batchSort.sorted.map((b) => (
                     <tr key={b.id} className="border-b border-zinc-50 last:border-0">
                       <td className="px-4 py-3">
                         <p className="font-medium text-zinc-900">{b.product.name}</p>
@@ -643,12 +677,12 @@ export default function InventoryClient({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Product</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Qty</th>
-                <th className="px-4 py-3">Reason</th>
-                <th className="px-4 py-3">By</th>
+                <SortableTh label="Date" sortKey="date" sort={movementSort.sort} onSort={movementSort.toggle} />
+                <SortableTh label="Product" sortKey="product" sort={movementSort.sort} onSort={movementSort.toggle} />
+                <SortableTh label="Type" sortKey="type" sort={movementSort.sort} onSort={movementSort.toggle} />
+                <SortableTh label="Qty" sortKey="qty" sort={movementSort.sort} onSort={movementSort.toggle} />
+                <SortableTh label="Reason" sortKey="reason" sort={movementSort.sort} onSort={movementSort.toggle} />
+                <SortableTh label="By" sortKey="by" sort={movementSort.sort} onSort={movementSort.toggle} />
               </tr>
             </thead>
             <tbody>
@@ -661,7 +695,7 @@ export default function InventoryClient({
                   <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">No stock movements yet.</td>
                 </tr>
               ) : (
-                movements.map((m) => (
+                movementSort.sorted.map((m) => (
                   <tr key={m.id} className="border-b border-zinc-50 last:border-0">
                     <td className="px-4 py-3 text-zinc-500">{formatDateTime(m.createdAt)}</td>
                     <td className="px-4 py-3 font-medium text-zinc-900">{m.product.name}</td>

@@ -38,7 +38,7 @@ export function PriceCheck({ showBranches = false, startWithAllBranches = false 
   const wide = showBranches && allBranches;
   // All branches: the whole catalog, so items this branch doesn't carry still show.
   const { data = [], isLoading } = useSWR<ProductHit[]>(
-    query.length >= 2 ? `/api/products?${wide ? "" : "forSale=1&"}search=${encodeURIComponent(query)}` : null
+    query.length >= 2 ? `/api/products?${wide ? "" : "forSale=1&"}take=50&search=${encodeURIComponent(query)}` : null
   );
   const hits = data.slice(0, wide ? 8 : 10);
   const ids = hits.map((h) => h.id).join(",");

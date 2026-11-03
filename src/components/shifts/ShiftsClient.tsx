@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { peso, formatDateTime } from "@/lib/format";
 import { isCompleteDate } from "@/lib/date-input";
 import ShiftReportsTrends from "./ShiftReportsTrends";
+import { SortableTh, useTableSort } from "@/components/app/SortableHeader";
 
 interface DailyClosing {
   date: string;
@@ -52,12 +53,23 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+// Stable empty list, so sorting doesn't redo its work on every render before data loads.
+const NO_SHIFTS: DailyClosing["shifts"] = [];
 
 function DailyClosingView() {
   const [date, setDate] = useState(todayStr());
   const [data, setData] = useState<DailyClosing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { sorted: shifts, sort, toggle } = useTableSort(data?.shifts ?? NO_SHIFTS, {
+    cashier: (s) => s.cashierName,
+    opened: (s) => new Date(s.openedAt),
+    closed: (s) => (s.closedAt ? new Date(s.closedAt) : null),
+    starting: (s) => s.startingCash,
+    expected: (s) => s.expectedCash,
+    counted: (s) => s.endingCash,
+    variance: (s) => s.variance,
+  });
 
   useEffect(() => {
     if (!isCompleteDate(date)) return;
@@ -153,13 +165,13 @@ function DailyClosingView() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase text-zinc-400">
-                  <th className="px-4 py-2">Cashier</th>
-                  <th className="px-4 py-2">Opened</th>
-                  <th className="px-4 py-2">Closed</th>
-                  <th className="px-4 py-2">Starting</th>
-                  <th className="px-4 py-2">Expected</th>
-                  <th className="px-4 py-2">Counted</th>
-                  <th className="px-4 py-2">Variance</th>
+                  <SortableTh label="Cashier" sortKey="cashier" sort={sort} onSort={toggle} className="px-4 py-2" />
+                  <SortableTh label="Opened" sortKey="opened" sort={sort} onSort={toggle} className="px-4 py-2" />
+                  <SortableTh label="Closed" sortKey="closed" sort={sort} onSort={toggle} className="px-4 py-2" />
+                  <SortableTh label="Starting" sortKey="starting" sort={sort} onSort={toggle} className="px-4 py-2" />
+                  <SortableTh label="Expected" sortKey="expected" sort={sort} onSort={toggle} className="px-4 py-2" />
+                  <SortableTh label="Counted" sortKey="counted" sort={sort} onSort={toggle} className="px-4 py-2" />
+                  <SortableTh label="Variance" sortKey="variance" sort={sort} onSort={toggle} className="px-4 py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -168,7 +180,7 @@ function DailyClosingView() {
                     <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">No shifts opened this day.</td>
                   </tr>
                 ) : (
-                  data.shifts.map((s) => (
+                  shifts.map((s) => (
                     <tr key={s.id} className="border-t border-zinc-50">
                       <td className="px-4 py-2.5 font-medium text-zinc-900">{s.cashierName}</td>
                       <td className="px-4 py-2.5 text-zinc-500">{formatDateTime(s.openedAt)}</td>

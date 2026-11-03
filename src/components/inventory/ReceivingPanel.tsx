@@ -6,6 +6,7 @@ import { ChevronRight, Loader2, PackageCheck, Plus, Search, Trash2, Wallet, X } 
 import { formatDate, formatDateTime, peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import PaidFrom from "@/components/suppliers/PaidFrom";
+import { SortableTh, useTableSort } from "@/components/app/SortableHeader";
 
 interface ReceivingLine {
   id: string;
@@ -59,6 +60,14 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches, canPay = 
   if (allBranches) params.set("branch", "all");
   const { data: receivings = [], isLoading, mutate } = useSWR<Receiving[]>(`/api/inventory/receivings?${params}`, { keepPreviousData: true });
   const { data: suppliers = [], mutate: refreshSuppliers } = useSWR<Supplier[]>("/api/suppliers");
+  const receivingSort = useTableSort(receivings, {
+    received: (r) => new Date(r.receivedAt),
+    supplier: (r) => r.supplier?.name,
+    reference: (r) => r.referenceNumber,
+    items: (r) => r.items.length,
+    total: (r) => r.totalCost,
+    by: (r) => r.receivedBy,
+  });
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -118,12 +127,12 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches, canPay = 
         <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-              <th className="px-4 py-3">Received</th>
-              <th className="px-4 py-3">Supplier</th>
-              <th className="px-4 py-3">DR / Invoice #</th>
-              <th className="px-4 py-3 text-right">Items</th>
-              <th className="px-4 py-3 text-right">Total cost</th>
-              <th className="px-4 py-3">Received by</th>
+              <SortableTh label="Received" sortKey="received" sort={receivingSort.sort} onSort={receivingSort.toggle} />
+              <SortableTh label="Supplier" sortKey="supplier" sort={receivingSort.sort} onSort={receivingSort.toggle} />
+              <SortableTh label="DR / Invoice #" sortKey="reference" sort={receivingSort.sort} onSort={receivingSort.toggle} />
+              <SortableTh label="Items" sortKey="items" sort={receivingSort.sort} onSort={receivingSort.toggle} className="px-4 py-3 text-right" align="right" />
+              <SortableTh label="Total cost" sortKey="total" sort={receivingSort.sort} onSort={receivingSort.toggle} className="px-4 py-3 text-right" align="right" />
+              <SortableTh label="Received by" sortKey="by" sort={receivingSort.sort} onSort={receivingSort.toggle} />
             </tr>
           </thead>
           <tbody>
@@ -140,7 +149,7 @@ export default function ReceivingPanel({ canAdjust, canSeeAllBranches, canPay = 
                 </td>
               </tr>
             ) : (
-              receivings.map((r) => {
+              receivingSort.sorted.map((r) => {
                 const open = expanded.has(r.id);
                 const units = r.items.reduce((s, i) => s + i.quantity, 0);
                 return (
@@ -425,7 +434,7 @@ function ReceiveDeliveryModal({
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [search, setSearch] = useState("");
   const query = useDebouncedValue(search.trim(), 250);
-  const { data: hits = [], isLoading: searching } = useSWR<ProductHit[]>(query.length >= 2 ? `/api/products?search=${encodeURIComponent(query)}` : null);
+  const { data: hits = [], isLoading: searching } = useSWR<ProductHit[]>(query.length >= 2 ? `/api/products?take=30&search=${encodeURIComponent(query)}` : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const focusKey = useRef<string | null>(null);

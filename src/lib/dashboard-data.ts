@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { SessionPayload } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { startOfTodayPH } from "@/lib/timezone";
@@ -152,30 +152,26 @@ export async function getPaymentMix(scope: DashboardScope, sinceDays = 30) {
 
 // Products at or below their own minimum level, worst first.
 export async function getLowStock(scope: DashboardScope, take = 6) {
-  const stocks = await prisma.productStock.findMany({
-    where: {
-      store: { tenantId: scope.session.tenantId, isActive: true },
-      ...(scope.storeId ? { storeId: scope.storeId } : {}),
-      isHidden: false,
-      product: { isActive: true },
-      currentStock: { lte: 50 },
-    },
-    select: { currentStock: true, product: { select: { id: true, name: true, minimumStock: true } }, store: { select: { name: true } } },
-  });
-  const low = stocks
-    .filter((s) => s.currentStock <= s.product.minimumStock)
-    .sort((a, b) => a.currentStock - b.currentStock || a.product.name.localeCompare(b.product.name));
-  return {
-    count: low.length,
-    outOfStock: low.filter((s) => s.currentStock <= 0).length,
-    items: low.slice(0, take).map((s) => ({
-      id: s.product.id,
-      name: s.product.name,
-      stock: s.currentStock,
-      minimum: s.product.minimumStock,
-      branch: s.store.name,
-    })),
-  };
+  // Counted and ordered by the database: a catalog of thousands would
+  // otherwise send every stock row here just to count a few.
+  const low = Prisma.sql`
+    FROM product_stocks ps
+    JOIN products pr ON pr.id = ps."productId"
+    JOIN stores s ON s.id = ps."storeId"
+    WHERE s."tenantId" = ${scope.session.tenantId} AND s."isActive" = true
+      AND ps."isHidden" = false AND pr."isActive" = true
+      AND ps."currentStock" <= 50 AND ps."currentStock" <= pr."minimumStock"
+      ${scope.storeId ? Prisma.sql`AND ps."storeId" = ${scope.storeId}` : Prisma.empty}`;
+  const [counts, items] = await Promise.all([
+    prisma.$queryRaw<{ count: number; out: number }[]>`
+      SELECT count(*)::int AS count, count(*) FILTER (WHERE ps."currentStock" <= 0)::int AS out ${low}`,
+    take > 0
+      ? prisma.$queryRaw<{ id: string; name: string; stock: number; minimum: number; branch: string }[]>`
+          SELECT pr.id, pr.name, ps."currentStock" AS stock, pr."minimumStock" AS minimum, s.name AS branch ${low}
+          ORDER BY ps."currentStock" ASC, pr.name ASC LIMIT ${take}`
+      : [],
+  ]);
+  return { count: counts[0]?.count ?? 0, outOfStock: counts[0]?.out ?? 0, items };
 }
 
 // Batches with stock that are expired or expire within `withinDays`.

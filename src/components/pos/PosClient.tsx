@@ -82,6 +82,15 @@ interface PendingPrescription {
 
 type ViewMode = "grid" | "list";
 
+const POS_PAGE_SIZE = 60;
+// Past this, searching is quicker than scrolling.
+const POS_MAX_SHOWN = 600;
+
+// The POS sells at this branch's price when it has its own; everything reads
+// sellingPrice, so it's swapped in as products arrive.
+const withBranchPrice = <P extends { sellingPrice: string; branchPrice?: number | null }>(p: P): P =>
+  p.branchPrice != null ? { ...p, sellingPrice: String(p.branchPrice) } : p;
+
 const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; module: PermissionModuleKey }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard" },
   { href: "/products", label: "Products", icon: Package, module: "products" },
@@ -231,18 +240,22 @@ export default function PosClient({
   const printer = usePrinterConnection();
 
   const debouncedSearch = useDebouncedValue(search, 250);
-  const productsUrl = debouncedSearch ? `/api/products?forSale=1&search=${encodeURIComponent(debouncedSearch)}` : "/api/products?forSale=1";
+  // The grid shows the first products that match (search and category are
+  // applied by the server) with "Load more", so a catalog of thousands opens
+  // instantly. Scanning a barcode still finds any product.
+  const listKey = `${debouncedSearch}|${selectedCategory}`;
+  const [shownAt, setShownAt] = useState({ key: listKey, limit: POS_PAGE_SIZE });
+  const shownLimit = shownAt.key === listKey ? shownAt.limit : POS_PAGE_SIZE;
+  const productParams = new URLSearchParams({ forSale: "1", limit: String(shownLimit), offset: "0" });
+  if (debouncedSearch) productParams.set("search", debouncedSearch);
+  if (selectedCategory) productParams.set("categoryId", selectedCategory);
   const {
-    data: rawProducts,
+    data: productPage,
     isLoading: loading,
     mutate: refreshProducts,
-  } = useSWR<Product[]>(productsUrl, { keepPreviousData: true });
-  // The POS sells at this branch's price when it has its own; everything below
-  // reads sellingPrice, so it's swapped in once here.
-  const products = useMemo(
-    () => (rawProducts ?? []).map((p) => (p.branchPrice != null ? { ...p, sellingPrice: String(p.branchPrice) } : p)),
-    [rawProducts]
-  );
+  } = useSWR<{ rows: Product[]; total: number }>(`/api/products?${productParams}`, { keepPreviousData: true });
+  const products = useMemo(() => (productPage?.rows ?? []).map(withBranchPrice), [productPage]);
+  const productTotal = productPage?.total ?? 0;
 
   const showNotification = (message: string, type: "success" | "error") => {
     setNotification({ message, type, visible: true });
@@ -281,7 +294,10 @@ export default function PosClient({
   const { playSuccessBeep, playErrorBeep } = useBarcodeAudio();
   const { lookupProduct } = useBarcode<Product>({
     products,
-    onProductFound: (product) => {
+    // Anything not on screen is looked up among what this branch sells.
+    searchUrl: (code) => `/api/products?forSale=1&take=20&search=${encodeURIComponent(code)}`,
+    onProductFound: (found) => {
+      const product = withBranchPrice(found);
       if (product.currentStock <= 0) {
         playErrorBeep();
         showNotification(`${product.name} is out of stock`, "error");
@@ -463,10 +479,8 @@ export default function PosClient({
     return { ok: true, orderNumber: data.orderNumber };
   };
 
-  const filteredProducts = useMemo(
-    () => products.filter((p) => !selectedCategory || p.category.id === selectedCategory),
-    [products, selectedCategory]
-  );
+  // The category filter is applied by the server.
+  const filteredProducts = products;
 
   const vatableTotal = cart.filter((l) => l.isVatable).reduce((sum, l) => sum + l.price * l.quantity, 0);
   const nonVatableTotal = cart.filter((l) => !l.isVatable).reduce((sum, l) => sum + l.price * l.quantity, 0);
@@ -759,7 +773,7 @@ export default function PosClient({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4">
+        <div className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 transition-opacity md:p-4 ${loading && products.length > 0 ? "opacity-60" : ""}`}>
           {loading && products.length === 0 ? (
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-3 lg:grid-cols-4 xl:grid-cols-5">
               {Array.from({ length: 12 }).map((_, i) => (
@@ -799,6 +813,21 @@ export default function PosClient({
               {filteredProducts.map((p) => (
                 <ProductListItem key={p.id} product={p} onAddToCart={addToCart} />
               ))}
+            </div>
+          )}
+          {productTotal > filteredProducts.length && (
+            <div className="mt-4 flex flex-col items-center gap-2 pb-2 text-xs text-gray-500">
+              <span className="tabular-nums">
+                Showing {filteredProducts.length.toLocaleString("en-PH")} of {productTotal.toLocaleString("en-PH")} — search or scan to find any product
+              </span>
+              {shownLimit < POS_MAX_SHOWN && (
+                <button
+                  onClick={() => setShownAt({ key: listKey, limit: Math.min(POS_MAX_SHOWN, shownLimit + POS_PAGE_SIZE) })}
+                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Load more
+                </button>
+              )}
             </div>
           )}
         </div>

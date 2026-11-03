@@ -7,6 +7,7 @@ import { Ban, ChevronDown, ChevronUp, Loader2, Printer, RotateCcw, Search, X } f
 import { printReceiptAnywhere } from "@/lib/printer/print-receipt";
 import { isCompleteDate } from "@/lib/date-input";
 import type { ReceiptData } from "@/types/receipt";
+import { SortableTh, useTableSort } from "@/components/app/SortableHeader";
 
 // Card methods stay listed so older sales can still be found.
 const PAYMENT_METHODS = ["CASH", "E_WALLET", "CREDIT_CARD", "DEBIT_CARD"];
@@ -69,6 +70,14 @@ export default function SalesClient({
 }) {
   const router = useRouter();
   const [sales, setSales] = useState(initialSales);
+  const { sorted: sortedSales, sort, toggle: toggleSort } = useTableSort(sales, {
+    number: (s) => s.saleNumber,
+    date: (s) => new Date(s.saleDate),
+    cashier: (s) => s.cashierName,
+    items: (s) => s.itemCount,
+    total: (s) => s.totalAmount,
+    status: (s) => s.status,
+  });
   const [prevInitialSales, setPrevInitialSales] = useState(initialSales);
   // Adjusting state directly during render (React's documented pattern for
   // "reset state when a prop changes") instead of a useEffect — a new
@@ -343,12 +352,12 @@ export default function SalesClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-              <th className="px-4 py-3">AR #</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Cashier</th>
-              <th className="px-4 py-3">Items</th>
-              <th className="px-4 py-3">Total</th>
-              <th className="px-4 py-3">Status</th>
+              <SortableTh label="AR #" sortKey="number" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Date" sortKey="date" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Cashier" sortKey="cashier" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Items" sortKey="items" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Total" sortKey="total" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -360,7 +369,7 @@ export default function SalesClient({
                 </td>
               </tr>
             ) : (
-              sales.map((s) => (
+              sortedSales.map((s) => (
                 <Fragment key={s.id}>
                   <tr
                     onClick={() => setExpanded(expanded === s.id ? null : s.id)}

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { batchesAtStore } from "@/lib/branch-scope";
 import { getInventoryValue } from "@/lib/dashboard-data";
@@ -9,15 +10,25 @@ export type InventoryTab = "stock" | "receiving" | "batches" | "movements" | "br
 
 // Low / out of stock at one branch, or across all (null): each branch's own
 // count against the product's minimum.
+// Counted by the database, so thousands of products don't travel here to be counted.
 async function stockAlerts(tenantId: string, storeId: string | null) {
-  const stocks = await prisma.productStock.findMany({
-    where: { store: { tenantId, isActive: true }, ...(storeId ? { storeId } : {}), isHidden: false, product: { isActive: true } },
-    select: { storeId: true, currentStock: true, product: { select: { minimumStock: true } } },
-  });
-  const out = stocks.filter((s) => s.currentStock <= 0);
-  const low = stocks.filter((s) => s.currentStock > 0 && s.currentStock <= s.product.minimumStock);
-  const byStore = (list: typeof stocks) => list.reduce<Record<string, number>>((m, s) => ((m[s.storeId] = (m[s.storeId] ?? 0) + 1), m), {});
-  return { out: out.length, low: low.length, outByStore: byStore(out), lowByStore: byStore(low) };
+  const rows = await prisma.$queryRaw<{ storeId: string; out: number; low: number }[]>`
+    SELECT ps."storeId",
+           count(*) FILTER (WHERE ps."currentStock" <= 0)::int AS out,
+           count(*) FILTER (WHERE ps."currentStock" > 0 AND ps."currentStock" <= pr."minimumStock")::int AS low
+    FROM product_stocks ps
+    JOIN products pr ON pr.id = ps."productId"
+    JOIN stores s ON s.id = ps."storeId"
+    WHERE s."tenantId" = ${tenantId} AND s."isActive" = true AND ps."isHidden" = false AND pr."isActive" = true
+      ${storeId ? Prisma.sql`AND ps."storeId" = ${storeId}` : Prisma.empty}
+    GROUP BY ps."storeId"`;
+  const byStore = (key: "out" | "low") => Object.fromEntries(rows.map((r) => [r.storeId, r[key]]));
+  return {
+    out: rows.reduce((n, r) => n + r.out, 0),
+    low: rows.reduce((n, r) => n + r.low, 0),
+    outByStore: byStore("out"),
+    lowByStore: byStore("low"),
+  };
 }
 
 // Lots with stock by expiry, valued at their own cost.

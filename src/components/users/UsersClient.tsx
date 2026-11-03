@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import UsernameField from "@/components/shared/UsernameField";
 import { ALL_ROLE_LABELS } from "@/lib/permissions-shared";
+import { SortableTh, useTableSort } from "@/components/app/SortableHeader";
 
 interface Store {
   id: string;
@@ -176,6 +177,13 @@ export default function UsersClient({
   };
 
   const multiBranch = stores.length > 1;
+  const { sorted: sortedUsers, sort, toggle } = useTableSort(users, {
+    name: (u) => `${u.firstName} ${u.lastName}`,
+    username: (u) => u.username,
+    role: (u) => ALL_ROLE_LABELS[u.role as keyof typeof ALL_ROLE_LABELS] ?? u.role,
+    branch: (u) => stores.find((st) => st.id === u.storeId)?.name,
+    status: (u) => (u.isActive ? 0 : 1),
+  });
 
   const remove = async (id: string) => {
     if (!confirm("Remove this user?")) return;
@@ -224,11 +232,11 @@ export default function UsersClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Username</th>
-              <th className="px-4 py-3">Role</th>
-              {multiBranch && <th className="px-4 py-3">Branch</th>}
-              <th className="px-4 py-3">Status</th>
+              <SortableTh label="Name" sortKey="name" sort={sort} onSort={toggle} />
+              <SortableTh label="Username" sortKey="username" sort={sort} onSort={toggle} />
+              <SortableTh label="Role" sortKey="role" sort={sort} onSort={toggle} />
+              {multiBranch && <SortableTh label="Branch" sortKey="branch" sort={sort} onSort={toggle} />}
+              <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggle} />
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -242,7 +250,7 @@ export default function UsersClient({
                 <td colSpan={multiBranch ? 6 : 5} className="px-4 py-8 text-center text-zinc-400">No users yet.</td>
               </tr>
             ) : (
-              users.map((u) => (
+              sortedUsers.map((u) => (
                 <tr key={u.id} className="border-b border-zinc-50 last:border-0">
                   <td className="px-4 py-3">
                     <p className="font-medium text-zinc-900">{u.firstName} {u.lastName}</p>

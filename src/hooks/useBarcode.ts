@@ -12,11 +12,13 @@ interface UseBarcodeProps<T extends Product> {
   products: T[];
   onProductFound: (product: T) => void;
   onProductNotFound: (barcode: string) => void;
+  // Where to look up a code that isn't in `products` (defaults to the whole catalog).
+  searchUrl?: (barcode: string) => string;
 }
 
 const SCAN_COOLDOWN_MS = 1500;
 
-export function useBarcode<T extends Product>({ products, onProductFound, onProductNotFound }: UseBarcodeProps<T>) {
+export function useBarcode<T extends Product>({ products, onProductFound, onProductNotFound, searchUrl }: UseBarcodeProps<T>) {
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lastScannedBarcode, setLastScannedBarcode] = useState("");
   const lastScanRef = useRef<{ barcode: string; timestamp: number }>({ barcode: "", timestamp: 0 });
@@ -43,7 +45,7 @@ export function useBarcode<T extends Product>({ products, onProductFound, onProd
         return;
       }
 
-      const response = await fetch(`/api/products?search=${encodeURIComponent(normalizedBarcode)}`);
+      const response = await fetch(searchUrl ? searchUrl(normalizedBarcode) : `/api/products?search=${encodeURIComponent(normalizedBarcode)}`);
       if (!response.ok) throw new Error("Failed to search products");
 
       const searchResults: T[] = await response.json();

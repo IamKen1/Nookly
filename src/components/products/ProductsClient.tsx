@@ -7,6 +7,7 @@ import ImageUpload from "./ImageUpload";
 import CategoryManager from "./CategoryManager";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { getOptimizedImageUrl } from "@/lib/cloudinary";
+import { Pager, SortableTh, useSortState } from "@/components/app/SortableHeader";
 
 interface Category {
   id: string;
@@ -36,6 +37,7 @@ interface Product {
 }
 
 const ADD_NEW = "__new";
+const PAGE_SIZE = 50;
 
 const Field = ({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) => (
   <div className={className}>
@@ -178,14 +180,28 @@ export default function ProductsClient({
     }
   };
 
-  const productsUrl = debouncedSearch
-    ? `/api/products?search=${encodeURIComponent(debouncedSearch)}`
-    : "/api/products";
+  // One page at a time, sorted and searched by the server, so a catalog of
+  // thousands stays quick. A new search or sort starts again at the first page.
+  const { sort, toggle: toggleSort } = useSortState<"name" | "category" | "price" | "stock">();
+  const listKey = `${debouncedSearch}|${sort?.key ?? ""}|${sort?.dir ?? ""}`;
+  const [pageAt, setPageAt] = useState({ key: listKey, offset: 0 });
+  const offset = pageAt.key === listKey ? pageAt.offset : 0;
+  const pageParams = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+  if (debouncedSearch) pageParams.set("search", debouncedSearch);
+  if (sort) {
+    pageParams.set("sort", sort.key);
+    pageParams.set("dir", sort.dir);
+  }
   const {
-    data: products = [],
+    data: page,
     isLoading: loading,
-    mutate: refreshProducts,
-  } = useSWR<Product[]>(productsUrl, { keepPreviousData: true });
+    mutate: refreshPage,
+  } = useSWR<{ rows: Product[]; total: number }>(`/api/products?${pageParams}`, { keepPreviousData: true });
+  const products = page?.rows ?? [];
+  // The whole catalog's size, for the plan limit (not just what matches the search).
+  const { data: catalog, mutate: refreshCatalog } = useSWR<{ total: number }>("/api/products?limit=1");
+  const productCount = catalog?.total ?? page?.total ?? 0;
+  const refreshProducts = () => Promise.all([refreshPage(), refreshCatalog()]);
 
   const flashSuccess = (message: string) => {
     setSuccessMessage(message);
@@ -287,7 +303,7 @@ export default function ProductsClient({
     }
   };
 
-  const atLimit = maxProducts !== -1 && products.length >= maxProducts;
+  const atLimit = maxProducts !== -1 && productCount >= maxProducts;
 
   return (
     <div>
@@ -295,7 +311,7 @@ export default function ProductsClient({
         <div>
           <h1 className="text-2xl font-bold text-zinc-900">Products</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            {maxProducts === -1 ? "Unlimited products" : `${products.length} / ${maxProducts} products (${planName} plan)`}
+            {maxProducts === -1 ? "Unlimited products" : `${productCount.toLocaleString("en-PH")} / ${maxProducts} products (${planName} plan)`}
           </p>
         </div>
         {canEdit && (
@@ -340,14 +356,14 @@ export default function ProductsClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-              <th className="px-4 py-3">Product</th>
-              <th className="px-4 py-3">Category</th>
-              <th className="px-4 py-3">Price</th>
-              <th className="px-4 py-3">Stock</th>
+              <SortableTh label="Product" sortKey="name" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Category" sortKey="category" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Price" sortKey="price" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Stock" sortKey="stock" sort={sort} onSort={toggleSort} />
               <th className="px-4 py-3" />
             </tr>
           </thead>
-          <tbody>
+          <tbody className={`transition-opacity ${loading && products.length > 0 ? "opacity-50" : ""}`}>
             {loading && products.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
@@ -412,6 +428,7 @@ export default function ProductsClient({
           </tbody>
         </table>
       </div>
+      {page && <Pager offset={offset} limit={PAGE_SIZE} total={page.total} onChange={(o) => setPageAt({ key: listKey, offset: o })} />}
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

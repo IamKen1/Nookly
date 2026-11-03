@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { ChevronRight, Plus, Search } from "lucide-react";
 import { formatDate, peso } from "@/lib/format";
 import SupplierForm, { termsLabel } from "./SupplierForm";
+import { SortableTh, useTableSort } from "@/components/app/SortableHeader";
 
 interface Balance {
   purchases: number;
@@ -44,7 +45,15 @@ export default function SuppliersClient() {
   const [adding, setAdding] = useState(false);
   const canPay = data?.canPay ?? false;
   const all = data?.suppliers ?? [];
-  const list = all.filter((s) => (showInactive || s.isActive) && (!q.trim() || s.name.toLowerCase().includes(q.trim().toLowerCase())));
+  const filteredList = all.filter((s) => (showInactive || s.isActive) && (!q.trim() || s.name.toLowerCase().includes(q.trim().toLowerCase())));
+  const { sorted: list, sort, toggle } = useTableSort(filteredList, {
+    name: (s) => s.name,
+    phone: (s) => s.phone,
+    terms: (s) => s.paymentTermsDays,
+    lastDelivery: (s) => (s.lastDelivery ? new Date(s.lastDelivery) : null),
+    balance: (s) => s.balance?.balance ?? 0,
+    overdue: (s) => s.balance?.overdue ?? 0,
+  });
 
   const totals = all.reduce(
     (t, s) => {
@@ -121,12 +130,12 @@ export default function SuppliersClient() {
         <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-              <th className="px-4 py-3">Supplier</th>
-              <th className="px-4 py-3">Phone</th>
-              <th className="px-4 py-3">Terms</th>
-              <th className="px-4 py-3">Last delivery</th>
-              {canPay && <th className="px-4 py-3 text-right">Balance</th>}
-              {canPay && <th className="px-4 py-3 text-right">Overdue</th>}
+              <SortableTh label="Supplier" sortKey="name" sort={sort} onSort={toggle} />
+              <SortableTh label="Phone" sortKey="phone" sort={sort} onSort={toggle} />
+              <SortableTh label="Terms" sortKey="terms" sort={sort} onSort={toggle} />
+              <SortableTh label="Last delivery" sortKey="lastDelivery" sort={sort} onSort={toggle} />
+              {canPay && <SortableTh label="Balance" sortKey="balance" sort={sort} onSort={toggle} className="px-4 py-3 text-right" align="right" />}
+              {canPay && <SortableTh label="Overdue" sortKey="overdue" sort={sort} onSort={toggle} className="px-4 py-3 text-right" align="right" />}
               <th className="w-8 px-2 py-3" />
             </tr>
           </thead>

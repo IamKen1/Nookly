@@ -2,6 +2,7 @@
 
 import { Fragment, useState } from "react";
 import useSWR from "swr";
+import { Pager, SortableTh, useSortState } from "@/components/app/SortableHeader";
 import { ArrowRightLeft, ChevronRight, Loader2, Search, Trash2, X } from "lucide-react";
 import { formatDateTime, peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
@@ -10,6 +11,9 @@ import BranchPricesModal from "./BranchPricesModal";
 
 interface BranchStock {
   stores: { id: string; name: string }[];
+  // How many products match, and how many come per page.
+  total: number;
+  pageSize: number;
   products: { id: string; name: string; minimumStock: number; byStore: Record<string, number>; basePrice: number; branchPrices: Record<string, number>; notSoldAt: string[] }[];
 }
 
@@ -29,6 +33,8 @@ interface ProductOption {
   currentStock: number;
 }
 
+const NO_PRODUCTS: BranchStock["products"] = [];
+
 export default function BranchStockPanel({
   stores,
   currentStoreId,
@@ -44,7 +50,18 @@ export default function BranchStockPanel({
 }) {
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 300);
-  const { data, isLoading, mutate: refreshStock } = useSWR<BranchStock>(`/api/inventory/branch-stock${debounced ? `?search=${encodeURIComponent(debounced)}` : ""}`, {
+  // Sorted and paged by the server, so every product counts toward the order.
+  const productSort = useSortState<"name" | "stock" | "price">();
+  const listKey = `${debounced}|${productSort.sort?.key ?? ""}|${productSort.sort?.dir ?? ""}`;
+  const [pageAt, setPageAt] = useState({ key: listKey, offset: 0 });
+  const offset = pageAt.key === listKey ? pageAt.offset : 0;
+  const stockParams = new URLSearchParams({ offset: String(offset) });
+  if (debounced) stockParams.set("search", debounced);
+  if (productSort.sort) {
+    stockParams.set("sort", productSort.sort.key);
+    stockParams.set("dir", productSort.sort.dir);
+  }
+  const { data, isLoading, mutate: refreshStock } = useSWR<BranchStock>(`/api/inventory/branch-stock?${stockParams}`, {
     keepPreviousData: true,
   });
   const { data: transfers = [], mutate: refreshTransfers } = useSWR<Transfer[]>("/api/inventory/transfer");
@@ -54,8 +71,8 @@ export default function BranchStockPanel({
   // Accordion: one row per product (its total across branches), opened to show
   // each branch — stays readable no matter how many branches there are.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const products = data?.products ?? [];
   const branchList = data?.stores ?? stores;
+  const products = data?.products ?? NO_PRODUCTS;
   const allOpen = products.length > 0 && products.every((p) => expanded.has(p.id));
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -120,14 +137,14 @@ export default function BranchStockPanel({
             </colgroup>
             <thead>
               <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-                <th className="px-4 py-3">Product</th>
+                <SortableTh label="Product" sortKey="name" sort={productSort.sort} onSort={productSort.toggle} />
                 <th className="px-4 py-3">Branch</th>
-                <th className="px-4 py-3 text-right">Stock</th>
-                <th className="px-4 py-3 text-right">Price</th>
+                <SortableTh label="Stock" sortKey="stock" sort={productSort.sort} onSort={productSort.toggle} className="px-4 py-3 text-right" align="right" />
+                <SortableTh label="Price" sortKey="price" sort={productSort.sort} onSort={productSort.toggle} className="px-4 py-3 text-right" align="right" />
                 {canSetPrices && <th className="px-4 py-3" />}
               </tr>
             </thead>
-            <tbody>
+            <tbody className={`transition-opacity ${isLoading && products.length > 0 ? "opacity-50" : ""}`}>
               {isLoading && !data ? (
                 <tr>
                   <td colSpan={canSetPrices ? 5 : 4} className="px-4 py-8 text-center text-zinc-400">
@@ -236,7 +253,11 @@ export default function BranchStockPanel({
             </tbody>
           </table>
         </div>
-        {products.length >= 100 && <p className="px-4 py-2 text-xs text-zinc-400">Showing the first 100 — search to narrow it down.</p>}
+        {data && (
+          <div className="px-4 pb-2">
+            <Pager offset={offset} limit={data.pageSize} total={data.total} onChange={(o) => setPageAt({ key: listKey, offset: o })} />
+          </div>
+        )}
         <p className="border-t border-zinc-100 px-4 py-2 text-[11px] text-zinc-400">
           Stock in <span className="font-semibold text-red-600">red</span> is out, <span className="font-semibold text-amber-700">amber</span> is at or below
           minimum. Prices in <span className="font-medium text-violet-700">violet</span> are that branch&apos;s own price.
@@ -323,7 +344,7 @@ function TransferModal({
   const [notes, setNotes] = useState("");
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 250);
-  const { data: results = [] } = useSWR<ProductOption[]>(debounced ? `/api/products?search=${encodeURIComponent(debounced)}` : null);
+  const { data: results = [] } = useSWR<ProductOption[]>(debounced ? `/api/products?take=30&search=${encodeURIComponent(debounced)}` : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

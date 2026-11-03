@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { Download, RotateCcw, Search, X } from "lucide-react";
 import { formatDate } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import { SortableTh, useTableSort } from "@/components/app/SortableHeader";
 
 interface Prescription {
   id: string;
@@ -41,6 +42,14 @@ export default function PrescriptionsClient({ canReorder }: { canReorder: boolea
   const qs = params.toString();
   const { data: prescriptions = [], isLoading } = useSWR<Prescription[]>(`/api/prescriptions${qs ? `?${qs}` : ""}`, { keepPreviousData: true });
   const filtered = Boolean(query || from || to || status);
+  const { sorted, sort, toggle } = useTableSort(prescriptions, {
+    number: (p) => p.prescriptionNumber,
+    date: (p) => new Date(p.originalDate),
+    customer: (p) => `${p.customer.firstName} ${p.customer.lastName}`,
+    doctor: (p) => `${p.doctor.firstName} ${p.doctor.lastName}`,
+    items: (p) => p.items.length,
+    status: (p) => STATUS[p.status]?.label ?? p.status,
+  });
 
   const input = "rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none";
 
@@ -99,12 +108,12 @@ export default function PrescriptionsClient({ canReorder }: { canReorder: boolea
         <table className="w-full min-w-[820px] text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
-              <th className="px-4 py-3">Rx #</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Doctor</th>
-              <th className="px-4 py-3">Items</th>
-              <th className="px-4 py-3">Status</th>
+              <SortableTh label="Rx #" sortKey="number" sort={sort} onSort={toggle} />
+              <SortableTh label="Date" sortKey="date" sort={sort} onSort={toggle} />
+              <SortableTh label="Customer" sortKey="customer" sort={sort} onSort={toggle} />
+              <SortableTh label="Doctor" sortKey="doctor" sort={sort} onSort={toggle} />
+              <SortableTh label="Items" sortKey="items" sort={sort} onSort={toggle} />
+              <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggle} />
               {canReorder && <th className="px-4 py-3" />}
             </tr>
           </thead>
@@ -122,7 +131,7 @@ export default function PrescriptionsClient({ canReorder }: { canReorder: boolea
                 </td>
               </tr>
             ) : (
-              prescriptions.map((p) => {
+              sorted.map((p) => {
                 const st = STATUS[p.status] ?? { label: p.status, tone: "bg-zinc-100 text-zinc-600" };
                 return (
                   <tr key={p.id} className="border-b border-zinc-50 align-top last:border-0">

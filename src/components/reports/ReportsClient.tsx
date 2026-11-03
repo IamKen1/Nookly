@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { ArrowDown, ArrowUp, Download, FileSpreadsheet, Loader2, Printer, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, FileSpreadsheet, Loader2, Printer, Search } from "lucide-react";
 import { REPORTS, REPORT_GROUPS, POINT_IN_TIME, type CellFormat, type ReportKey, type ReportResult, type ReportSection } from "@/lib/reports/registry";
 
 type RunResult = ReportResult & { meta: { label: string; scope: string; period: string } };
@@ -340,11 +340,16 @@ export default function ReportsClient({
                     <th
                       key={c.key}
                       onClick={() => setSort((s) => (s?.key === c.key ? (s.dir === -1 ? { key: c.key, dir: 1 } : null) : { key: c.key, dir: -1 }))}
-                      className={`cursor-pointer select-none whitespace-nowrap border-b border-zinc-200 px-3 py-2 font-semibold text-zinc-600 hover:text-zinc-900 ${numeric(c.format) ? "text-right" : "text-left"}`}
+                      className={`group cursor-pointer select-none whitespace-nowrap border-b border-zinc-200 px-3 py-2 font-semibold text-zinc-600 hover:text-zinc-900 ${numeric(c.format) ? "text-right" : "text-left"}`}
+                      aria-sort={sort?.key === c.key ? (sort.dir === -1 ? "descending" : "ascending") : "none"}
                     >
                       <span className="inline-flex items-center gap-1">
                         {c.label}
-                        {sort?.key === c.key && (sort.dir === -1 ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />)}
+                        {sort?.key === c.key ? (
+                          sort.dir === -1 ? <ArrowDown className="h-3 w-3 text-emerald-600" /> : <ArrowUp className="h-3 w-3 text-emerald-600" />
+                        ) : (
+                          <ArrowUpDown className="h-3 w-3 opacity-30 transition-opacity group-hover:opacity-70" aria-hidden />
+                        )}
                       </span>
                     </th>
                   ))}
