@@ -57,7 +57,7 @@ export async function identifyStaff(
 ): Promise<{ user: { id: string; name: string } } | { error: string; status: number }> {
   const attemptKey = crypto.createHash("sha256").update(`staffcode:${accountUserId}`).digest("hex");
   const wrong = await prisma.loginAttempt.count({ where: { accountKeyHash: attemptKey, createdAt: { gte: new Date(Date.now() - WRONG_WINDOW_MS) } } });
-  if (wrong >= MAX_WRONG) return { error: "Too many wrong security codes. Wait 5 minutes, then try again.", status: 429 };
+  if (wrong >= MAX_WRONG) return { error: "Too many incorrect security codes. Wait 5 minutes, then try again.", status: 429 };
 
   const entered = typeof code === "string" ? code.trim() : "";
   if (!entered) return { error: "Enter your security code.", status: 400 };
@@ -67,16 +67,14 @@ export async function identifyStaff(
         select: { id: true, firstName: true, lastName: true, role: true },
       })
     : null;
-  if (!user) {
+  // A code that isn't anyone's, or belongs to someone whose role can't do this
+  // step, gets the same answer and counts as a wrong try — the reply never
+  // reveals whose code it was.
+  const perms = user ? await getRolePermissions(tenantId, user.role) : null;
+  const allowed = perms ? (action === "send" ? perms.pos && perms.pos_send_to_cashier : perms.pos && perms.pos_checkout) : false;
+  if (!user || !allowed) {
     await prisma.loginAttempt.create({ data: { accountKeyHash: attemptKey, ip: null } });
-    return { error: "Wrong security code.", status: 401 };
+    return { error: "Incorrect security code.", status: 401 };
   }
-
-  const name = `${user.firstName} ${user.lastName}`.trim();
-  const perms = await getRolePermissions(tenantId, user.role);
-  const allowed = action === "send" ? perms.pos && perms.pos_send_to_cashier : perms.pos && perms.pos_checkout;
-  if (!allowed) {
-    return { error: action === "send" ? `${name} isn't allowed to send orders to the cashier.` : `${name} isn't allowed to take payment.`, status: 403 };
-  }
-  return { user: { id: user.id, name } };
+  return { user: { id: user.id, name: `${user.firstName} ${user.lastName}`.trim() } };
 }

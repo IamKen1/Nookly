@@ -173,7 +173,7 @@ export default function CheckoutModal({
   // A wrong code keeps the code box open; anything else is shown on the form.
   const failed = (result: { error?: string; codeError?: boolean }, fallback: string) => {
     if (result.codeError) {
-      setCodeError(result.error ?? "Wrong security code.");
+      setCodeError(result.error ?? "Incorrect security code.");
       setStaffCode("");
       return;
     }
