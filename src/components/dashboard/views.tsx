@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   AlarmClock,
-  AlertTriangle,
   BadgePercent,
   Boxes,
   ClipboardPlus,
@@ -183,7 +182,7 @@ async function AttentionCard({ scope, show }: { scope: DashboardScope; show: { s
 
 // ─── Owner & Admin: the whole business at a glance ──────────────────────────
 // What the stock in the store is worth right now — the owner's capital on the shelves.
-function StockOnHandCard({ value }: { value: Awaited<ReturnType<typeof getInventoryValue>> }) {
+function StockOnHandCard({ value, belowCost }: { value: Awaited<ReturnType<typeof getInventoryValue>>; belowCost: number }) {
   const profit = value.retail - value.cost;
   const showBranches = value.branches.length > 1;
   return (
@@ -227,6 +226,22 @@ function StockOnHandCard({ value }: { value: Awaited<ReturnType<typeof getInvent
             <span className="font-semibold">{peso(value.expiredCost)}</span>{" "}of it (at cost) is already expired and can&apos;t be sold
           </span>
           <span className="shrink-0 font-semibold">Review →</span>
+        </Link>
+      )}
+
+      {belowCost > 0 && (
+        // Allowed (e.g. a promo), but every sale of these loses money.
+        <Link
+          href="/products?belowCost=1"
+          className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 hover:bg-amber-100"
+        >
+          <span>
+            <span className="font-semibold">
+              {belowCost.toLocaleString("en-PH")} product{belowCost === 1 ? "" : "s"}
+            </span>{" "}
+            sell at or below cost
+          </span>
+          <span className="shrink-0 font-semibold">Review prices →</span>
         </Link>
       )}
 
@@ -286,22 +301,6 @@ export async function OwnerDashboard({
 
   return (
     <div className="space-y-6">
-      {belowCost > 0 && (
-        // Selling at or below cost is allowed (e.g. a promo) but loses money on every sale.
-        <Link
-          href="/products?belowCost=1"
-          className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 hover:bg-amber-100"
-        >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-          <span className="flex-1">
-            <span className="font-semibold">
-              {belowCost.toLocaleString("en-PH")} product{belowCost === 1 ? "" : "s"} sell at or below cost.
-            </span>{" "}
-            Each sale loses money unless that&apos;s intended.
-          </span>
-          <span className="shrink-0 font-semibold underline">Review prices</span>
-        </Link>
-      )}
       {info.isMultiBranch && !scope.storeId && (
         // Owners see every branch combined here, whichever branch is picked in the header.
         <p className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
@@ -363,7 +362,7 @@ export async function OwnerDashboard({
         )}
       </div>
 
-      {stockValue && <StockOnHandCard value={stockValue} />}
+      {stockValue && <StockOnHandCard value={stockValue} belowCost={belowCost} />}
 
       <div className="grid gap-6 xl:grid-cols-5">
         <Card title="Last 7 days" subtitle="Completed sales per day" className="xl:col-span-3" action={p.sales ? { href: "/sales", label: "Sales" } : undefined}>
