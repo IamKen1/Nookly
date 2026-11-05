@@ -84,6 +84,10 @@ interface PendingPrescription {
 type ViewMode = "grid" | "list";
 
 const POS_PAGE_SIZE = 60;
+// A slow connection shouldn't hold up the counter; the server checks stock on the sale anyway.
+const STOCK_CHECK_TIMEOUT_MS = 3000;
+// At most this often, so switching windows back and forth doesn't read the database each time.
+const STOCK_CHECK_INTERVAL_MS = 30_000;
 
 // The POS sells at this branch's price when it has its own; everything reads
 // sellingPrice, so it's swapped in as products arrive.
@@ -112,6 +116,7 @@ export default function PosClient({
   permissions,
   branches,
   pollOrders = false,
+  pollStock = false,
   canSendToCashier = false,
   canRecordPrescriptions = false,
   requireStaffCode = false,
@@ -125,6 +130,8 @@ export default function PosClient({
   branches?: { currentStoreId: string | null; currentName: string; switchable: { id: string; name: string }[] | null };
   // True when someone at this branch can send orders to a cashier; only then does the POS watch for them.
   pollOrders?: boolean;
+  // True when this branch has more than one user, so someone else may be selling too.
+  pollStock?: boolean;
   // "Send to cashier" in User Access: can queue the cart as an order for a cashier.
   canSendToCashier?: boolean;
   // Plan includes prescriptions; otherwise checkout doesn't offer to record one.
@@ -227,13 +234,20 @@ export default function PosClient({
       : phDayOf(shiftData.openShift.openedAt) !== phDayOf(new Date())
       ? "Your shift from an earlier day is still open — end it, then start today's."
       : null;
-  const openCheckout = (mode: "pay" | "send") => {
-    if (cart.length === 0) return;
+  const checkingStock = useRef(false);
+  const openCheckout = async (mode: "pay" | "send") => {
+    if (cart.length === 0 || checkingStock.current) return;
     if (mode === "pay" && shiftBlock) {
       showNotification(shiftBlock, "error");
       setShiftModalOpen(true);
       return;
     }
+    // Someone else may have sold these since they were added. If the cart had to
+    // change, the cashier sees it first and presses Checkout again.
+    checkingStock.current = true;
+    const cartChanged = await refreshStockAndCart();
+    checkingStock.current = false;
+    if (cartChanged) return;
     setCheckoutMode(mode);
     setShowCheckout(true);
   };
@@ -261,8 +275,8 @@ export default function PosClient({
   } = useSWRInfinite<{ rows: Product[]; total: number }>(getProductPageKey, {
     keepPreviousData: true,
     parallel: true,
-    // Loading the next page leaves the pages already fetched alone. Stock is
-    // refreshed across all of them on opening the POS and after each sale.
+    // Loading the next page leaves the pages already fetched alone. They're
+    // fetched again on opening the POS; refreshShownStock keeps them current after.
     revalidateFirstPage: false,
     revalidateOnMount: true,
   });
@@ -279,6 +293,48 @@ export default function PosClient({
   const productTotal = lastPage?.total ?? 0;
   const hasMoreProducts = lastPage !== undefined && lastPage.rows.length === POS_PAGE_SIZE && pagesLoaded * POS_PAGE_SIZE < lastPage.total;
   const loadingMoreProducts = hasMoreProducts && !productsError && pagesWanted > pagesLoaded;
+
+  // Updates the stock of everything loaded with one small request, instead of
+  // fetching every page again. Selling can still only go ahead if the server
+  // finds enough stock, so a slow or failed check just leaves the old numbers.
+  const refreshShownStock = useCallback(
+    async (alsoCheck: string[] = []): Promise<Record<string, number> | null> => {
+      const ids = [...new Set([...(productPages ?? []).flatMap((page) => page.rows.map((row) => row.id)), ...alsoCheck])];
+      if (ids.length === 0) return null;
+      try {
+        const res = await fetch("/api/products/stock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+          signal: AbortSignal.timeout(STOCK_CHECK_TIMEOUT_MS),
+        });
+        if (!res.ok) return null;
+        const stock: Record<string, number> = await res.json();
+        // Nothing changed is the usual answer, and the grid needn't redraw for it.
+        const changed = (productPages ?? []).some((page) => page.rows.some((row) => stock[row.id] !== undefined && stock[row.id] !== row.currentStock));
+        if (changed) {
+          await refreshProducts(
+            (pages) => pages?.map((page) => ({ ...page, rows: page.rows.map((row) => ({ ...row, currentStock: stock[row.id] ?? row.currentStock })) })),
+            { revalidate: false }
+          );
+        }
+        return stock;
+      } catch {
+        return null;
+      }
+    },
+    [productPages, refreshProducts]
+  );
+
+  // Going back to a search or category seen earlier shows its saved pages, which
+  // may predate a sale. A list not seen before is fetched fresh, so it's skipped.
+  const listKey = `${debouncedSearch}|${selectedCategory}`;
+  const lastListKey = useRef(listKey);
+  useEffect(() => {
+    if (lastListKey.current === listKey) return;
+    lastListKey.current = listKey;
+    if (!loading) refreshShownStock();
+  }, [listKey, loading, refreshShownStock]);
 
   const productScrollRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -304,10 +360,77 @@ export default function PosClient({
     return () => observer.disconnect();
   }, [loading, productsError, hasMoreProducts, pagesWanted, pagesLoaded, setPagesWanted]);
 
-  const showNotification = (message: string, type: "success" | "error") => {
+  const showNotification = (message: string, type: "success" | "error", durationMs = 2500) => {
     setNotification({ message, type, visible: true });
-    setTimeout(() => setNotification((prev) => ({ ...prev, visible: false })), 2500);
+    setTimeout(() => setNotification((prev) => ({ ...prev, visible: false })), durationMs);
   };
+
+  // Brings the list and the cart up to date. A line with more than is left comes
+  // down to what's left, or off the cart if none is. Returns whether that happened.
+  const refreshStockAndCart = useCallback(async () => {
+    const stock = await refreshShownStock(cart.map((l) => l.productId));
+    if (!stock) return false;
+    const lowered = cart.filter((l) => stock[l.productId] !== undefined && l.quantity > stock[l.productId]);
+    setCart((prev) =>
+      prev.flatMap((l) => {
+        const left = stock[l.productId];
+        if (left === undefined) return [l];
+        const quantity = Math.min(l.quantity, left);
+        return quantity > 0 ? [{ ...l, quantity, maxStock: left }] : [];
+      })
+    );
+    if (lowered.length === 1) {
+      const [line] = lowered;
+      const left = stock[line.productId];
+      showNotification(left > 0 ? `Only ${left} left of ${line.name}. Cart updated.` : `${line.name} just ran out. Removed from cart.`, "error", 5000);
+    } else if (lowered.length > 1) {
+      showNotification(`Stock changed for ${lowered.length} products. Cart updated.`, "error", 5000);
+    }
+    return lowered.length > 0;
+  }, [cart, refreshShownStock]);
+
+  // The server refused because the stock is gone. Nothing was charged; back to the
+  // cart with the new numbers, since the total has to change before trying again.
+  const handleStockRefused = async (message: string) => {
+    setShowCheckout(false);
+    const cartChanged = await refreshStockAndCart();
+    if (!cartChanged) showNotification(message, "error", 5000);
+  };
+
+  // Coming back to the POS after being away. Not while checkout is open, so the
+  // total never changes under a cashier taking payment; the server still checks.
+  const lastStockCheck = useRef(0);
+  useEffect(() => {
+    const onReturn = () => {
+      if (document.visibilityState !== "visible" || showCheckout) return;
+      const now = Date.now();
+      if (now - lastStockCheck.current < STOCK_CHECK_INTERVAL_MS) return;
+      lastStockCheck.current = now;
+      refreshStockAndCart();
+    };
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, [showCheckout, refreshStockAndCart]);
+
+  // Where someone else may be selling too, the numbers stay current on their own.
+  // A lone cashier's sales already update them, so that branch spends no reads here.
+  const latestStockRefresh = useRef(refreshStockAndCart);
+  useEffect(() => {
+    latestStockRefresh.current = refreshStockAndCart;
+  }, [refreshStockAndCart]);
+  useEffect(() => {
+    if (!pollStock || showCheckout) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      lastStockCheck.current = Date.now();
+      latestStockRefresh.current();
+    }, STOCK_CHECK_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [pollStock, showCheckout]);
 
   const addToCart = useCallback((product: Product) => {
     if (product.currentStock <= 0) {
@@ -520,6 +643,10 @@ export default function PosClient({
       }),
     });
     const data = await res.json();
+    if (res.status === 409 && data.code === "STOCK") {
+      await handleStockRefused(data.error);
+      return { ok: false, error: data.error };
+    }
     if (!res.ok) return { ok: false, error: data.error ?? "Failed to send the order.", codeError: data.code === "STAFF_CODE" };
     clearCart();
     showNotification(`Order ${data.orderNumber} sent to the cashier`, "success");
@@ -565,9 +692,13 @@ export default function PosClient({
       }),
     });
     const data = await res.json();
+    if (res.status === 409 && data.code === "STOCK") {
+      await handleStockRefused(data.error);
+      return { ok: false, error: data.error };
+    }
     if (!res.ok) return { ok: false, error: data.error ?? "Checkout failed.", codeError: data.code === "STAFF_CODE" };
     clearCart();
-    refreshProducts();
+    refreshShownStock();
     if (activeOrder) refreshPendingOrders();
     showNotification(`Sale ${data.saleNumber} completed — total ${peso(Number(data.totalAmount))}`, "success");
 

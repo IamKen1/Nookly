@@ -12,6 +12,26 @@ export function parseProductSort(params: URLSearchParams): { sort: ProductSort; 
   return { sort, dir: params.get("dir") === "desc" ? "desc" : "asc" };
 }
 
+// Every word has to be found, in any field and any order, so "biogesic 500"
+// finds "Biogesic Tablet" with a strength of 500mg.
+export function productSearchWhere(search: string): Prisma.ProductWhereInput {
+  const words = search.split(/\s+/).filter(Boolean).slice(0, 8);
+  if (words.length === 0) return {};
+  return {
+    AND: words.map((word) => ({
+      OR: [
+        { name: { contains: word, mode: "insensitive" as const } },
+        { genericName: { contains: word, mode: "insensitive" as const } },
+        { brandName: { contains: word, mode: "insensitive" as const } },
+        { strength: { contains: word, mode: "insensitive" as const } },
+        { dosageForm: { contains: word, mode: "insensitive" as const } },
+        { barcode: { contains: word } },
+        { sku: { contains: word } },
+      ],
+    })),
+  };
+}
+
 // The ids for one page, in order, plus how many products match in total.
 export async function productPageIds(
   where: Prisma.ProductWhereInput,

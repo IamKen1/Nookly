@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     if (product.stocks[0]?.isHidden) return NextResponse.json({ error: `${product.name} isn't sold at this branch.` }, { status: 400 });
     const available = product.stocks[0]?.currentStock ?? 0;
     if (item.quantity > available) {
-      return NextResponse.json({ error: `Not enough stock for ${product.name}. Available: ${available}.` }, { status: 409 });
+      return NextResponse.json({ error: `Not enough stock for ${product.name}. Available: ${available}.`, code: "STOCK" }, { status: 409 });
     }
   }
 

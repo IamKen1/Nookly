@@ -16,6 +16,11 @@ import { readOrderPrescription } from "@/lib/order-prescription";
 import { identifyStaff, staffCodeRequired } from "@/lib/staff-code";
 
 class PendingOrderTakenError extends Error {}
+class StockRanOutError extends Error {
+  constructor(readonly productId: string) {
+    super("Stock ran out during the sale.");
+  }
+}
 
 interface CheckoutItem {
   productId: string;
@@ -190,7 +195,7 @@ export async function POST(request: NextRequest) {
     }
     if (item.quantity > available) {
       return NextResponse.json(
-        { error: `Not enough stock for ${product.name}. Available: ${available}.` },
+        { error: `Not enough stock for ${product.name}. Available: ${available}.`, code: "STOCK" },
         { status: 409 }
       );
     }
@@ -317,17 +322,6 @@ export async function POST(request: NextRequest) {
 
     let resolvedPrescriptionId: string | null = null;
     let resolvedCustomerId = customerId || null;
-
-    const batchesByProduct = new Map<string, { id: string; quantity: number }[]>();
-    for (const batch of await tx.productBatch.findMany({
-      where: { productId: { in: productIds }, quantity: { gt: 0 }, ...batchWhere },
-      orderBy: [{ expirationDate: "asc" }, { receivedDate: "asc" }],
-      select: { id: true, productId: true, quantity: true },
-    })) {
-      const list = batchesByProduct.get(batch.productId) ?? [];
-      list.push(batch);
-      batchesByProduct.set(batch.productId, list);
-    }
 
     if (prescriptionsGated && prescriptionId) {
       // Continuing a prescription: what's bought now counts toward each prescribed item.
@@ -465,12 +459,32 @@ export async function POST(request: NextRequest) {
       })),
     });
 
-    for (const item of items) {
-      await tx.productStock.update({
-        where: { productId_storeId: { productId: item.productId, storeId: session.storeId! } },
+    // The check above can pass for two cashiers selling the last piece at once,
+    // so the stock only comes down if it's still there. If it isn't, the whole
+    // sale rolls back. Going in one fixed order keeps two sales of the same
+    // products from waiting on each other.
+    for (const item of [...items].sort((a, b) => a.productId.localeCompare(b.productId))) {
+      const taken = await tx.productStock.updateMany({
+        where: { productId: item.productId, storeId: session.storeId!, currentStock: { gte: item.quantity } },
         data: { currentStock: { decrement: item.quantity } },
       });
+      if (taken.count !== 1) throw new StockRanOutError(item.productId);
+    }
 
+    // Read now that this sale holds the stock rows, so a sale of the same product
+    // has finished or is waiting, and both can't draw on the same batch quantity.
+    const batchesByProduct = new Map<string, { id: string; quantity: number }[]>();
+    for (const batch of await tx.productBatch.findMany({
+      where: { productId: { in: productIds }, quantity: { gt: 0 }, ...batchWhere },
+      orderBy: [{ expirationDate: "asc" }, { receivedDate: "asc" }],
+      select: { id: true, productId: true, quantity: true },
+    })) {
+      const list = batchesByProduct.get(batch.productId) ?? [];
+      list.push(batch);
+      batchesByProduct.set(batch.productId, list);
+    }
+
+    for (const item of items) {
       // FEFO consumption: draw down whichever batches exist for this product,
       // soonest-to-expire first, so older stock doesn't sit unsold until it expires.
       // Products with no tracked batches (most of the catalog, unless stock was
@@ -513,6 +527,14 @@ export async function POST(request: NextRequest) {
       sale = await placeSale();
       break;
     } catch (error) {
+      if (error instanceof StockRanOutError) {
+        const left = await prisma.productStock.findFirst({
+          where: { productId: error.productId, storeId: session.storeId },
+          select: { currentStock: true },
+        });
+        const name = productMap.get(error.productId)!.name;
+        return NextResponse.json({ error: `Not enough stock for ${name}. Available: ${Math.max(0, left?.currentStock ?? 0)}.`, code: "STOCK" }, { status: 409 });
+      }
       const target = (error as { code?: string; meta?: { target?: unknown } }).meta?.target;
       const isNumberClash = (error as { code?: string }).code === "P2002" && /saleNumber|prescriptionNumber/.test(String(target));
       if (isNumberClash && attempt < 5) continue;

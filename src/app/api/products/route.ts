@@ -4,7 +4,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { getCached, invalidateCached } from "@/lib/route-cache";
 import { hasPermission } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
-import { parsePage, parseProductSort, productPageIds } from "@/lib/product-list";
+import { parsePage, parseProductSort, productPageIds, productSearchWhere } from "@/lib/product-list";
 import { belowCostProductIds } from "@/lib/below-cost";
 
 const PRODUCT_SELECT = {
@@ -59,25 +59,16 @@ export async function GET(request: NextRequest) {
     page ? `${page.offset}-${page.limit}-${order.sort}-${order.dir}` : `t${take ?? ""}`
   }`;
   const result = await getCached(cacheKey, 3000, async () => {
-    // Paged lists mark each row that sells at or below cost; the filter uses the same set.
-    const belowCost = page || belowCostOnly ? new Set(await belowCostProductIds(session.tenantId)) : null;
+    // Paged lists mark each row that sells at or below cost; the filter uses the
+    // same set. The POS doesn't show the mark, so it doesn't pay for working it out.
+    const belowCost = (page && !forSale) || belowCostOnly ? new Set(await belowCostProductIds(session.tenantId)) : null;
     const where: Prisma.ProductWhereInput = {
       tenantId: session.tenantId,
       isActive: !archived,
       ...(belowCostOnly ? { id: { in: [...belowCost!] } } : {}),
       ...(forSale ? { NOT: { stocks: { some: { storeId: session.storeId!, isHidden: true } } } } : {}),
       ...(categoryId ? { categoryId } : {}),
-      ...(search
-        ? {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { genericName: { contains: search, mode: "insensitive" } },
-              { brandName: { contains: search, mode: "insensitive" } },
-              { barcode: { contains: search } },
-              { sku: { contains: search } },
-            ],
-          }
-        : {}),
+      ...productSearchWhere(search),
     };
     const select = {
       ...PRODUCT_SELECT,
@@ -103,7 +94,7 @@ export async function GET(request: NextRequest) {
       const found = await prisma.product.findMany({ where: { id: { in: ids } }, select });
       const byId = new Map(found.map((f) => [f.id, f]));
       const rows = shape(ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])));
-      return { rows: rows.map((r) => ({ ...r, belowCost: belowCost!.has(r.id) })), total };
+      return { rows: rows.map((r) => ({ ...r, belowCost: belowCost?.has(r.id) ?? false })), total };
     }
 
     return shape(await prisma.product.findMany({ where, select, orderBy: { name: "asc" }, ...(take ? { take } : {}) }));
