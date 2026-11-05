@@ -26,6 +26,8 @@ const PRODUCT_SELECT = {
   isOTC: true,
   drugSchedule: true,
   imageUrl: true,
+  createdAt: true,
+  updatedAt: true,
   category: { select: { id: true, name: true } },
   suppliers: { select: { supplier: { select: { id: true, name: true } } }, take: 1 },
 } satisfies Prisma.ProductSelect;
@@ -44,14 +46,16 @@ export async function GET(request: NextRequest) {
   // The POS asks for only what this branch sells; management screens (Products,
   // Inventory) still list the whole catalog.
   const forSale = searchParams.get("forSale") === "1" && Boolean(session.storeId);
-  // The POS grid can grow to a few hundred with "Load more"; other lists page by 50.
+  // A single page is capped at 600. The POS grid fetches 60 at a time as it scrolls; other lists page by 50.
   const page = parsePage(searchParams, 600);
   const order = parseProductSort(searchParams);
   // ?belowCost=1: only products selling at or below cost (owners fix these).
   const belowCostOnly = searchParams.get("belowCost") === "1";
+  // ?archived=1: the removed products instead, for the Products page's Archived tab.
+  const archived = searchParams.get("archived") === "1";
   const take = searchParams.has("take") ? Math.min(200, Math.max(1, Math.trunc(Number(searchParams.get("take"))) || 50)) : undefined;
 
-  const cacheKey = `products:${session.tenantId}:${session.storeId ?? ""}:${search}:${categoryId}:${forSale ? "sale" : "all"}:${belowCostOnly ? "below" : ""}:${
+  const cacheKey = `products:${session.tenantId}:${session.storeId ?? ""}:${search}:${categoryId}:${forSale ? "sale" : "all"}:${belowCostOnly ? "below" : ""}:${archived ? "archived" : ""}:${
     page ? `${page.offset}-${page.limit}-${order.sort}-${order.dir}` : `t${take ?? ""}`
   }`;
   const result = await getCached(cacheKey, 3000, async () => {
@@ -59,7 +63,7 @@ export async function GET(request: NextRequest) {
     const belowCost = page || belowCostOnly ? new Set(await belowCostProductIds(session.tenantId)) : null;
     const where: Prisma.ProductWhereInput = {
       tenantId: session.tenantId,
-      isActive: true,
+      isActive: !archived,
       ...(belowCostOnly ? { id: { in: [...belowCost!] } } : {}),
       ...(forSale ? { NOT: { stocks: { some: { storeId: session.storeId!, isHidden: true } } } } : {}),
       ...(categoryId ? { categoryId } : {}),

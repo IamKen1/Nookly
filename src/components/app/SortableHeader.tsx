@@ -58,13 +58,6 @@ export function useTableSort<T, K extends string>(rows: T[], columns: Record<K, 
 export function Pager({ offset, limit, total, onChange }: { offset: number; limit: number; total: number; onChange: (offset: number) => void }) {
   if (total <= limit && offset === 0) return null;
   const last = Math.min(offset + limit, total);
-  // The buttons sit under the list; go back up so the new page starts in view.
-  const go = (e: React.MouseEvent<HTMLButtonElement>, next: number) => {
-    onChange(next);
-    let el: HTMLElement | null = e.currentTarget.parentElement;
-    while (el && !(el.scrollHeight > el.clientHeight && /(auto|scroll)/.test(getComputedStyle(el).overflowY))) el = el.parentElement;
-    (el ?? window).scrollTo({ top: 0, behavior: "smooth" });
-  };
   const btn = "rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:border-zinc-300 disabled:opacity-40";
   return (
     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
@@ -72,10 +65,10 @@ export function Pager({ offset, limit, total, onChange }: { offset: number; limi
         {total === 0 ? 0 : (offset + 1).toLocaleString("en-PH")}–{last.toLocaleString("en-PH")} of {total.toLocaleString("en-PH")}
       </span>
       <span className="flex gap-1.5">
-        <button type="button" className={btn} disabled={offset === 0} onClick={(e) => go(e, Math.max(0, offset - limit))}>
+        <button type="button" className={btn} disabled={offset === 0} onClick={() => onChange(Math.max(0, offset - limit))}>
           Previous
         </button>
-        <button type="button" className={btn} disabled={last >= total} onClick={(e) => go(e, offset + limit)}>
+        <button type="button" className={btn} disabled={last >= total} onClick={() => onChange(offset + limit)}>
           Next
         </button>
       </span>

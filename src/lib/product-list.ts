@@ -4,11 +4,11 @@ import { prisma } from "@/lib/prisma";
 // Paging and sorting for product lists, so a catalog of thousands sends one
 // page at a time instead of everything. Sorting covers the whole catalog, not
 // just the page. Price is the product's base price, as the Products page shows.
-export type ProductSort = "name" | "category" | "price" | "stock" | "minimum";
+export type ProductSort = "name" | "category" | "price" | "stock" | "minimum" | "added" | "updated";
 
 export function parseProductSort(params: URLSearchParams): { sort: ProductSort; dir: "asc" | "desc" } {
   const s = params.get("sort");
-  const sort: ProductSort = s === "category" || s === "price" || s === "stock" || s === "minimum" ? s : "name";
+  const sort: ProductSort = s === "category" || s === "price" || s === "stock" || s === "minimum" || s === "added" || s === "updated" ? s : "name";
   return { sort, dir: params.get("dir") === "desc" ? "desc" : "asc" };
 }
 
@@ -28,7 +28,11 @@ export async function productPageIds(
           ? [{ sellingPrice: dir }, { name: "asc" }]
           : sort === "minimum"
             ? [{ minimumStock: dir }, { name: "asc" }]
-            : [{ name: dir }];
+            : sort === "added"
+              ? [{ createdAt: dir }, { name: "asc" }]
+              : sort === "updated"
+                ? [{ updatedAt: dir }, { name: "asc" }]
+                : [{ name: dir }];
     const [rows, total] = await Promise.all([
       prisma.product.findMany({ where, select: { id: true }, orderBy: [...orderBy, { id: "asc" }], skip: offset, take: limit }),
       prisma.product.count({ where }),

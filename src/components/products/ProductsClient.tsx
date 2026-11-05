@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { AlertTriangle, Plus, Search, Settings, Trash2, X, Pencil, Loader2 } from "lucide-react";
+import { AlertTriangle, Plus, RotateCcw, Search, Settings, Trash2, X, Pencil, Loader2 } from "lucide-react";
 import ImageUpload from "./ImageUpload";
 import CategoryManager from "./CategoryManager";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { getOptimizedImageUrl } from "@/lib/cloudinary";
+import { formatDate } from "@/lib/format";
 import { sellingBelowCostMessage } from "@/lib/price-rules";
 import { Pager, SortableTh, useSortState } from "@/components/app/SortableHeader";
 
@@ -33,6 +34,8 @@ interface Product {
   isOTC: boolean;
   drugSchedule: string | null;
   imageUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
   category: { id: string; name: string };
   supplier: { id: string; name: string } | null;
   // Sells at or below cost (its own price, or a branch's own price).
@@ -140,6 +143,9 @@ export default function ProductsClient({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [view, setView] = useState<"active" | "archived">("active");
+  const showArchived = view === "archived";
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -189,13 +195,14 @@ export default function ProductsClient({
 
   // One page at a time, sorted and searched by the server, so a catalog of
   // thousands stays quick. A new search or sort starts again at the first page.
-  const { sort, toggle: toggleSort } = useSortState<"name" | "category" | "price" | "stock">();
-  const listKey = `${debouncedSearch}|${sort?.key ?? ""}|${sort?.dir ?? ""}|${belowCostOnly}`;
+  const { sort, toggle: toggleSort } = useSortState<"name" | "category" | "price" | "stock" | "added" | "updated">();
+  const listKey = `${view}|${debouncedSearch}|${sort?.key ?? ""}|${sort?.dir ?? ""}|${belowCostOnly}`;
   const [pageAt, setPageAt] = useState({ key: listKey, offset: 0 });
   const offset = pageAt.key === listKey ? pageAt.offset : 0;
   const pageParams = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
   if (debouncedSearch) pageParams.set("search", debouncedSearch);
-  if (belowCostOnly) pageParams.set("belowCost", "1");
+  if (showArchived) pageParams.set("archived", "1");
+  else if (belowCostOnly) pageParams.set("belowCost", "1");
   if (sort) {
     pageParams.set("sort", sort.key);
     pageParams.set("dir", sort.dir);
@@ -211,7 +218,12 @@ export default function ProductsClient({
   const productCount = catalog?.total ?? page?.total ?? 0;
   // How many sell at or below cost, for the warning (owners and whoever edits prices).
   const { data: belowCostCount, mutate: refreshBelowCost } = useSWR<{ total: number }>(canEdit ? "/api/products?limit=1&belowCost=1" : null);
-  const refreshProducts = () => Promise.all([refreshPage(), refreshCatalog(), refreshBelowCost()]);
+  const { data: archivedCount, mutate: refreshArchived } = useSWR<{ total: number }>("/api/products?limit=1&archived=1");
+  const refreshProducts = () => Promise.all([refreshPage(), refreshCatalog(), refreshBelowCost(), refreshArchived()]);
+  // Taking the only row off the last page moves back a page instead of leaving it empty.
+  const leavePageIfEmptied = () => {
+    if (products.length === 1 && offset > 0) setPageAt({ key: listKey, offset: Math.max(0, offset - PAGE_SIZE) });
+  };
 
   const flashSuccess = (message: string) => {
     setSuccessMessage(message);
@@ -309,12 +321,33 @@ export default function ProductsClient({
         setError(data.error ?? "Failed to remove product.");
         return;
       }
+      leavePageIfEmptied();
       await refreshProducts();
       flashSuccess("Product removed.");
     } catch {
       setError("Network error.");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    setError(null);
+    setRestoringId(id);
+    try {
+      const res = await fetch(`/api/products/${id}/restore`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Failed to restore product.");
+        return;
+      }
+      leavePageIfEmptied();
+      await refreshProducts();
+      flashSuccess("Product restored.");
+    } catch {
+      setError("Network error.");
+    } finally {
+      setRestoringId(null);
     }
   };
 
@@ -357,7 +390,7 @@ export default function ProductsClient({
       )}
       {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
-      {(belowCostOnly || (belowCostCount?.total ?? 0) > 0) && (
+      {!showArchived && (belowCostOnly || (belowCostCount?.total ?? 0) > 0) && (
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
           <span className="flex-1">
@@ -380,7 +413,30 @@ export default function ProductsClient({
         </div>
       )}
 
-      <div className="mt-6 flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
+      <div className="mt-6 flex gap-1 overflow-x-auto border-b border-zinc-200">
+        {(["active", "archived"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-semibold ${
+              view === v ? "border-b-2 border-emerald-600 text-emerald-700" : "text-zinc-500 hover:text-zinc-700"
+            }`}
+          >
+            {v === "active"
+              ? `Products${catalog ? ` (${catalog.total.toLocaleString("en-PH")})` : ""}`
+              : `Archived${archivedCount ? ` (${archivedCount.total.toLocaleString("en-PH")})` : ""}`}
+          </button>
+        ))}
+      </div>
+
+      {showArchived && (
+        <p className="mt-4 text-sm text-zinc-500">
+          Archived products don&apos;t show in the POS and don&apos;t count toward your plan.
+          {canEdit && atLimit && ` You're at your ${maxProducts}-product limit, so archive a product or upgrade before restoring one.`}
+        </p>
+      )}
+
+      <div className="mt-4 flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
         <Search className="h-4 w-4 text-zinc-400" />
         <input
           value={search}
@@ -390,7 +446,15 @@ export default function ProductsClient({
         />
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+      {page && (
+        <p className="mt-3 text-sm text-zinc-500">
+          <span className="font-semibold tabular-nums text-zinc-900">{page.total.toLocaleString("en-PH")}</span>{" "}
+          {debouncedSearch ? `matching ${showArchived ? "archived " : ""}product` : `${showArchived ? "archived " : belowCostOnly ? "below-cost " : ""}product`}
+          {page.total === 1 ? "" : "s"}
+        </p>
+      )}
+
+      <div className="mt-2 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs font-medium uppercase text-zinc-400">
@@ -398,17 +462,19 @@ export default function ProductsClient({
               <SortableTh label="Category" sortKey="category" sort={sort} onSort={toggleSort} />
               <SortableTh label="Price" sortKey="price" sort={sort} onSort={toggleSort} />
               <SortableTh label="Stock" sortKey="stock" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Added" sortKey="added" sort={sort} onSort={toggleSort} />
+              <SortableTh label="Updated" sortKey="updated" sort={sort} onSort={toggleSort} />
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className={`transition-opacity ${loading && products.length > 0 ? "opacity-50" : ""}`}>
             {loading && products.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Loading...</td>
               </tr>
             ) : products.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-zinc-400">No products yet.</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">{showArchived ? "No archived products." : "No products yet."}</td>
               </tr>
             ) : (
               products.map((p) => (
@@ -453,8 +519,19 @@ export default function ProductsClient({
                       {p.currentStock}
                     </span>
                   </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-zinc-600">{formatDate(p.createdAt)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-zinc-600">{formatDate(p.updatedAt)}</td>
                   <td className="px-4 py-3 text-right">
-                    {canEdit && (
+                    {canEdit && showArchived && (
+                      <button
+                        onClick={() => handleRestore(p.id)}
+                        disabled={atLimit || restoringId === p.id}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:border-zinc-300 disabled:opacity-40"
+                      >
+                        {restoringId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Restore
+                      </button>
+                    )}
+                    {canEdit && !showArchived && (
                       <div className="flex items-center justify-end gap-3">
                         <button onClick={() => handleEditClick(p)} className="text-zinc-400 hover:text-emerald-600">
                           <Pencil className="h-4 w-4" />

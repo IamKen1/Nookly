@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
+import useSWRInfinite from "swr/infinite";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -83,8 +84,6 @@ interface PendingPrescription {
 type ViewMode = "grid" | "list";
 
 const POS_PAGE_SIZE = 60;
-// Past this, searching is quicker than scrolling.
-const POS_MAX_SHOWN = 600;
 
 // The POS sells at this branch's price when it has its own; everything reads
 // sellingPrice, so it's swapped in as products arrive.
@@ -243,22 +242,67 @@ export default function PosClient({
   const printer = usePrinterConnection();
 
   const debouncedSearch = useDebouncedValue(search, 250);
-  // The grid shows the first products that match (search and category are
-  // applied by the server) with "Load more", so a catalog of thousands opens
-  // instantly. Scanning a barcode still finds any product.
-  const listKey = `${debouncedSearch}|${selectedCategory}`;
-  const [shownAt, setShownAt] = useState({ key: listKey, limit: POS_PAGE_SIZE });
-  const shownLimit = shownAt.key === listKey ? shownAt.limit : POS_PAGE_SIZE;
-  const productParams = new URLSearchParams({ forSale: "1", limit: String(shownLimit), offset: "0" });
-  if (debouncedSearch) productParams.set("search", debouncedSearch);
-  if (selectedCategory) productParams.set("categoryId", selectedCategory);
+  // The grid loads one page of matches at a time (search and category are
+  // applied by the server) and fetches the next as the cashier scrolls, so a
+  // catalog of thousands opens instantly and every product can still be reached.
+  const getProductPageKey = (pageIndex: number) => {
+    const params = new URLSearchParams({ forSale: "1", limit: String(POS_PAGE_SIZE), offset: String(pageIndex * POS_PAGE_SIZE) });
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (selectedCategory) params.set("categoryId", selectedCategory);
+    return `/api/products?${params}`;
+  };
   const {
-    data: productPage,
+    data: productPages,
+    error: productsError,
     isLoading: loading,
+    size: pagesWanted,
+    setSize: setPagesWanted,
     mutate: refreshProducts,
-  } = useSWR<{ rows: Product[]; total: number }>(`/api/products?${productParams}`, { keepPreviousData: true });
-  const products = useMemo(() => (productPage?.rows ?? []).map(withBranchPrice), [productPage]);
-  const productTotal = productPage?.total ?? 0;
+  } = useSWRInfinite<{ rows: Product[]; total: number }>(getProductPageKey, {
+    keepPreviousData: true,
+    parallel: true,
+    // Loading the next page leaves the pages already fetched alone. Stock is
+    // refreshed across all of them on opening the POS and after each sale.
+    revalidateFirstPage: false,
+    revalidateOnMount: true,
+  });
+  // A product added or removed mid-scroll shifts the pages, which can repeat a row.
+  const products = useMemo(() => {
+    const byId = new Map<string, Product>();
+    for (const page of productPages ?? []) {
+      for (const row of page.rows) if (!byId.has(row.id)) byId.set(row.id, withBranchPrice(row));
+    }
+    return [...byId.values()];
+  }, [productPages]);
+  const pagesLoaded = productPages?.length ?? 0;
+  const lastPage = productPages?.[pagesLoaded - 1];
+  const productTotal = lastPage?.total ?? 0;
+  const hasMoreProducts = lastPage !== undefined && lastPage.rows.length === POS_PAGE_SIZE && pagesLoaded * POS_PAGE_SIZE < lastPage.total;
+  const loadingMoreProducts = hasMoreProducts && !productsError && pagesWanted > pagesLoaded;
+
+  const productScrollRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // A new search or category starts from the top of its own list.
+  useEffect(() => {
+    productScrollRef.current?.scrollTo({ top: 0 });
+  }, [debouncedSearch, selectedCategory]);
+
+  // Fetches the next page when the end of the list comes near. Watching afresh
+  // after each page also covers a list too short to fill the screen.
+  useEffect(() => {
+    const root = productScrollRef.current;
+    const target = loadMoreRef.current;
+    if (!root || !target || loading || productsError || !hasMoreProducts || pagesWanted > pagesLoaded) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setPagesWanted(pagesLoaded + 1);
+      },
+      { root, rootMargin: "0px 0px 400px 0px" }
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [loading, productsError, hasMoreProducts, pagesWanted, pagesLoaded, setPagesWanted]);
 
   const showNotification = (message: string, type: "success" | "error") => {
     setNotification({ message, type, visible: true });
@@ -777,7 +821,7 @@ export default function PosClient({
           </div>
         </div>
 
-        <div className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 transition-opacity md:p-4 ${loading && products.length > 0 ? "opacity-60" : ""}`}>
+        <div ref={productScrollRef} className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 transition-opacity md:p-4 ${loading && products.length > 0 ? "opacity-60" : ""}`}>
           {loading && products.length === 0 ? (
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-3 lg:grid-cols-4 xl:grid-cols-5">
               {Array.from({ length: 12 }).map((_, i) => (
@@ -824,16 +868,18 @@ export default function PosClient({
               <span className="tabular-nums">
                 Showing {filteredProducts.length.toLocaleString("en-PH")} of {productTotal.toLocaleString("en-PH")} — search or scan to find any product
               </span>
-              {shownLimit < POS_MAX_SHOWN && (
+              {loadingMoreProducts && <Loader2 className="h-5 w-5 animate-spin text-emerald-600" aria-label="Loading more products" />}
+              {productsError && hasMoreProducts && (
                 <button
-                  onClick={() => setShownAt({ key: listKey, limit: Math.min(POS_MAX_SHOWN, shownLimit + POS_PAGE_SIZE) })}
+                  onClick={() => setPagesWanted(pagesLoaded + 1)}
                   className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
-                  Load more
+                  Couldn&apos;t load more products. Try again
                 </button>
               )}
             </div>
           )}
+          <div ref={loadMoreRef} className="h-px" aria-hidden="true" />
         </div>
       </div>
 
