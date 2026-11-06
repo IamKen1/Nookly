@@ -2,6 +2,7 @@ import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { daysUntil } from "@/lib/plans";
 import { formatDate } from "@/lib/format";
+import { RENEWAL_NOTICE_DAYS, phDaysUntil, renewalDueLabel } from "@/lib/renewal";
 import { getBranchContext } from "@/lib/branch-scope";
 import { ALL_ROLE_LABELS } from "@/lib/permissions-shared";
 import { dashboardKindFor, getDashboardScope } from "@/lib/dashboard-data";
@@ -32,12 +33,39 @@ export default async function DashboardPage() {
 
   const subscription = tenant.subscription;
   const trialEndsAt = subscription?.status === "TRIALING" ? subscription.trialEndsAt : null;
+
+  // A paid period ending soon goes in the banner, where whoever runs the plan
+  // can't miss it. Free (complimentary) workspaces have nothing to renew.
+  let renewal: HeroInfo["renewal"] = null;
+  const periodEnd = subscription?.currentPeriodEnd;
+  if (
+    periodEnd &&
+    (subscription.status === "ACTIVE" || subscription.status === "CANCELED") &&
+    !subscription.isComplimentary &&
+    scope.permissions.settings &&
+    phDaysUntil(periodEnd) <= RENEWAL_NOTICE_DAYS
+  ) {
+    const daysLeft = phDaysUntil(periodEnd);
+    const requested = await prisma.planChangeRequest.count({ where: { tenantId: tenant.id, status: { in: ["PENDING", "CONTACTED"] } } });
+    renewal = {
+      urgent: daysLeft <= 1,
+      requested: requested > 0,
+      text:
+        subscription.status === "CANCELED"
+          ? `Your plan ends ${renewalDueLabel(daysLeft)}`
+          : requested > 0
+          ? "Renewal requested"
+          : `Renewal due ${renewalDueLabel(daysLeft)}`,
+    };
+  }
+
   const info: HeroInfo = {
     firstName: user?.firstName || tenant.name,
     roleLabel: ALL_ROLE_LABELS[session.role] ?? session.role,
     branchName: branchContext.isMultiBranch ? branchContext.current?.name ?? null : null,
     isMultiBranch: branchContext.isMultiBranch,
     trialDaysLeft: trialEndsAt && (session.role === "OWNER" || session.role === "ADMIN") ? daysUntil(trialEndsAt) : null,
+    renewal,
   };
 
   const kind = dashboardKindFor(session.role);
@@ -50,7 +78,7 @@ export default async function DashboardPage() {
         : subscription?.status === "EXPIRED" || subscription?.status === "PAST_DUE"
         ? "Access paused — pick a plan to reactivate"
         : subscription?.currentPeriodEnd
-        ? `${subscription.status === "CANCELED" ? "Ends" : "Renews"} ${formatDate(subscription.currentPeriodEnd)}`
+        ? `${subscription.status === "CANCELED" ? "Ends" : "Renewal due"} ${formatDate(subscription.currentPeriodEnd)}`
         : null;
     body = (
       <OwnerDashboard

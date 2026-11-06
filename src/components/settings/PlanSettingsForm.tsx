@@ -174,7 +174,7 @@ export default function PlanSettingsForm({
             : currentPlan.status === "EXPIRED" || currentPlan.status === "PAST_DUE"
             ? `Access paused — pick a plan below to reactivate`
             : currentPlan.currentPeriodEnd
-            ? `${currentPlan.status === "CANCELED" ? "Ends" : "Renews"} ${formatDate(currentPlan.currentPeriodEnd)}`
+            ? `${currentPlan.status === "CANCELED" ? "Ends" : "Renewal due"} ${formatDate(currentPlan.currentPeriodEnd)}`
             : null}
         </p>
 
@@ -187,7 +187,7 @@ export default function PlanSettingsForm({
 
       {canManagePlan && (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-          <h3 className="font-semibold text-zinc-900">Change plan</h3>
+          <h3 className="font-semibold text-zinc-900">Renew or change plan</h3>
           <p className="mt-1 text-sm text-zinc-500">
             Nookly doesn&apos;t charge cards automatically. Submit a request, we&apos;ll contact you to arrange
             payment, and we&apos;ll activate the new plan as soon as it&apos;s confirmed.
@@ -206,13 +206,12 @@ export default function PlanSettingsForm({
                   className="rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 >
                   <option value="">Select a plan...</option>
-                  {allPlans
-                    .filter((p) => p.code !== currentPlan.code || currentPlan.status === "TRIALING")
-                    .map((p) => (
-                      <option key={p.code} value={p.code}>
-                        {p.name} — {peso(billingCycle === "YEARLY" ? p.priceYearly / 12 : p.priceMonthly)}/mo
-                      </option>
-                    ))}
+                  {allPlans.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.name} — {peso(billingCycle === "YEARLY" ? p.priceYearly / 12 : p.priceMonthly)}/mo
+                      {p.code === currentPlan.code && currentPlan.status !== "TRIALING" ? " (renew current plan)" : ""}
+                    </option>
+                  ))}
                 </select>
                 <select
                   value={billingCycle}
@@ -237,7 +236,11 @@ export default function PlanSettingsForm({
                 className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 btn-press"
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitting ? "Sending..." : "Request plan change"}
+                {submitting
+                  ? "Sending..."
+                  : selectedCode === currentPlan.code && currentPlan.status !== "TRIALING"
+                  ? "Request renewal"
+                  : "Request plan change"}
               </button>
             </form>
           )}

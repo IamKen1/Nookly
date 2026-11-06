@@ -47,11 +47,8 @@ export async function POST(request: NextRequest) {
   if (!tenant || !subscription || !requestedPlan) {
     return NextResponse.json({ error: "Could not resolve tenant, current subscription, or requested plan." }, { status: 400 });
   }
-  // A tenant trialing a plan (possibly switched to it mid-trial) can still
-  // request to pay for that same plan.
-  if (subscription.planId === requestedPlan.id && subscription.status !== "TRIALING") {
-    return NextResponse.json({ error: "You're already on this plan." }, { status: 400 });
-  }
+  // Asking for the plan already held is how a paid period gets renewed (or a
+  // trial paid for); payment isn't automatic, so there's no other way to renew.
 
   const existingPending = await prisma.planChangeRequest.findFirst({
     where: { tenantId: session.tenantId, status: { in: ["PENDING", "CONTACTED"] } },

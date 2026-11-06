@@ -10,6 +10,7 @@ import {
   Receipt,
   ShoppingCart,
   Sparkles,
+  CalendarClock,
   TrendingUp,
   Users,
   Wallet,
@@ -52,6 +53,8 @@ export interface HeroInfo {
   branchName: string | null;
   isMultiBranch: boolean;
   trialDaysLeft: number | null;
+  // A paid period ending within the week, for whoever manages the plan.
+  renewal?: { text: string; urgent: boolean; requested: boolean } | null;
 }
 
 // Every role gets the lookup; with several branches it also shows where else
@@ -94,6 +97,21 @@ function Hero({ info, eyebrow, children, aside }: { info: HeroInfo; eyebrow: str
                 <Sparkles className="h-3 w-3" /> {info.trialDaysLeft} {info.trialDaysLeft === 1 ? "day" : "days"} left in your free trial
               </span>
             )}
+            {info.renewal &&
+              (info.renewal.requested ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 font-semibold">
+                  <CalendarClock className="h-3 w-3" /> {info.renewal.text}
+                </span>
+              ) : (
+                <Link
+                  href="/settings"
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold ${
+                    info.renewal.urgent ? "bg-rose-100 text-rose-900 hover:bg-rose-50" : "bg-amber-300/90 text-amber-950 hover:bg-amber-200"
+                  }`}
+                >
+                  <CalendarClock className="h-3 w-3" /> {info.renewal.text} · <span className="underline">Renew</span>
+                </Link>
+              ))}
           </div>
           <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-emerald-50/80">{eyebrow}</p>
           {children}

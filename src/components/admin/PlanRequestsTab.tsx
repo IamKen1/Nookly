@@ -130,7 +130,7 @@ export default function PlanRequestsTab() {
                 </td>
                 <td className="px-4 py-3">
                   <p className="text-zinc-800">
-                    {r.currentPlan.name} → {r.requestedPlan.name}
+                    {r.currentPlan.name === r.requestedPlan.name ? `Renewal · ${r.requestedPlan.name}` : `${r.currentPlan.name} → ${r.requestedPlan.name}`}
                   </p>
                   <p className="text-xs text-zinc-500">{r.billingCycle}</p>
                   {r.tenant.subscription?.status === "TRIALING" && (
