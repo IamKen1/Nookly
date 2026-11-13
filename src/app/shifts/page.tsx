@@ -7,12 +7,14 @@ import ShiftsClient from "@/components/shifts/ShiftsClient";
 
 export default async function ShiftsPage() {
   const session = await requireActiveSession();
-  if (!(await hasPermission(session.tenantId, session.role, "shifts"))) redirect("/dashboard");
-
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: session.tenantId },
-    include: { subscription: { include: { plan: true } } },
-  });
+  const [allowed, tenant] = await Promise.all([
+    hasPermission(session.tenantId, session.role, "shifts"),
+    prisma.tenant.findUnique({
+      where: { id: session.tenantId },
+      include: { subscription: { include: { plan: true } } },
+    }),
+  ]);
+  if (!allowed) redirect("/dashboard");
   if (!tenant) return null;
 
   return (

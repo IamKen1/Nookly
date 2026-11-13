@@ -4,7 +4,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { getCached, invalidateCached } from "@/lib/route-cache";
 import { hasPermission } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
-import { parsePage, parseProductSort, productPageIds, productSearchWhere } from "@/lib/product-list";
+import { parsePage, parseProductSort, productPageIds, productPageOrderBy, productSearchWhere } from "@/lib/product-list";
 import { belowCostProductIds } from "@/lib/below-cost";
 
 const PRODUCT_SELECT = {
@@ -61,11 +61,14 @@ export async function GET(request: NextRequest) {
   const result = await getCached(cacheKey, 3000, async () => {
     // Paged lists mark each row that sells at or below cost; the filter uses the
     // same set. The POS doesn't show the mark, so it doesn't pay for working it out.
-    const belowCost = (page && !forSale) || belowCostOnly ? new Set(await belowCostProductIds(session.tenantId)) : null;
+    // Started now, awaited only where needed: the filter needs it up front, but
+    // the per-row mark can wait until the page itself is read.
+    const belowCostP = (page && !forSale) || belowCostOnly ? belowCostProductIds(session.tenantId).then((ids) => new Set(ids)) : null;
+    const belowCostFilter = belowCostOnly ? await belowCostP! : null;
     const where: Prisma.ProductWhereInput = {
       tenantId: session.tenantId,
       isActive: !archived,
-      ...(belowCostOnly ? { id: { in: [...belowCost!] } } : {}),
+      ...(belowCostOnly ? { id: { in: [...belowCostFilter!] } } : {}),
       ...(forSale ? { NOT: { stocks: { some: { storeId: session.storeId!, isHidden: true } } } } : {}),
       ...(categoryId ? { categoryId } : {}),
       ...productSearchWhere(search),
@@ -90,10 +93,29 @@ export async function GET(request: NextRequest) {
       }));
 
     if (page) {
-      const { ids, total } = await productPageIds(where, session.storeId ?? null, order, page.offset, page.limit);
-      const found = await prisma.product.findMany({ where: { id: { in: ids } }, select });
-      const byId = new Map(found.map((f) => [f.id, f]));
-      const rows = shape(ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])));
+      const storeId = session.storeId ?? null;
+      const orderBy = productPageOrderBy(storeId, order);
+      let rows: ReturnType<typeof shape>;
+      let total: number;
+      let belowCost: Set<string> | null;
+      if (orderBy) {
+        // Sorted on the product row: the page's rows come straight back in the
+        // same order (and with the same count) productPageIds would give ids in.
+        let found;
+        [found, total, belowCost] = await Promise.all([
+          prisma.product.findMany({ where, select, orderBy, skip: page.offset, take: page.limit }),
+          prisma.product.count({ where }),
+          belowCostP,
+        ]);
+        rows = shape(found);
+      } else {
+        // Stock sort at a branch: ids are ordered on the stock rows, then read.
+        let ids;
+        [{ ids, total }, belowCost] = await Promise.all([productPageIds(where, storeId, order, page.offset, page.limit), belowCostP]);
+        const found = await prisma.product.findMany({ where: { id: { in: ids } }, select });
+        const byId = new Map(found.map((f) => [f.id, f]));
+        rows = shape(ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])));
+      }
       return { rows: rows.map((r) => ({ ...r, belowCost: belowCost?.has(r.id) ?? false })), total };
     }
 

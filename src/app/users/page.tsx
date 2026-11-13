@@ -7,17 +7,15 @@ import UsersClient from "@/components/users/UsersClient";
 
 export default async function UsersPage() {
   const session = await requireActiveSession();
-  if (!(await hasPermission(session.tenantId, session.role, "users"))) {
-    redirect("/dashboard");
-  }
-
-  const [tenant, stores] = await Promise.all([
+  const [allowed, tenant, stores] = await Promise.all([
+    hasPermission(session.tenantId, session.role, "users"),
     prisma.tenant.findUnique({
       where: { id: session.tenantId },
       include: { subscription: { include: { plan: true } } },
     }),
     prisma.store.findMany({ where: { tenantId: session.tenantId, isActive: true }, orderBy: { name: "asc" } }),
   ]);
+  if (!allowed) redirect("/dashboard");
   if (!tenant) return null;
 
   return (

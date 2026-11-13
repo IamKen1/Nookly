@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
-import { codeFromName, ensureDefaultDiscounts, isDiscountAvailable, serializeDiscount } from "@/lib/discounts";
+import { codeFromName, isDiscountAvailable, seedDefaultDiscounts, serializeDiscount } from "@/lib/discounts";
 import { parseDiscountBody } from "@/lib/discount-input";
 
 // All discounts (Settings), or with ?forSale=1 only those the counter can use
@@ -11,11 +11,17 @@ export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  await ensureDefaultDiscounts(session.tenantId);
-  const discounts = await prisma.discount.findMany({
-    where: { tenantId: session.tenantId },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
+  const readDiscounts = () =>
+    prisma.discount.findMany({
+      where: { tenantId: session.tenantId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+  // Read first; only a workspace with none yet gets the defaults seeded, then re-read.
+  let discounts = await readDiscounts();
+  if (discounts.length === 0) {
+    await seedDefaultDiscounts(session.tenantId);
+    discounts = await readDiscounts();
+  }
   const forSale = new URL(request.url).searchParams.get("forSale") === "1";
   const list = forSale ? discounts.filter((d) => isDiscountAvailable(d, session.storeId)) : discounts;
   return NextResponse.json(list.map(serializeDiscount));

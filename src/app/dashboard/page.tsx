@@ -14,6 +14,8 @@ import {
   OwnerDashboard,
   PharmacistDashboard,
   branchRowsFor,
+  dashboardViewFor,
+  loadDashboardData,
   type HeroInfo,
 } from "@/components/dashboard/views";
 
@@ -22,12 +24,28 @@ import {
 // Every number respects the role's User Access (own sales / own branch).
 export default async function DashboardPage() {
   const session = await requirePagePermission("dashboard");
+  const kind = dashboardKindFor(session.role);
 
-  const [tenant, user, branchContext, scope] = await Promise.all([
+  // Everything below is started at once: each dashboard's figures begin as
+  // soon as the viewer's scope (permissions) is known, without waiting for the
+  // tenant, user or branch reads, and nothing is fetched later during render.
+  const scopeP = getDashboardScope(session);
+  const branchContextP = getBranchContext(session);
+  const [tenant, user, branchContext, scope, dashboard, branchRows, renewalRequests] = await Promise.all([
     prisma.tenant.findUnique({ where: { id: session.tenantId }, include: { subscription: { include: { plan: true } } } }),
     prisma.user.findUnique({ where: { id: session.userId }, select: { firstName: true } }),
-    getBranchContext(session),
-    getDashboardScope(session),
+    branchContextP,
+    scopeP,
+    scopeP.then((s) => loadDashboardData(dashboardViewFor(kind, s), s)),
+    kind === "owner"
+      ? Promise.all([branchContextP, scopeP]).then(([bc, s]) =>
+          bc.isMultiBranch && s.permissions.all_branches ? branchRowsFor(session.tenantId, bc.stores, session.storeId) : null
+        )
+      : null,
+    // Only read for whoever manages the plan; used by the renewal notice below.
+    scopeP.then((s) =>
+      s.permissions.settings ? prisma.planChangeRequest.count({ where: { tenantId: session.tenantId, status: { in: ["PENDING", "CONTACTED"] } } }) : 0
+    ),
   ]);
   if (!tenant) return null;
 
@@ -46,7 +64,7 @@ export default async function DashboardPage() {
     phDaysUntil(periodEnd) <= RENEWAL_NOTICE_DAYS
   ) {
     const daysLeft = phDaysUntil(periodEnd);
-    const requested = await prisma.planChangeRequest.count({ where: { tenantId: tenant.id, status: { in: ["PENDING", "CONTACTED"] } } });
+    const requested = renewalRequests;
     renewal = {
       urgent: daysLeft <= 1,
       requested: requested > 0,
@@ -68,9 +86,8 @@ export default async function DashboardPage() {
     renewal,
   };
 
-  const kind = dashboardKindFor(session.role);
   let body: React.ReactNode;
-  if (kind === "owner") {
+  if (dashboard.view === "owner") {
     // Same "what does this status actually mean" wording as Settings › Plan.
     const planDetail =
       subscription?.status === "TRIALING" && subscription.trialEndsAt
@@ -84,18 +101,19 @@ export default async function DashboardPage() {
       <OwnerDashboard
         scope={scope}
         info={info}
-        branchRows={branchContext.isMultiBranch && scope.permissions.all_branches ? await branchRowsFor(tenant.id, branchContext.stores, session.storeId) : null}
+        data={dashboard.data}
+        branchRows={branchRows ?? null}
         plan={subscription ? { name: subscription.plan.name, detail: planDetail } : null}
       />
     );
-  } else if (kind === "manager") {
-    body = <ManagerDashboard scope={scope} info={info} />;
-  } else if (kind === "pharmacist") {
-    body = <PharmacistDashboard scope={scope} info={info} />;
-  } else if (kind === "orderTaker" || (kind === "cashier" && !scope.permissions.pos_checkout && scope.permissions.pos_send_to_cashier)) {
-    body = <OrderTakerDashboard scope={scope} info={info} />;
+  } else if (dashboard.view === "manager") {
+    body = <ManagerDashboard scope={scope} info={info} data={dashboard.data} />;
+  } else if (dashboard.view === "pharmacist") {
+    body = <PharmacistDashboard scope={scope} info={info} data={dashboard.data} />;
+  } else if (dashboard.view === "orderTaker") {
+    body = <OrderTakerDashboard scope={scope} info={info} data={dashboard.data} />;
   } else {
-    body = <CashierDashboard scope={scope} info={info} />;
+    body = <CashierDashboard scope={scope} info={info} data={dashboard.data} />;
   }
 
   return (

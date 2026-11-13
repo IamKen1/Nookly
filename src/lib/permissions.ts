@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
@@ -25,12 +26,18 @@ export {
 export const hasPermission = async (tenantId: string, role: string, module: PermissionModuleKey): Promise<boolean> => {
   if (role === "OWNER") return true;
   if (!isConfigurableRole(role) && role !== "ORDER_TAKER") return false;
-  return (await getRolePermissions(tenantId, role))[module];
+  return (await loadRolePermissions(tenantId, role))[module];
 };
 
 // Resolves every module for one role in a single query — for call sites
 // (e.g. the sidebar) that need several checks at once.
-export const getRolePermissions = async (tenantId: string, rawRole: string): Promise<Record<PermissionModuleKey, boolean>> => {
+// Memoized per request on (tenantId, role) so AppShell, the page guard and
+// the page itself share one query. Callers get their own copy of the result.
+export const getRolePermissions = async (tenantId: string, rawRole: string): Promise<Record<PermissionModuleKey, boolean>> => ({
+  ...(await loadRolePermissions(tenantId, rawRole)),
+});
+
+const loadRolePermissions = cache(async (tenantId: string, rawRole: string): Promise<Record<PermissionModuleKey, boolean>> => {
   // Order taker is no longer a role; accounts still carrying it are cashiers.
   const role = rawRole === "ORDER_TAKER" ? "CASHIER" : rawRole;
   const raw = {} as Record<PermissionModuleKey, boolean>;
@@ -48,11 +55,19 @@ export const getRolePermissions = async (tenantId: string, rawRole: string): Pro
     if (parent && !raw[parent]) result[key] = false;
   }
   return result;
-};
+});
 
 // Builds the full role x module grid for the Settings UI, merging any saved
 // overrides on top of the defaults above.
+// Memoized per request on tenantId; callers get their own copy.
 export const getPermissionMatrix = async (tenantId: string): Promise<PermissionMatrix> => {
+  const matrix = await loadPermissionMatrix(tenantId);
+  const copy = {} as PermissionMatrix;
+  for (const role of CONFIGURABLE_ROLES) copy[role] = { ...matrix[role] };
+  return copy;
+};
+
+const loadPermissionMatrix = cache(async (tenantId: string): Promise<PermissionMatrix> => {
   const overrides = await prisma.rolePermission.findMany({ where: { tenantId } });
   const overrideMap = new Map(overrides.map((o) => [`${o.role}:${o.module}`, o.allowed]));
 
@@ -65,7 +80,7 @@ export const getPermissionMatrix = async (tenantId: string): Promise<PermissionM
     }
   }
   return matrix;
-};
+});
 
 // Replaces the tenant's entire permission matrix in one go — simplest
 // mental model for the owner ("Save" writes exactly what's checked), and

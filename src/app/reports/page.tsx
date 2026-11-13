@@ -1,6 +1,6 @@
 import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
-import { getEnabledReports, type PlanCode } from "@/lib/plan-gating";
+import { isReportKey } from "@/lib/reports/registry";
 import { getBranchContext } from "@/lib/branch-scope";
 import { getRolePermissions } from "@/lib/permissions";
 import AppShell from "@/components/app/AppShell";
@@ -9,18 +9,20 @@ import ReportsClient from "@/components/reports/ReportsClient";
 export default async function ReportsPage() {
   const session = await requirePagePermission("reports");
 
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: session.tenantId },
-    include: { subscription: { include: { plan: true } } },
-  });
-  if (!tenant) return null;
-
-  const planCode = tenant.subscription?.plan.code as PlanCode | undefined;
-  const [enabledReports, branches, permissions] = await Promise.all([
-    getEnabledReports(planCode),
+  const [tenant, branches, permissions] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { id: session.tenantId },
+      include: { subscription: { include: { plan: true } } },
+    }),
     getBranchContext(session),
     getRolePermissions(session.tenantId, session.role),
   ]);
+  if (!tenant) return null;
+
+  // Same as getEnabledReports(planCode), read off the plan row already loaded
+  // with the tenant.
+  const rawReports = tenant.subscription?.plan.enabledReports;
+  const enabledReports = Array.isArray(rawReports) ? rawReports.filter(isReportKey) : [];
   // Payables are only for those who handle supplier payments.
   const visible = enabledReports.filter((k) => k !== "payables-aging" || permissions.suppliers_pay);
 

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import type { SessionPayload } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -22,15 +23,22 @@ export async function batchesAtStore(
 
 // Branch-related UI only appears once a workspace actually has more than one
 // active branch, so single-branch tenants see no change anywhere.
+// The store list is memoized per request on tenantId (not the session object),
+// so AppShell and the page share one query even though each holds its own
+// session copy; `current` is resolved per call from the caller's storeId.
 export async function getBranchContext(session: SessionPayload) {
-  const stores = await prisma.store.findMany({
-    where: { tenantId: session.tenantId, isActive: true },
-    select: { id: true, name: true, isMainBranch: true },
-    orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
-  });
+  const stores = (await loadActiveStores(session.tenantId)).map((s) => ({ ...s }));
   const current = stores.find((s) => s.id === session.storeId) ?? null;
   return { stores, current, isMultiBranch: stores.length > 1 };
 }
+
+const loadActiveStores = cache((tenantId: string) =>
+  prisma.store.findMany({
+    where: { tenantId, isActive: true },
+    select: { id: true, name: true, isMainBranch: true },
+    orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
+  })
+);
 
 // Roles that oversee every branch: they can switch their active branch and see
 // reports for all branches combined.

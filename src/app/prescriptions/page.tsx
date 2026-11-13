@@ -1,6 +1,6 @@
 import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
-import { hasFeature, upgradeMessage, type PlanCode } from "@/lib/plan-gating";
+import { upgradeMessage } from "@/lib/plan-gating";
 import { hasPermission } from "@/lib/permissions";
 import AppShell from "@/components/app/AppShell";
 import PrescriptionsClient from "@/components/prescriptions/PrescriptionsClient";
@@ -8,17 +8,17 @@ import PrescriptionsClient from "@/components/prescriptions/PrescriptionsClient"
 export default async function PrescriptionsPage() {
   const session = await requirePagePermission("prescriptions");
 
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: session.tenantId },
-    include: { subscription: { include: { plan: true } } },
-  });
-  if (!tenant) return null;
-
-  const planCode = tenant.subscription?.plan.code as PlanCode | undefined;
-  const [canViewPrescriptions, canReorder] = await Promise.all([
-    hasFeature(planCode, "prescriptions"),
+  const [tenant, canReorder] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { id: session.tenantId },
+      include: { subscription: { include: { plan: true } } },
+    }),
     hasPermission(session.tenantId, session.role, "pos"),
   ]);
+  if (!tenant) return null;
+
+  // The prescriptions flag is read off the plan row already loaded with the tenant.
+  const canViewPrescriptions = Boolean(tenant.subscription?.plan.featurePrescriptions);
 
   return (
     <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>

@@ -2,14 +2,13 @@ import { requirePagePermission } from "@/lib/require-session";
 import { prisma } from "@/lib/prisma";
 import { getSubscriptionLapse } from "@/lib/subscription-access";
 import { hasPermission } from "@/lib/permissions";
-import { hasFeature, type PlanCode } from "@/lib/plan-gating";
 import AppShell from "@/components/app/AppShell";
 import SettingsClient from "@/components/settings/SettingsClient";
 
 export default async function SettingsPage() {
   const session = await requirePagePermission("settings", { active: false });
 
-  const [tenant, allPlans, storeCount, userCount, productCount, lapse] = await Promise.all([
+  const [tenant, allPlans, storeCount, userCount, productCount, lapse, canManage] = await Promise.all([
     prisma.tenant.findUnique({
       where: { id: session.tenantId },
       include: { subscription: { include: { plan: true } } },
@@ -22,14 +21,14 @@ export default async function SettingsPage() {
     // flip, in case a tenant only ever visits Settings (which stays reachable
     // even when locked) and never hits a page gated by requireActiveSession.
     getSubscriptionLapse(session.tenantId),
+    hasPermission(session.tenantId, session.role, "settings"),
   ]);
   if (!tenant) return null;
 
   const displayStatus = lapse?.reason === "trial_expired" ? "EXPIRED" : lapse?.reason === "renewal_expired" ? "PAST_DUE" : tenant.subscription?.status;
 
-  const canManage = await hasPermission(session.tenantId, session.role, "settings");
-  const canManageApiAccess =
-    canManage && (await hasFeature(tenant.subscription?.plan.code as PlanCode | undefined, "apiAccess"));
+  // The API-access flag is read off the plan row already loaded with the tenant.
+  const canManageApiAccess = canManage && Boolean(tenant.subscription?.plan.featureApiAccess);
 
   return (
     <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>

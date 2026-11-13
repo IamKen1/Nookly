@@ -32,6 +32,29 @@ export function productSearchWhere(search: string): Prisma.ProductWhereInput {
   };
 }
 
+// The full ordering of a page that sorts on the product row itself (ending in
+// id, so it is stable), or null for the stock sort at a branch, which is
+// ordered on each branch's stock row instead (see productPageIds).
+export function productPageOrderBy(
+  storeId: string | null,
+  { sort, dir }: { sort: ProductSort; dir: "asc" | "desc" }
+): Prisma.ProductOrderByWithRelationInput[] | null {
+  if (sort === "stock" && storeId) return null;
+  const orderBy: Prisma.ProductOrderByWithRelationInput[] =
+    sort === "category"
+      ? [{ category: { name: dir } }, { name: "asc" }]
+      : sort === "price"
+        ? [{ sellingPrice: dir }, { name: "asc" }]
+        : sort === "minimum"
+          ? [{ minimumStock: dir }, { name: "asc" }]
+          : sort === "added"
+            ? [{ createdAt: dir }, { name: "asc" }]
+            : sort === "updated"
+              ? [{ updatedAt: dir }, { name: "asc" }]
+              : [{ name: dir }];
+  return [...orderBy, { id: "asc" }];
+}
+
 // The ids for one page, in order, plus how many products match in total.
 export async function productPageIds(
   where: Prisma.ProductWhereInput,
@@ -41,20 +64,8 @@ export async function productPageIds(
   limit: number
 ): Promise<{ ids: string[]; total: number }> {
   if (sort !== "stock" || !storeId) {
-    const orderBy: Prisma.ProductOrderByWithRelationInput[] =
-      sort === "category"
-        ? [{ category: { name: dir } }, { name: "asc" }]
-        : sort === "price"
-          ? [{ sellingPrice: dir }, { name: "asc" }]
-          : sort === "minimum"
-            ? [{ minimumStock: dir }, { name: "asc" }]
-            : sort === "added"
-              ? [{ createdAt: dir }, { name: "asc" }]
-              : sort === "updated"
-                ? [{ updatedAt: dir }, { name: "asc" }]
-                : [{ name: dir }];
     const [rows, total] = await Promise.all([
-      prisma.product.findMany({ where, select: { id: true }, orderBy: [...orderBy, { id: "asc" }], skip: offset, take: limit }),
+      prisma.product.findMany({ where, select: { id: true }, orderBy: productPageOrderBy(storeId, { sort, dir })!, skip: offset, take: limit }),
       prisma.product.count({ where }),
     ]);
     return { ids: rows.map((r) => r.id), total };

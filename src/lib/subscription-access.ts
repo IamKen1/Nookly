@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getSubscriptionWithPlan } from "@/lib/request-cache";
 
 export type LapseReason = "trial_expired" | "renewal_expired" | "canceled";
 
@@ -15,10 +16,10 @@ export interface SubscriptionLapse {
 // views (trials ending soon, past-due list) reflect reality without needing a
 // separate cron — the first real request after the deadline does the flip.
 export async function getSubscriptionLapse(tenantId: string): Promise<SubscriptionLapse | null> {
-  const subscription = await prisma.subscription.findUnique({
-    where: { tenantId },
-    include: { plan: { select: { name: true } } },
-  });
+  // Read through the per-request cache so a page that also needs the tenant's
+  // subscription/plan doesn't pay a second round-trip. The status-flip writes
+  // below still happen exactly as before.
+  const subscription = await getSubscriptionWithPlan(tenantId);
   if (!subscription) return null;
 
   const now = new Date();

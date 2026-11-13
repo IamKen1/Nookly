@@ -35,8 +35,20 @@ export async function requirePagePermission(
   module: PermissionModuleKey,
   { active = true }: { active?: boolean } = {}
 ): Promise<SessionPayload> {
-  const session = active ? await requireActiveSession() : await requireSession();
-  const permissions = await getRolePermissions(session.tenantId, session.role);
+  const session = await requireSession();
+  // The lapse check and the permission lookup are independent reads, so both
+  // start at once (one DB wave instead of two). The redirect order is
+  // unchanged: a lapsed subscription wins over a missing module permission,
+  // and a lapse redirects even if the permission read fails.
+  const permissionsPromise = getRolePermissions(session.tenantId, session.role);
+  if (active) {
+    permissionsPromise.catch(() => {}); // surfaced below by the await; avoids an unhandled rejection if we redirect first
+    const lapse = await getSubscriptionLapse(session.tenantId);
+    if (lapse) {
+      redirect(`/upgrade?reason=${lapse.reason}`);
+    }
+  }
+  const permissions = await permissionsPromise;
   if (!permissions[module]) {
     const home = homePathFor(permissions);
     redirect(home ?? "/no-access");

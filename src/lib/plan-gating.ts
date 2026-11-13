@@ -1,4 +1,6 @@
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { getSubscriptionWithPlan } from "@/lib/request-cache";
 
 export type PlanCode = "SPROUT" | "BLOOM" | "EMPIRE";
 
@@ -29,7 +31,7 @@ export type { ReportKey };
 
 export async function getEnabledReports(planCode: PlanCode | null | undefined): Promise<ReportKey[]> {
   if (!planCode) return [];
-  const plan = await prisma.plan.findUnique({ where: { code: planCode }, select: { enabledReports: true } });
+  const plan = await loadPlanGates(planCode);
   const raw = plan?.enabledReports;
   return Array.isArray(raw) ? raw.filter(isReportKey) : [];
 }
@@ -58,19 +60,31 @@ export async function requireReport(
 // of boolean feature flags drives both gating here and the pricing page.
 export async function hasFeature(planCode: PlanCode | null | undefined, feature: FeatureKey): Promise<boolean> {
   if (!planCode) return false;
-  const plan = await prisma.plan.findUnique({ where: { code: planCode }, select: { [FEATURE_COLUMN[feature]]: true } });
+  const plan = await loadPlanGates(planCode);
   return Boolean(plan?.[FEATURE_COLUMN[feature]]);
 }
+
+// One per-request read of a plan's gating columns, shared by every hasFeature /
+// getEnabledReports call for that plan code in the same render.
+const loadPlanGates = cache((planCode: PlanCode) =>
+  prisma.plan.findUnique({
+    where: { code: planCode },
+    select: {
+      enabledReports: true,
+      featurePrescriptions: true,
+      featureAlerts: true,
+      featureMultiBranch: true,
+      featureApiAccess: true,
+    },
+  })
+);
 
 export function upgradeMessage(feature: FeatureKey): string {
   return `${UPGRADE_FEATURE_LABEL[feature]} isn't included in your current plan. Upgrade to unlock it.`;
 }
 
 export async function getTenantPlanCode(tenantId: string): Promise<PlanCode | null> {
-  const subscription = await prisma.subscription.findUnique({
-    where: { tenantId },
-    include: { plan: true },
-  });
+  const subscription = await getSubscriptionWithPlan(tenantId);
   return (subscription?.plan.code as PlanCode | undefined) ?? null;
 }
 

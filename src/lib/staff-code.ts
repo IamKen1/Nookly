@@ -29,8 +29,19 @@ export async function staffCodeAvailable(tenantId: string): Promise<boolean> {
   return Boolean(plan?.featureStaffCode) && branches > 1;
 }
 
+// What staffCodeRequired reads, for a caller that has already loaded it: the
+// tenant's switch, its current plan (via the subscription) and how many active
+// branches it has.
+export type StaffCodeInputs = {
+  requireStaffCode: boolean;
+  plan: { featureStaffCode: boolean } | null | undefined;
+  activeBranches: number;
+};
+
 // Available, and turned on by the owner (Settings › User access).
-export async function staffCodeRequired(tenantId: string): Promise<boolean> {
+// Pass `loaded` to reuse data already in hand instead of reading it again.
+export async function staffCodeRequired(tenantId: string, loaded?: StaffCodeInputs): Promise<boolean> {
+  if (loaded) return loaded.requireStaffCode && Boolean(loaded.plan?.featureStaffCode) && loaded.activeBranches > 1;
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { requireStaffCode: true } });
   if (!tenant?.requireStaffCode) return false;
   return staffCodeAvailable(tenantId);

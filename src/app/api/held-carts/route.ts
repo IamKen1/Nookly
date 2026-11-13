@@ -19,15 +19,23 @@ async function authorize(request: NextRequest) {
 // Carts on hold at this branch, oldest first, each resolved to today's
 // prices and stock so loading one back builds a current cart.
 export async function GET(request: NextRequest) {
-  const { session, response } = await authorize(request);
-  if (!session) return response;
+  // Same checks as authorize(), but the permission lookup runs alongside the
+  // carts read; nothing is returned unless it passes.
+  const raw = getSessionFromRequest(request);
+  if (!raw) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!raw.storeId) return NextResponse.json({ error: "No branch assigned to this account." }, { status: 400 });
+  const session = { ...raw, storeId: raw.storeId };
 
-  const held = await prisma.heldCart.findMany({
-    where: { tenantId: session.tenantId, storeId: session.storeId },
-    include: { user: { select: { firstName: true, lastName: true } } },
-    orderBy: { createdAt: "asc" },
-    take: 50,
-  });
+  const [allowed, held] = await Promise.all([
+    hasPermission(session.tenantId, session.role, "pos"),
+    prisma.heldCart.findMany({
+      where: { tenantId: session.tenantId, storeId: session.storeId },
+      include: { user: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 50,
+    }),
+  ]);
+  if (!allowed) return NextResponse.json({ error: "You don't have access to the POS." }, { status: 403 });
   const all = held.flatMap((h) => parsePendingItems(h.items));
   const lines = await resolveCartLines(session.tenantId, session.storeId, all);
   const lineOf = new Map(lines.map((l) => [l.productId, l]));

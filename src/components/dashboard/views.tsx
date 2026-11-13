@@ -34,6 +34,7 @@ import {
   getTopProducts,
   getPendingPrescriptions,
   getWaitingOrders,
+  type DashboardKind,
   type DashboardScope,
 } from "@/lib/dashboard-data";
 import { CountUp, DailySalesBars, HourlySalesLine } from "./charts";
@@ -145,12 +146,14 @@ function QuickLink({ href, icon: Icon, label, primary = false }: { href: string;
   );
 }
 
-async function AttentionCard({ scope, show }: { scope: DashboardScope; show: { stock: boolean; expiry: boolean } }) {
-  const [queues, low, expiring] = await Promise.all([
-    getQueues(scope),
-    show.stock ? getLowStock(scope, 4) : null,
-    show.expiry ? getExpiring(scope, 30, 4) : null,
-  ]);
+type Queues = Awaited<ReturnType<typeof getQueues>>;
+type LowStock = Awaited<ReturnType<typeof getLowStock>>;
+type Expiring = Awaited<ReturnType<typeof getExpiring>>;
+
+// Data comes from the dashboard's own Promise.all, so the card adds no extra
+// round trip: queues, up to 4 low-stock rows, and up to 4 batches expiring
+// within 30 days (or already expired).
+function AttentionCard({ scope, queues, low, expiring }: { scope: DashboardScope; queues: Queues; low: LowStock | null; expiring: Expiring | null }) {
   const p = scope.permissions;
   const rows: React.ReactNode[] = [];
   if (queues.pendingOrders > 0)
@@ -293,29 +296,116 @@ function StockOnHandCard({ value, belowCost }: { value: Awaited<ReturnType<typeo
   );
 }
 
-export async function OwnerDashboard({
-  scope,
-  info,
-  branchRows,
-  plan,
-}: {
-  scope: DashboardScope;
-  info: HeroInfo;
-  branchRows: { id: string; name: string; isCurrent: boolean; sales: number; transactions: number; lowStock: number; staff: number }[] | null;
-  plan: { name: string; detail: string | null } | null;
-}) {
+// ─── Data loaders ───────────────────────────────────────────────────────────
+// Each dashboard's queries, all started at once (one Promise.all per view, no
+// nested fetches in child cards), so the page can run them alongside its own.
+
+// Which dashboard a viewer gets: the role's kind, except a cashier who can
+// only send carts to the cashier (not ring them up) gets the order-taker view.
+export type DashboardView = DashboardKind;
+export function dashboardViewFor(kind: DashboardKind, scope: DashboardScope): DashboardView {
+  if (kind === "cashier" && !scope.permissions.pos_checkout && scope.permissions.pos_send_to_cashier) return "orderTaker";
+  return kind;
+}
+
+async function loadOwnerData(scope: DashboardScope) {
   const p = scope.permissions;
-  const [today, trend, mtd, top, mix, low, expiring, stockValue, belowCost] = await Promise.all([
+  const [today, trend, mtd, top, mix, low, expiring, stockValue, belowCost, queues] = await Promise.all([
     getTodayVsYesterday(scope),
     getSalesTrend(scope, 7),
     getMonthToDate(scope),
     getTopProducts(scope, 7, 5),
     getPaymentMix(scope, 30),
-    p.inventory ? getLowStock(scope, 0) : null,
-    p.inventory ? getExpiring(scope, 60, 0) : null,
+    // Counts for the tiles plus the (up to 4) rows "Needs attention" lists.
+    p.inventory ? getLowStock(scope, 4) : null,
+    p.inventory ? getExpiring(scope, 60, 4) : null,
     p.inventory ? getInventoryValue(scope) : null,
     p.products_edit ? belowCostProductIds(scope.session.tenantId).then((ids) => ids.length) : 0,
+    getQueues(scope),
   ]);
+  // "Needs attention" lists batches expiring within 30 days. Batches come
+  // soonest-expiring first, so those are a prefix of the 60-day list and the
+  // first 4 of them are among its first 4. daysLeft <= 30 is exactly
+  // expirationDate <= now + 30 days (daysLeft = ceil(days until expiry)).
+  const attentionExpiring = expiring ? { ...expiring, items: expiring.items.filter((b) => b.daysLeft <= 30) } : null;
+  return { today, trend, mtd, top, mix, low, expiring, stockValue, belowCost, queues, attentionExpiring };
+}
+
+async function loadManagerData(scope: DashboardScope) {
+  const p = scope.permissions;
+  const [today, trend, shifts, leaders, queues, low, expiring] = await Promise.all([
+    getTodayVsYesterday(scope),
+    getSalesTrend(scope, 7),
+    getOpenShifts(scope),
+    getStaffLeaderboard(scope, 5),
+    getQueues(scope),
+    p.inventory ? getLowStock(scope, 4) : null,
+    p.inventory ? getExpiring(scope, 30, 4) : null,
+  ]);
+  return { today, trend, shifts, leaders, queues, low, expiring };
+}
+
+async function loadPharmacistData(scope: DashboardScope) {
+  const p = scope.permissions;
+  const [expiring, low, rx, queues] = await Promise.all([
+    p.inventory ? getExpiring(scope, 60, 8) : null,
+    p.inventory ? getLowStock(scope, 8) : null,
+    getPendingPrescriptions(scope, 8),
+    getQueues(scope),
+  ]);
+  return { expiring, low, rx, queues };
+}
+
+async function loadCashierData(scope: DashboardScope) {
+  const [me, orders, hasOrderTakers] = await Promise.all([
+    getMyCounter(scope.session),
+    getWaitingOrders(scope.session),
+    branchHasOrderSenders(scope.session.tenantId, scope.session.storeId),
+  ]);
+  return { me, orders, hasOrderTakers };
+}
+
+async function loadOrderTakerData(scope: DashboardScope) {
+  return { mine: await getMyOrders(scope.session) };
+}
+
+export type DashboardData =
+  | { view: "owner"; data: Awaited<ReturnType<typeof loadOwnerData>> }
+  | { view: "manager"; data: Awaited<ReturnType<typeof loadManagerData>> }
+  | { view: "pharmacist"; data: Awaited<ReturnType<typeof loadPharmacistData>> }
+  | { view: "cashier"; data: Awaited<ReturnType<typeof loadCashierData>> }
+  | { view: "orderTaker"; data: Awaited<ReturnType<typeof loadOrderTakerData>> };
+
+export async function loadDashboardData(view: DashboardView, scope: DashboardScope): Promise<DashboardData> {
+  switch (view) {
+    case "owner":
+      return { view, data: await loadOwnerData(scope) };
+    case "manager":
+      return { view, data: await loadManagerData(scope) };
+    case "pharmacist":
+      return { view, data: await loadPharmacistData(scope) };
+    case "orderTaker":
+      return { view, data: await loadOrderTakerData(scope) };
+    case "cashier":
+      return { view, data: await loadCashierData(scope) };
+  }
+}
+
+export function OwnerDashboard({
+  scope,
+  info,
+  data,
+  branchRows,
+  plan,
+}: {
+  scope: DashboardScope;
+  info: HeroInfo;
+  data: Awaited<ReturnType<typeof loadOwnerData>>;
+  branchRows: { id: string; name: string; isCurrent: boolean; sales: number; transactions: number; lowStock: number; staff: number }[] | null;
+  plan: { name: string; detail: string | null } | null;
+}) {
+  const p = scope.permissions;
+  const { today, trend, mtd, top, mix, low, expiring, stockValue, belowCost, queues, attentionExpiring } = data;
 
   return (
     <div className="space-y-6">
@@ -398,7 +488,7 @@ export async function OwnerDashboard({
         <Card title="How customers pay" subtitle="Last 30 days">
           <PaymentMix rows={mix} />
         </Card>
-        <AttentionCard scope={scope} show={{ stock: p.inventory, expiry: p.inventory }} />
+        <AttentionCard scope={scope} queues={queues} low={low} expiring={attentionExpiring} />
       </div>
 
       <PriceCheckCard info={info} />
@@ -453,14 +543,9 @@ export async function OwnerDashboard({
 }
 
 // ─── Manager: running the branch today ──────────────────────────────────────
-export async function ManagerDashboard({ scope, info }: { scope: DashboardScope; info: HeroInfo }) {
+export function ManagerDashboard({ scope, info, data }: { scope: DashboardScope; info: HeroInfo; data: Awaited<ReturnType<typeof loadManagerData>> }) {
   const p = scope.permissions;
-  const [today, trend, shifts, leaders] = await Promise.all([
-    getTodayVsYesterday(scope),
-    getSalesTrend(scope, 7),
-    getOpenShifts(scope),
-    getStaffLeaderboard(scope, 5),
-  ]);
+  const { today, trend, shifts, leaders, queues, low, expiring } = data;
   return (
     <div className="space-y-6">
       <Hero
@@ -524,7 +609,7 @@ export async function ManagerDashboard({ scope, info }: { scope: DashboardScope;
         <Card title="Last 7 days" subtitle="Completed sales per day">
           <DailySalesBars days={trend.daily} />
         </Card>
-        <AttentionCard scope={scope} show={{ stock: p.inventory, expiry: p.inventory }} />
+        <AttentionCard scope={scope} queues={queues} low={low} expiring={expiring} />
       </div>
 
       <PriceCheckCard info={info} />
@@ -533,14 +618,9 @@ export async function ManagerDashboard({ scope, info }: { scope: DashboardScope;
 }
 
 // ─── Pharmacist & Pharmacy Tech: stock and prescriptions health ─────────────
-export async function PharmacistDashboard({ scope, info }: { scope: DashboardScope; info: HeroInfo }) {
+export function PharmacistDashboard({ scope, info, data }: { scope: DashboardScope; info: HeroInfo; data: Awaited<ReturnType<typeof loadPharmacistData>> }) {
   const p = scope.permissions;
-  const [expiring, low, rx, queues] = await Promise.all([
-    p.inventory ? getExpiring(scope, 60, 8) : null,
-    p.inventory ? getLowStock(scope, 8) : null,
-    getPendingPrescriptions(scope, 8),
-    getQueues(scope),
-  ]);
+  const { expiring, low, rx, queues } = data;
   const rxCount = p.prescriptions ? queues.prescriptions : 0;
   const attention = (expiring?.count ?? 0) + (low?.count ?? 0) + rxCount;
   const batches = p.inventory ? "/inventory?tab=batches" : undefined;
@@ -642,13 +722,9 @@ export async function PharmacistDashboard({ scope, info }: { scope: DashboardSco
 const methodLabel = (m: string) =>
   ({ CASH: "Cash", E_WALLET: "E-wallet", CREDIT_CARD: "Credit card", DEBIT_CARD: "Debit card", INSURANCE: "Insurance", CHECK: "Check", SPLIT: "Split" })[m] ?? m;
 
-export async function CashierDashboard({ scope, info }: { scope: DashboardScope; info: HeroInfo }) {
+export function CashierDashboard({ scope, info, data }: { scope: DashboardScope; info: HeroInfo; data: Awaited<ReturnType<typeof loadCashierData>> }) {
   const p = scope.permissions;
-  const [me, orders, hasOrderTakers] = await Promise.all([
-    getMyCounter(scope.session),
-    getWaitingOrders(scope.session),
-    branchHasOrderSenders(scope.session.tenantId, scope.session.storeId),
-  ]);
+  const { me, orders, hasOrderTakers } = data;
   const shift = me.shift;
   // Same parts the shift close adds up, so the total matches end-of-shift.
   const drawerRows = shift
@@ -780,8 +856,8 @@ export async function CashierDashboard({ scope, info }: { scope: DashboardScope;
 }
 
 // ─── Order taker: my orders today ───────────────────────────────────────────
-export async function OrderTakerDashboard({ scope, info }: { scope: DashboardScope; info: HeroInfo }) {
-  const mine = await getMyOrders(scope.session);
+export function OrderTakerDashboard({ scope, info, data }: { scope: DashboardScope; info: HeroInfo; data: Awaited<ReturnType<typeof loadOrderTakerData>> }) {
+  const { mine } = data;
   return (
     <div className="space-y-6">
       <Hero info={info} eyebrow="Orders you sent today">

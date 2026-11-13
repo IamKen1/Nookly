@@ -8,7 +8,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const session = await requirePagePermission("products");
   const { belowCost } = await searchParams;
 
-  const [tenant, categories] = await Promise.all([
+  const [tenant, categories, canEdit] = await Promise.all([
     prisma.tenant.findUnique({
       where: { id: session.tenantId },
       include: { subscription: { include: { plan: true } } },
@@ -17,6 +17,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       where: { tenantId: session.tenantId, isActive: true },
       orderBy: { name: "asc" },
     }),
+    hasPermission(session.tenantId, session.role, "products_edit"),
   ]);
 
   if (!tenant) return null;
@@ -27,7 +28,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         categories={categories.map((c) => ({ id: c.id, name: c.name }))}
         planName={tenant.subscription?.plan.name ?? ""}
         maxProducts={tenant.subscription?.plan.maxProducts ?? -1}
-        canEdit={await hasPermission(session.tenantId, session.role, "products_edit")}
+        canEdit={canEdit}
         initialBelowCost={belowCost === "1"}
       />
     </AppShell>

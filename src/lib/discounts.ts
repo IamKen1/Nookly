@@ -17,6 +17,12 @@ export const DEFAULT_DISCOUNTS = [
 export async function ensureDefaultDiscounts(tenantId: string) {
   const count = await prisma.discount.count({ where: { tenantId } });
   if (count > 0) return;
+  await seedDefaultDiscounts(tenantId);
+}
+
+// The insert half of ensureDefaultDiscounts, for a caller that has already
+// seen the tenant has no discounts. skipDuplicates keeps a concurrent seed harmless.
+export async function seedDefaultDiscounts(tenantId: string) {
   await prisma.discount.createMany({
     data: DEFAULT_DISCOUNTS.map((d) => ({ ...d, tenantId, kind: "PERCENT" })),
     skipDuplicates: true,

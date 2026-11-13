@@ -24,20 +24,21 @@ export default async function SalesPage({
   const status = asString(params.status);
   const search = asString(params.search).trim();
 
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: session.tenantId },
-    include: { subscription: { include: { plan: true } } },
-  });
-
-  if (!tenant) return null;
-
-  const [canVoid, permissions] = await Promise.all([
+  // None of these depend on each other, so they go out together.
+  // Roles limited to their own sales or own branch never see past `visibility`,
+  // even via the URL filters below.
+  const [tenant, canVoid, permissions, visibility, branchContext] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { id: session.tenantId },
+      include: { subscription: { include: { plan: true } } },
+    }),
     hasPermission(session.tenantId, session.role, "sales_void"),
     getRolePermissions(session.tenantId, session.role),
+    saleVisibilityWhere(session),
+    getBranchContext(session),
   ]);
-  // Roles limited to their own sales or own branch never see past that, even
-  // via the URL filters below.
-  const visibility = await saleVisibilityWhere(session);
+
+  if (!tenant) return null;
 
   const where: Prisma.SaleWhereInput = { tenantId: tenant.id, AND: [visibility] };
   if (dateFrom) where.saleDate = { ...(where.saleDate as object), gte: startOfDatePH(dateFrom) };
@@ -84,7 +85,6 @@ export default async function SalesPage({
     }),
   ]);
   const todayTotal = Number(todayAgg._sum.totalAmount ?? 0);
-  const branchContext = await getBranchContext(session);
 
   return (
     <AppShell tenantName={tenant.name} tenantId={tenant.id} planName={tenant.subscription?.plan.name} role={session.role}>

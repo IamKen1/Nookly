@@ -3,7 +3,7 @@ import type { SessionPayload } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { startOfTodayPH } from "@/lib/timezone";
 import { batchesAtStore } from "@/lib/branch-scope";
-import { getRolePermissions, saleVisibilityWhere, type PermissionModuleKey } from "@/lib/permissions";
+import { getRolePermissions, type PermissionModuleKey } from "@/lib/permissions";
 import { computeShiftReading } from "@/lib/shift-reading";
 import { parsePendingItems } from "@/lib/pending-orders";
 
@@ -29,15 +29,31 @@ export interface DashboardScope {
   saleWhere: Prisma.SaleWhereInput;
   // The branch stock figures are about; null = every branch.
   storeId: string | null;
+  // batchesAtStore(tenantId, storeId), already started when the scope was
+  // built so getExpiring doesn't wait on it. Absent → getExpiring fetches it.
+  batchesAtStoreWhere?: Promise<Prisma.ProductBatchWhereInput> | null;
 }
 
 export async function getDashboardScope(session: SessionPayload): Promise<DashboardScope> {
-  const [permissions, visibility] = await Promise.all([getRolePermissions(session.tenantId, session.role), saleVisibilityWhere(session)]);
+  // Started now, alongside the permissions read, rather than after it. Owners
+  // always see every branch (no store filter), so they never need it.
+  const atStore = session.role !== "OWNER" && session.storeId ? batchesAtStore(session.tenantId, session.storeId) : null;
+  // Awaited by getExpiring when used; never leave a rejection unhandled when it isn't.
+  atStore?.catch(() => {});
+  const permissions = await getRolePermissions(session.tenantId, session.role);
+  // Same filter saleVisibilityWhere builds, from the permissions already loaded
+  // here instead of loading them a second time.
+  const visibility: Prisma.SaleWhereInput = {
+    ...(permissions.sales_view_all ? {} : { OR: [{ userId: session.userId }, { orderTakerId: session.userId }] }),
+    ...(permissions.all_branches || !session.storeId ? {} : { storeId: session.storeId }),
+  };
+  const storeId = permissions.all_branches ? null : session.storeId;
   return {
     session,
     permissions,
     saleWhere: { tenantId: session.tenantId, status: "COMPLETED", ...visibility },
-    storeId: permissions.all_branches ? null : session.storeId,
+    storeId,
+    batchesAtStoreWhere: storeId ? atStore : null,
   };
 }
 
@@ -182,7 +198,7 @@ export async function getExpiring(scope: DashboardScope, withinDays = 60, take =
     quantity: { gt: 0 },
     expirationDate: { lte: until },
     product: { tenantId: scope.session.tenantId, isActive: true },
-    ...(scope.storeId ? await batchesAtStore(scope.session.tenantId, scope.storeId) : {}),
+    ...(scope.storeId ? await (scope.batchesAtStoreWhere ?? batchesAtStore(scope.session.tenantId, scope.storeId)) : {}),
   };
   const [count, expired, batches] = await Promise.all([
     prisma.productBatch.count({ where }),
@@ -382,7 +398,7 @@ export async function getPendingPrescriptions(scope: DashboardScope, take = 6) {
 // back to the product's cost price. Selling price honors branch prices.
 export async function getInventoryValue(scope: { session: { tenantId: string }; storeId: string | null }) {
   const tenantId = scope.session.tenantId;
-  const [stores, stocks, batches] = await Promise.all([
+  const [stores, stocks, batches, primary] = await Promise.all([
     prisma.store.findMany({
       where: { tenantId, isActive: true, ...(scope.storeId ? { id: scope.storeId } : {}) },
       orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
@@ -396,13 +412,13 @@ export async function getInventoryValue(scope: { session: { tenantId: string }; 
       where: { quantity: { gt: 0 }, product: { tenantId, isActive: true } },
       select: { productId: true, storeId: true, quantity: true, costPrice: true, expirationDate: true },
     }),
+    // Batches recorded before branches existed belong to the primary branch.
+    prisma.store.findFirst({
+      where: { tenantId },
+      orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
+      select: { id: true },
+    }),
   ]);
-  // Batches recorded before branches existed belong to the primary branch.
-  const primary = await prisma.store.findFirst({
-    where: { tenantId },
-    orderBy: [{ isMainBranch: "desc" }, { createdAt: "asc" }],
-    select: { id: true },
-  });
 
   const now = new Date();
   const batchesByKey = new Map<string, { quantity: number; cost: number; expired: boolean }[]>();
