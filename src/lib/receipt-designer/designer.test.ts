@@ -8,8 +8,8 @@ import { layoutReceipt } from "./layout";
 import { toPrintedLines, columnsFor } from "./textmode";
 import { sanitizeTemplate, designWarnings } from "./validate";
 import { resolveStyle } from "./style";
-import { newBlock, valueLine } from "./blocks";
-import type { Template } from "./types";
+import { breakApart, newBlock, newField, valueLine } from "./blocks";
+import type { Block, Template } from "./types";
 
 // ---------- sample sales ----------
 
@@ -178,6 +178,107 @@ for (const [name, data] of SAMPLES) {
   });
 }
 
+// Breaking every group apart must not change a single printed line.
+const brokenApart = (t: Template): Template => {
+  let n = 0;
+  return { ...t, blocks: t.blocks.flatMap((b) => breakApart(b, () => `x${n++}`)) };
+};
+
+for (const [name, data] of SAMPLES) {
+  test(`Nookly Classic broken into separate elements still prints exactly like today: ${name}`, () => {
+    const t = brokenApart(buildPreset("classic", data.store));
+    assert.ok(t.blocks.some((b) => b.type === "field"), "has separate elements");
+    assert.ok(!t.blocks.some((b) => b.type === "payment" || b.type === "saleDetails"), "no groups left");
+    const legacy = normalize(paperFromLegacy(generateThermalReceiptText(data)));
+    assert.deepEqual(normalize(paperFromDesign(t, data)), legacy);
+  });
+}
+
+test("every preset prints the same after breaking every group apart, at both widths", () => {
+  for (const key of ["chain", "compact", "promo"] as const) {
+    for (const width of [58, 80] as const) {
+      const t = buildPreset(key, store(), width);
+      for (const [name, data] of SAMPLES) {
+        const a = toPrintedLines(layoutReceipt(t, data), width).map((l) => (l.kind === "text" ? `${l.align}|${l.bold}|${l.sizeH}|${l.text}` : l.kind));
+        const b = toPrintedLines(layoutReceipt(brokenApart(t), data), width).map((l) => (l.kind === "text" ? `${l.align}|${l.bold}|${l.sizeH}|${l.text}` : l.kind));
+        assert.deepEqual(b.filter((x) => !/\|\s*$/.test(x)), a.filter((x) => !/\|\s*$/.test(x)), `${key} ${width}mm ${name}`);
+      }
+    }
+  }
+});
+
+test("a single value can go anywhere: subtotal after the total, date at the very bottom", () => {
+  const t = buildPreset("compact", store());
+  const footer = t.blocks.findIndex((b) => b.type === "footer");
+  t.blocks.splice(footer, 0, newField("grossTotal"), newField("dateTime", { layout: "value", align: "center" }));
+  const lines = paperFromDesign(t, sale()).map((l) => l.text);
+  const total = lines.findIndex((l) => l.startsWith("TOTAL:"));
+  const subtotal = lines.findIndex((l) => l.startsWith("Subtotal:"));
+  assert.ok(total >= 0 && subtotal > total, "subtotal prints after the total");
+  const dated = paperFromDesign(t, sale()).find((l) => /\d{1,2}\/\d{1,2}\/\d{4} \d{2}:\d{2}/.test(l.text))!;
+  assert.equal(dated.align, "center");
+});
+
+test("total items: pieces (2 + 10 = 12) or products (2 lines)", () => {
+  const items = newBlock("items");
+  if (items.type !== "items") throw new Error();
+  const t = (countMode: "pieces" | "products"): Template => ({ version: 1, paperWidth: 58, printMode: "TEXT", theme: { style: {} }, blocks: [{ ...items, countMode }] });
+  assert.equal(items.countMode, "pieces", "new Items blocks count pieces");
+  assert.ok(paperFromDesign(t("pieces"), sale()).some((l) => l.text === "Total Items: 12"));
+  assert.ok(paperFromDesign(t("products"), sale()).some((l) => l.text === "Total Items: 2"));
+  const asField = (key: "quantity" | "itemCount"): Template => ({ ...t("pieces"), blocks: [newField(key, { layout: "inline" })] });
+  assert.ok(paperFromDesign(asField("quantity"), sale()).some((l) => l.text === "Total Items: 12"));
+  assert.ok(paperFromDesign(asField("itemCount"), sale()).some((l) => l.text === "Products: 2"));
+});
+
+test("field layouts, label tokens, and values that don't apply", () => {
+  const one = (f: Block): Template => ({ version: 1, paperWidth: 58, printMode: "TEXT", theme: { style: {} }, blocks: [f] });
+  const text = (f: Block, data = sale()) => paperFromDesign(one(f), data).map((l) => l.text).filter((l) => l.trim() && !l.includes("BIR") && !/^ited|^voice/.test(l));
+  assert.deepEqual(text(newField("totalDue", { label: "TOTAL:" })), [`TOTAL:${" ".repeat(32 - 6 - 6)}₱45.50`]);
+  assert.deepEqual(text(newField("totalDue", { label: "TOTAL:", layout: "inline" })), ["TOTAL: ₱45.50"]);
+  assert.deepEqual(text(newField("totalDue", { layout: "value", align: "right" })), ["₱45.50"]);
+  const points = sale({ loyalty: { pointsRedeemed: 20, pointsAmount: 20, pointsEarned: 0, balanceAfter: 31 } });
+  assert.deepEqual(text(newField("pointsUsed", { minus: true }), points), [`Points used (20):${" ".repeat(32 - 17 - 7)}-₱20.00`]);
+  assert.deepEqual(text(newField("discount", { label: "Less {discountName} {discountRate}:", minus: true }), scSale), [`Less Senior Citizen 20%:${" ".repeat(32 - 24 - 6)}-₱8.82`]);
+  assert.deepEqual(text(newField("pointsUsed"), sale()), [], "no points on this sale → nothing printed");
+  assert.deepEqual(text(newField("customer"), sale()), [], "no customer → nothing printed");
+  assert.deepEqual(text(newField("change", { hideWhenZero: true }), sale({ changeGiven: 0 })), []);
+});
+
+test("any value can also be a line inside a group", () => {
+  const totals = newBlock("totals");
+  if (totals.type !== "totals") throw new Error();
+  totals.lines = [valueLine("receiptNo"), valueLine("cashier"), valueLine("quantity", { layout: "inline" })];
+  const t: Template = { version: 1, paperWidth: 58, printMode: "TEXT", theme: { style: {} }, blocks: [totals] };
+  const lines = paperFromDesign(t, sale()).map((l) => l.text);
+  assert.ok(lines.some((l) => l.startsWith("AR No:") && l.endsWith("AR-20261118-0007")));
+  assert.ok(lines.some((l) => l.startsWith("Cashier:") && l.endsWith("Ana Reyes")));
+  assert.ok(lines.includes("Total Items: 12"));
+});
+
+test("validation keeps field elements and checks their labels", () => {
+  const { template, errors } = sanitizeTemplate({
+    blocks: [
+      { type: "field", key: "quantity", label: "Pcs:", layout: "inline", hideWhenZero: true, junk: 1 },
+      { type: "field", key: "notAField" },
+      { type: "items", countMode: "products" },
+      { type: "items", countMode: "weird" },
+      { type: "totals", lines: [{ kind: "value", key: "date", layout: "value", align: "right" }] },
+    ],
+  });
+  assert.deepEqual(errors, []);
+  assert.equal(template.blocks.length, 4);
+  const [field, a, b, totals] = template.blocks;
+  assert.ok(field.type === "field" && field.key === "quantity" && field.layout === "inline" && field.hideWhenZero && !("junk" in field));
+  assert.ok(a.type === "items" && a.countMode === "products");
+  assert.ok(b.type === "items" && b.countMode === "pieces");
+  assert.ok(totals.type === "totals" && totals.lines[0].kind === "value" && totals.lines[0].layout === "value" && totals.lines[0].align === "right");
+  assert.equal(sanitizeTemplate({ blocks: [{ type: "field", key: "totalDue", label: "OFFICIAL RECEIPT TOTAL" }] }).errors.length, 1);
+  // separate elements satisfy the warnings too
+  const fieldsOnly: Template = { version: 1, paperWidth: 58, printMode: "TEXT", theme: { style: {} }, blocks: [newField("receiptNo"), newField("discount"), newField("vatExemptSales"), newField("totalDue"), newBlock("scPwd")] };
+  assert.deepEqual(designWarnings(fieldsOnly), []);
+});
+
 test("columns per paper width, font and size", () => {
   assert.equal(columnsFor(58, "A", 1), 32);
   assert.equal(columnsFor(58, "B", 1), 42);
@@ -234,7 +335,7 @@ test("totals lines: values come from the sale, minus and hide-when-zero work", (
   const t: Template = { version: 1, paperWidth: 58, printMode: "TEXT", theme: { style: {} }, blocks: [totals] };
 
   const plain = paperFromDesign(t, sale()).map((l) => l.text);
-  assert.ok(plain.some((l) => l.startsWith("Total Sales:") && l.endsWith("₱45.50")));
+  assert.ok(plain.some((l) => l.startsWith("Subtotal:") && l.endsWith("₱45.50")));
   assert.ok(!plain.some((l) => l.startsWith("Less: Discount:")), "zero discount hidden");
   assert.ok(!plain.some((l) => l.startsWith("VAT-Exempt")), "zero VAT-exempt hidden");
   assert.ok(!plain.some((l) => l.startsWith("Ref No:")), "no e-wallet ref on a cash sale");

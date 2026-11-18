@@ -72,7 +72,8 @@ export interface SaleDetailField {
   label: string;
 }
 
-// Values the Totals block can show, all read from the saved sale.
+// Every value a receipt can show (see totals.ts), all read from the saved
+// sale. Each can be its own element anywhere, or a line inside a group.
 export type TotalsKey =
   | "grossTotal"
   | "vatableGross"
@@ -92,10 +93,39 @@ export type TotalsKey =
   | "amountPaid"
   | "cash"
   | "change"
-  | "ewalletRef";
+  | "ewalletRef"
+  | "receiptNo"
+  | "date"
+  | "time"
+  | "dateTime"
+  | "cashier"
+  | "customer"
+  | "branch"
+  | "paymentMethod"
+  | "discountName"
+  | "discountRate"
+  | "discountHolder"
+  | "discountIdNumber"
+  | "pointsEarned"
+  | "pointsBalance";
+export type FieldKey = TotalsKey;
+
+// How one value sits on its line:
+// pair = label left, value right · inline = "Label: value" · value = the value alone.
+export type FieldLayout = "pair" | "inline" | "value";
 
 export type TotalsLine =
-  | { id: string; kind: "value"; key: TotalsKey; label: string; style: Style; minus: boolean; hideWhenZero: boolean }
+  | {
+      id: string;
+      kind: "value";
+      key: TotalsKey;
+      label: string;
+      style: Style;
+      minus: boolean;
+      hideWhenZero: boolean;
+      layout?: FieldLayout; // pair when unset
+      align?: Align; // for inline / value layouts
+    }
   | { id: string; kind: "heading"; text: string; align: Align; style: Style }
   | { id: string; kind: "rule"; char: RuleChar }
   // The standard step-by-step computation (Total Sales → Less VAT → Less
@@ -120,6 +150,16 @@ export type Block =
       showGenericName: boolean;
       showItemCount: boolean;
       itemCountLabel: string;
+      countMode: "pieces" | "products"; // pieces: 2 + 2 = 4 · products: 2 lines = 2
+    })
+  // One value, anywhere on the receipt.
+  | (BlockBase & {
+      type: "field";
+      key: FieldKey;
+      label: string;
+      layout: FieldLayout;
+      minus: boolean;
+      hideWhenZero: boolean;
     })
   | (BlockBase & { type: "totals"; lines: TotalsLine[] })
   | (BlockBase & { type: "scPwd"; titleStyle: Style })

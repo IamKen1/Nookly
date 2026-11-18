@@ -1,4 +1,4 @@
-import type { Align, Block, BlockType, PaperWidth, PrintMode, RuleChar, SaleDetailField, Style, Template, Theme, TotalsLine } from "./types";
+import type { Align, Block, BlockType, FieldLayout, PaperWidth, PrintMode, RuleChar, SaleDetailField, Style, Template, Theme, TotalsLine } from "./types";
 import { IMAGE_FONTS, TEMPLATE_VERSION } from "./types";
 import { newBlock, newId, DEFAULT_SALE_DETAILS } from "./blocks";
 import { TOTALS_FIELDS } from "./totals";
@@ -10,8 +10,9 @@ import { TOTALS_FIELDS } from "./totals";
 const LIMITS = { blocks: 60, totalsLines: 40, text: 500, label: 60, qr: 300 };
 const BLOCK_TYPES: BlockType[] = [
   "logo", "storeInfo", "title", "saleDetails", "items", "totals", "scPwd", "payment",
-  "loyalty", "remarks", "text", "qr", "barcode", "rule", "footer",
+  "loyalty", "remarks", "text", "qr", "barcode", "rule", "footer", "field",
 ];
+const LAYOUTS: FieldLayout[] = ["pair", "inline", "value"];
 const RULE_CHARS: RuleChar[] = ["-", "=", ".", "*", " "];
 const ALIGNS: Align[] = ["left", "center", "right"];
 
@@ -67,6 +68,8 @@ function sanitizeTotalsLine(v: unknown): TotalsLine | null {
         style: sanitizeStyle(v.style),
         minus: bool(v.minus, false),
         hideWhenZero: bool(v.hideWhenZero, false),
+        ...(LAYOUTS.includes(v.layout as FieldLayout) ? { layout: v.layout as FieldLayout } : {}),
+        ...(ALIGNS.includes(v.align as Align) ? { align: v.align as Align } : {}),
       };
     }
     default:
@@ -127,7 +130,21 @@ function sanitizeBlock(v: unknown): Block | null {
         showGenericName: bool(v.showGenericName, d.showGenericName),
         showItemCount: bool(v.showItemCount, d.showItemCount),
         itemCountLabel: str(v.itemCountLabel, LIMITS.label, d.itemCountLabel),
+        countMode: oneOf(v.countMode, ["pieces", "products"] as const, d.countMode),
       };
+    case "field": {
+      if (typeof v.key !== "string" || !(v.key in TOTALS_FIELDS)) return null;
+      const key = v.key as keyof typeof TOTALS_FIELDS;
+      return {
+        ...d,
+        ...common,
+        key,
+        label: typeof v.label === "string" ? v.label.slice(0, LIMITS.label) : TOTALS_FIELDS[key].label,
+        layout: oneOf(v.layout, LAYOUTS, "pair"),
+        minus: bool(v.minus, false),
+        hideWhenZero: bool(v.hideWhenZero, false),
+      };
+    }
     case "totals": {
       const lines = Array.isArray(v.lines) ? v.lines.slice(0, LIMITS.totalsLines).map(sanitizeTotalsLine).filter((l): l is TotalsLine => l !== null) : d.lines;
       return { ...d, ...common, lines };
@@ -206,6 +223,7 @@ function designTexts(t: Template): string[] {
     if (b.type === "remarks") out.push(b.heading);
     if (b.type === "items") out.push(b.headerLeft, b.headerRight, b.itemCountLabel);
     if (b.type === "saleDetails") b.fields.forEach((f) => out.push(f.label));
+    if (b.type === "field") out.push(b.label);
     if (b.type === "totals") b.lines.forEach((l) => (l.kind === "value" ? out.push(l.label) : l.kind === "heading" ? out.push(l.text) : null));
   }
   return out.filter(Boolean);
@@ -216,14 +234,16 @@ export function designWarnings(t: Template): string[] {
   const warnings: string[] = [];
   const visible = t.blocks.filter((b) => b.visible);
   const lines = visible.flatMap((b) => (b.type === "totals" ? b.lines : []));
-  const hasLine = (key: string) => lines.some((l) => l.kind === "value" && l.key === key);
+  // A value counts whether it's a line in a group or its own element.
+  const hasLine = (key: string) =>
+    lines.some((l) => l.kind === "value" && l.key === key) || visible.some((b) => b.type === "field" && b.key === key);
   const hasComputation = lines.some((l) => l.kind === "computation");
   if (!hasLine("totalDue")) warnings.push("There's no Total amount due line. Customers won't see what they paid.");
   if (!hasComputation && !hasLine("discount")) warnings.push("SC/PWD sales won't show the discount. The law expects it on the receipt.");
   if (!hasComputation && !hasLine("vatExemptSales") && !hasLine("vatRemoved"))
     warnings.push("SC/PWD sales won't show the VAT exemption. The law expects it on the receipt.");
   if (!visible.some((b) => b.type === "scPwd")) warnings.push("There's no SC/PWD info block, so SC/PWD receipts won't have the name, ID and signature lines.");
-  if (!visible.some((b) => b.type === "saleDetails" && b.fields.some((f) => f.key === "receiptNo" && f.visible)))
+  if (!visible.some((b) => b.type === "saleDetails" && b.fields.some((f) => f.key === "receiptNo" && f.visible)) && !hasLine("receiptNo"))
     warnings.push("The AR number isn't shown. It's needed to look up the sale for returns and reprints.");
   if (t.printMode === "IMAGE") warnings.push("Image mode prints slower, especially over Bluetooth (several seconds per receipt).");
   return warnings;

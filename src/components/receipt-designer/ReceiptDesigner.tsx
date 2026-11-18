@@ -34,7 +34,8 @@ import {
 } from "lucide-react";
 import type { ReceiptData, ReceiptStoreSettings } from "@/types/receipt";
 import type { Block, BlockType, Template } from "@/lib/receipt-designer/types";
-import { BLOCK_LABELS, newBlock } from "@/lib/receipt-designer/blocks";
+import { BLOCK_LABELS, breakApart, newBlock, newField } from "@/lib/receipt-designer/blocks";
+import { FIELDS_BY_NAME, TOTALS_FIELDS } from "@/lib/receipt-designer/totals";
 import { PRESETS, buildPreset } from "@/lib/receipt-designer/presets";
 import { SAMPLE_KINDS } from "@/lib/receipt-designer/samples";
 import { designWarnings, sanitizeTemplate } from "@/lib/receipt-designer/validate";
@@ -45,9 +46,37 @@ import StyleEditor from "./StyleEditor";
 
 type SaveState = "saved" | "saving" | "unsaved" | "error";
 
-const PALETTE: BlockType[] = ["logo", "storeInfo", "title", "saleDetails", "items", "totals", "scPwd", "payment", "loyalty", "remarks", "text", "qr", "barcode", "rule", "footer"];
-
 const uid = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `b${Date.now()}${Math.random().toString(36).slice(2)}`);
+
+// What can be added to the receipt. Elements are single things (any value from
+// the sale, text, logo, QR…); groups are shortcuts that can be broken apart.
+interface PaletteEntry {
+  id: string;
+  label: string;
+  make: () => Block;
+}
+const block = (type: BlockType, label = BLOCK_LABELS[type]): PaletteEntry => ({ id: `block:${type}`, label, make: () => newBlock(type, uid()) });
+const ELEMENTS: PaletteEntry[] = [
+  ...FIELDS_BY_NAME.map((k) => ({ id: `field:${k}`, label: TOTALS_FIELDS[k].name, make: () => newField(k, {}, uid()) })),
+  block("text"),
+  block("logo"),
+  block("qr"),
+  block("barcode", "Barcode (AR number)"),
+  block("rule"),
+  block("storeInfo"),
+  block("title"),
+  block("items", "Items list"),
+  block("scPwd"),
+  block("remarks"),
+  block("footer"),
+  {
+    id: "computation",
+    label: "Standard computation (step by step)",
+    make: (): Block => ({ ...(newBlock("totals", uid()) as Extract<Block, { type: "totals" }>), lines: [{ id: uid(), kind: "computation" as const, style: {} }] }),
+  },
+].sort((a, b) => a.label.localeCompare(b.label));
+const GROUPS: PaletteEntry[] = [block("totals", "Totals"), block("saleDetails"), block("payment"), block("loyalty")];
+const ENTRIES = new Map([...ELEMENTS, ...GROUPS].map((e) => [e.id, e]));
 
 // Gives a block (and its totals lines) fresh ids, for duplicates and presets.
 const withFreshIds = (b: Block): Block =>
@@ -65,6 +94,8 @@ function blockSummary(b: Block): string {
       return b.content ? b.content.replace(/^https?:\/\//, "").slice(0, 24) : "no link yet";
     case "rule":
       return b.char === " " ? "blank line" : b.char.repeat(6);
+    case "field":
+      return b.label ? `"${b.label}"` : "value only";
     default:
       return "";
   }
@@ -85,7 +116,8 @@ export default function ReceiptDesigner() {
   const [sampleError, setSampleError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
-  const [dragType, setDragType] = useState<BlockType | null>(null);
+  const [dragType, setDragType] = useState<string | null>(null); // label of what's being dragged in
+  const [paletteSearch, setPaletteSearch] = useState("");
   const loaded = useRef(false);
   // The design in use, to skip saving a "draft" that's identical to it.
   const publishedJson = useRef<string | null>(null);
@@ -170,9 +202,9 @@ export default function ReceiptDesigner() {
     setMessage(null);
   };
   const updateBlock = (b: Block) => template && change({ ...template, blocks: template.blocks.map((x) => (x.id === b.id ? b : x)) });
-  const insertBlock = (type: BlockType, index?: number) => {
+  const insertBlock = (make: () => Block, index?: number) => {
     if (!template) return;
-    const b = newBlock(type, uid());
+    const b = make();
     const at = index ?? (selectedId ? template.blocks.findIndex((x) => x.id === selectedId) + 1 : template.blocks.length);
     const blocks = [...template.blocks];
     blocks.splice(at < 0 ? blocks.length : at, 0, b);
@@ -281,7 +313,7 @@ export default function ReceiptDesigner() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const onDragStart = (e: DragStartEvent) => {
     const id = String(e.active.id);
-    setDragType(id.startsWith("new:") ? (id.slice(4) as BlockType) : null);
+    setDragType(id.startsWith("new:") ? ENTRIES.get(id.slice(4))?.label ?? null : null);
   };
   const onDragEnd = (e: DragEndEvent) => {
     setDragType(null);
@@ -289,8 +321,10 @@ export default function ReceiptDesigner() {
     const activeId = String(e.active.id);
     const overId = String(e.over.id);
     if (activeId.startsWith("new:")) {
+      const entry = ENTRIES.get(activeId.slice(4));
+      if (!entry) return;
       const index = overId === "layers-end" ? template.blocks.length : template.blocks.findIndex((b) => b.id === overId);
-      insertBlock(activeId.slice(4) as BlockType, index < 0 ? template.blocks.length : index);
+      insertBlock(entry.make, index < 0 ? template.blocks.length : index);
       return;
     }
     if (activeId === overId || overId === "layers-end") return;
@@ -405,10 +439,22 @@ export default function ReceiptDesigner() {
           {/* left: palette + layers */}
           <aside className="flex w-64 shrink-0 flex-col border-r border-zinc-200 bg-white">
             <div className="border-b border-zinc-100 p-3">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Add a block (click or drag)</p>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Add anything (click or drag)</p>
+              <input
+                value={paletteSearch}
+                onChange={(e) => setPaletteSearch(e.target.value)}
+                placeholder="Search: subtotal, total items, date…"
+                className="mb-2 h-8 w-full rounded-md border border-zinc-200 px-2 text-xs outline-none focus:border-emerald-500"
+              />
+              <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                {ELEMENTS.filter((e) => e.label.toLowerCase().includes(paletteSearch.trim().toLowerCase())).map((e) => (
+                  <PaletteItem key={e.id} entry={e} onAdd={() => insertBlock(e.make)} />
+                ))}
+              </div>
+              <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Group shortcuts</p>
               <div className="grid grid-cols-2 gap-1.5">
-                {PALETTE.map((t) => (
-                  <PaletteItem key={t} type={t} onAdd={() => insertBlock(t)} />
+                {GROUPS.map((e) => (
+                  <PaletteItem key={e.id} entry={e} onAdd={() => insertBlock(e.make)} />
                 ))}
               </div>
             </div>
@@ -456,7 +502,20 @@ export default function ReceiptDesigner() {
           {/* right: inspector */}
           <aside className="w-80 shrink-0 overflow-y-auto border-l border-zinc-200 bg-white p-4">
             {selected ? (
-              <Inspector key={selected.id} block={selected} printMode={template.printMode} onChange={updateBlock} />
+              <Inspector
+                key={selected.id}
+                block={selected}
+                printMode={template.printMode}
+                onChange={updateBlock}
+                onBreakApart={() => {
+                  const i = template.blocks.findIndex((x) => x.id === selected.id);
+                  const parts = breakApart(selected, uid);
+                  const blocks = [...template.blocks];
+                  blocks.splice(i, 1, ...parts);
+                  change({ ...template, blocks });
+                  setSelectedId(parts.find((p) => p.type === "field")?.id ?? parts[0]?.id ?? null);
+                }}
+              />
             ) : (
               <div className="space-y-5">
                 <div>
@@ -535,13 +594,13 @@ export default function ReceiptDesigner() {
           </aside>
         </div>
       </div>
-      <DragOverlay>{dragType ? <div className="rounded-md border border-emerald-400 bg-white px-3 py-1.5 text-xs font-semibold shadow-lg">{BLOCK_LABELS[dragType]}</div> : null}</DragOverlay>
+      <DragOverlay>{dragType ? <div className="rounded-md border border-emerald-400 bg-white px-3 py-1.5 text-xs font-semibold shadow-lg">{dragType}</div> : null}</DragOverlay>
     </DndContext>
   );
 }
 
-function PaletteItem({ type, onAdd }: { type: BlockType; onAdd: () => void }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `new:${type}` });
+function PaletteItem({ entry, onAdd }: { entry: PaletteEntry; onAdd: () => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `new:${entry.id}` });
   return (
     <button
       ref={setNodeRef}
@@ -549,9 +608,10 @@ function PaletteItem({ type, onAdd }: { type: BlockType; onAdd: () => void }) {
       onClick={onAdd}
       {...attributes}
       {...listeners}
-      className={`touch-none rounded-md border px-2 py-1.5 text-left text-xs font-medium ${isDragging ? "border-emerald-400 opacity-50" : "border-zinc-200 text-zinc-700 hover:border-emerald-300 hover:bg-emerald-50"}`}
+      className={`block w-full touch-none truncate rounded-md border px-2 py-1.5 text-left text-xs font-medium ${isDragging ? "border-emerald-400 opacity-50" : "border-zinc-200 text-zinc-700 hover:border-emerald-300 hover:bg-emerald-50"}`}
+      title={entry.label}
     >
-      {BLOCK_LABELS[type]}
+      {entry.label}
     </button>
   );
 }
@@ -590,7 +650,7 @@ function LayerRow({
         <GripVertical className="h-4 w-4" />
       </button>
       <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
-        <span className="block truncate text-sm text-zinc-800">{BLOCK_LABELS[block.type]}</span>
+        <span className="block truncate text-sm text-zinc-800">{block.type === "field" ? TOTALS_FIELDS[block.key].name : BLOCK_LABELS[block.type]}</span>
         {summary && <span className="block truncate text-[11px] text-zinc-400">{summary}</span>}
       </button>
       <button type="button" onClick={onToggle} className="p-1 text-zinc-400 hover:text-zinc-700" title={block.visible ? "Hide" : "Show"}>

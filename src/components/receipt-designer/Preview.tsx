@@ -72,9 +72,15 @@ ${selectedId ? `.rd-preview [data-block="${selectedId.replace(/"/g, "")}"]{backg
         {template.printMode === "TEXT" ? (
           <div
             className="overflow-hidden"
-            // Courier is 0.6em per character: fills the paper with exactly 32 (58mm) or 48 (80mm) columns.
-            style={{ fontSize: (paperPx - 8) / (0.6 * (template.paperWidth === 58 ? 32 : 48)) }}
-            dangerouslySetInnerHTML={{ __html: textHtml.replace('class="r-paper r-text"', 'class="r-paper r-text" style="width:100%"') }}
+            // Courier is 0.6em per character: this size fills the paper (minus its 8px padding) with
+            // exactly 32 (58mm) or 48 (80mm) columns. Set on the receipt element itself, so the
+            // shared receipt CSS can't shrink it and leave the text bunched to the left.
+            dangerouslySetInnerHTML={{
+              __html: textHtml.replace(
+                'class="r-paper r-text"',
+                `class="r-paper r-text" style="width:100%;font-size:${((paperPx - 8) / (0.6 * (template.paperWidth === 58 ? 32 : 48))).toFixed(3)}px"`
+              ),
+            }}
           />
         ) : imageError ? (
           <p className="p-3 text-xs text-red-600">Preview failed: {imageError}</p>

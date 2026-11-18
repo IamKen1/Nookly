@@ -33,7 +33,8 @@ function classic(settings: ReceiptStoreSettings): Block[] {
     rule(),
     details,
     rule(),
-    make("items"),
+    // Today's receipt counts products (lines); owners can switch to pieces.
+    make("items", { countMode: "products" }),
     rule(),
     make("totals"),
     make("scPwd"),

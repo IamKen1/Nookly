@@ -5,9 +5,9 @@ import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, ChevronRight, GripVertical, Plus, Trash2 } from "lucide-react";
-import type { Align, Block, PrintMode, RuleChar, SaleDetailField, StoreField, TotalsKey, TotalsLine } from "@/lib/receipt-designer/types";
-import { TOTALS_FIELDS, TOTALS_KEYS } from "@/lib/receipt-designer/totals";
-import { BLOCK_LABELS, newId, valueLine } from "@/lib/receipt-designer/blocks";
+import type { Align, Block, FieldLayout, PrintMode, RuleChar, SaleDetailField, StoreField, TotalsKey, TotalsLine } from "@/lib/receipt-designer/types";
+import { FIELDS_BY_NAME, LABEL_TOKENS, TOTALS_FIELDS } from "@/lib/receipt-designer/totals";
+import { BLOCK_LABELS, CAN_BREAK_APART, newId, valueLine } from "@/lib/receipt-designer/blocks";
 import StyleEditor from "./StyleEditor";
 
 const input = "h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 outline-none focus:border-emerald-500";
@@ -105,18 +105,32 @@ export default function Inspector({
   block,
   printMode,
   onChange,
+  onBreakApart,
 }: {
   block: Block;
   printMode: PrintMode;
   onChange: (block: Block) => void;
+  onBreakApart?: () => void;
 }) {
   const set = (patch: Partial<Block>) => onChange({ ...block, ...patch } as Block);
 
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{BLOCK_LABELS[block.type]}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          {block.type === "field" ? TOTALS_FIELDS[block.key].name : BLOCK_LABELS[block.type]}
+        </p>
         <Check checked={block.visible} onChange={(v) => set({ visible: v })} label="Show this block" />
+        {onBreakApart && CAN_BREAK_APART.includes(block.type) && (
+          <button
+            type="button"
+            onClick={onBreakApart}
+            className="mt-2 w-full rounded-md border border-dashed border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+            title="Turn each line into its own element you can move anywhere"
+          >
+            {block.type === "items" ? "Separate the item count from the list" : "Break apart into separate elements"}
+          </button>
+        )}
       </div>
 
       <TypeFields block={block} printMode={printMode} onChange={onChange} />
@@ -233,6 +247,12 @@ function TypeFields({ block, printMode, onChange }: { block: Block; printMode: P
           <Check checked={block.showItemCount} onChange={(v) => set({ showItemCount: v })} label="Item count line" />
           {block.showItemCount && (
             <>
+              <Field label="Count">
+                <select className={input} value={block.countMode} onChange={(e) => set({ countMode: e.target.value as "pieces" | "products" })}>
+                  <option value="pieces">Pieces (2 Biogesic + 2 Alaxan = 4)</option>
+                  <option value="products">Products (2 Biogesic + 2 Alaxan = 2)</option>
+                </select>
+              </Field>
               <input className={input} value={block.itemCountLabel} onChange={(e) => set({ itemCountLabel: e.target.value })} />
               <Check checked={block.countRule} onChange={(v) => set({ countRule: v })} label="Divider above the count" />
             </>
@@ -337,6 +357,15 @@ function TypeFields({ block, printMode, onChange }: { block: Block; printMode: P
         </Field>
       );
 
+    case "field":
+      return (
+        <FieldOptions
+          showAlign={false}
+          value={{ key: block.key, label: block.label, layout: block.layout, align: block.align, minus: block.minus, hideWhenZero: block.hideWhenZero }}
+          onChange={(patch) => set(patch as Partial<Block>)}
+        />
+      );
+
     case "footer":
       return (
         <div className="space-y-2">
@@ -352,10 +381,66 @@ function TypeFields({ block, printMode, onChange }: { block: Block; printMode: P
 
 // ---------- Totals: lines the owner picks, orders, names and styles ----------
 
-const GROUPS = ["Before discount", "Discount", "Breakdown", "Due", "Payment"] as const;
+interface FieldValue {
+  key: TotalsKey;
+  label: string;
+  layout: FieldLayout;
+  align: Align;
+  minus: boolean;
+  hideWhenZero: boolean;
+}
+
+// What one value shows and how it sits on its line. Used for a value inside a
+// group and for a value that's its own element.
+function FieldOptions({ value, onChange, showAlign = true }: { value: FieldValue; onChange: (patch: Partial<FieldValue>) => void; showAlign?: boolean }) {
+  const f = TOTALS_FIELDS[value.key];
+  return (
+    <div className="space-y-2">
+      <Field label="Shows">
+        <select
+          className={input}
+          value={value.key}
+          onChange={(e) => {
+            const key = e.target.value as TotalsKey;
+            // Keep a label the owner typed; follow the new value's own label otherwise.
+            onChange({ key, ...(value.label === f.label ? { label: TOTALS_FIELDS[key].label } : {}) });
+          }}
+        >
+          {FIELDS_BY_NAME.map((k) => (
+            <option key={k} value={k}>
+              {TOTALS_FIELDS[k].name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Label">
+        <input className={input} value={value.label} placeholder="(no label)" onChange={(e) => onChange({ label: e.target.value })} />
+      </Field>
+      <p className="text-[11px] text-zinc-400">
+        Can include {LABEL_TOKENS.map((t) => `${t.token} (${t.name})`).join(", ")}.
+      </p>
+      <Field label="Line">
+        <select className={input} value={value.layout} onChange={(e) => onChange({ layout: e.target.value as FieldLayout })}>
+          <option value="pair">Label left, value right</option>
+          <option value="inline">Label: value</option>
+          <option value="value">Value only</option>
+        </select>
+      </Field>
+      {showAlign && value.layout !== "pair" && (
+        <div>
+          <AlignButtons value={value.align} onChange={(align) => onChange({ align })} />
+        </div>
+      )}
+      {f.format === "money" && <Check checked={value.minus} onChange={(v) => onChange({ minus: v })} label="Show as minus (−₱)" />}
+      {f.format !== "text" && <Check checked={value.hideWhenZero} onChange={(v) => onChange({ hideWhenZero: v })} label="Hide when zero" />}
+      <p className="text-[11px] text-zinc-400">Prints only on sales where it applies (e.g. points only on sales with points).</p>
+    </div>
+  );
+}
+
 
 function lineTitle(l: TotalsLine) {
-  if (l.kind === "value") return l.label || TOTALS_FIELDS[l.key].label;
+  if (l.kind === "value") return l.label || TOTALS_FIELDS[l.key].name;
   if (l.kind === "heading") return l.text || "Heading";
   if (l.kind === "rule") return `Divider ${l.char === " " ? "(blank)" : l.char.repeat(4)}`;
   return "Standard computation (step by step)";
@@ -412,15 +497,11 @@ function TotalsEditor({ lines, printMode, onChange }: { lines: TotalsLine[]; pri
       <div className="flex items-center gap-2">
         <Plus className="h-4 w-4 text-emerald-600" />
         <select className={input} value={adding} onChange={(e) => add(e.target.value)}>
-          <option value="">Add a line…</option>
-          {GROUPS.map((g) => (
-            <optgroup key={g} label={g}>
-              {TOTALS_KEYS.filter((k) => TOTALS_FIELDS[k].group === g).map((k) => (
-                <option key={k} value={k}>
-                  {TOTALS_FIELDS[k].label.replace(/:$/, "")}
-                </option>
-              ))}
-            </optgroup>
+          <option value="">Add a line (any value)…</option>
+          {FIELDS_BY_NAME.map((k) => (
+            <option key={k} value={k}>
+              {TOTALS_FIELDS[k].name}
+            </option>
           ))}
           <optgroup label="Layout">
             <option value="heading">Heading (e.g. VAT BREAKDOWN)</option>
@@ -461,8 +542,8 @@ function TotalsLineRow({
         </button>
         <button type="button" onClick={onToggle} className="min-w-0 flex-1 truncate text-left text-sm text-zinc-800">
           {lineTitle(line)}
-          {line.kind === "value" && line.label !== TOTALS_FIELDS[line.key].label && (
-            <span className="ml-1 text-[11px] text-zinc-400">({TOTALS_FIELDS[line.key].label.replace(/:$/, "")})</span>
+          {line.kind === "value" && line.label.replace(/:$/, "") !== TOTALS_FIELDS[line.key].name && (
+            <span className="ml-1 text-[11px] text-zinc-400">({TOTALS_FIELDS[line.key].name})</span>
           )}
         </button>
         <button type="button" onClick={onRemove} className="p-1 text-zinc-400 hover:text-red-600" aria-label="Remove line">
@@ -473,15 +554,10 @@ function TotalsLineRow({
         <div className="space-y-2 border-t border-zinc-100 p-2">
           {line.kind === "value" && (
             <>
-              <Field label="Label">
-                <input className={input} value={line.label} onChange={(e) => onChange({ label: e.target.value })} />
-              </Field>
-              {TOTALS_FIELDS[line.key].format === "money" && (
-                <Check checked={line.minus} onChange={(v) => onChange({ minus: v })} label="Show as minus (−₱)" />
-              )}
-              {TOTALS_FIELDS[line.key].format !== "text" && (
-                <Check checked={line.hideWhenZero} onChange={(v) => onChange({ hideWhenZero: v })} label="Hide when zero" />
-              )}
+              <FieldOptions
+                value={{ key: line.key, label: line.label, layout: line.layout ?? "pair", align: line.align ?? "left", minus: line.minus, hideWhenZero: line.hideWhenZero }}
+                onChange={(patch) => onChange(patch as Partial<TotalsLine>)}
+              />
               <StyleEditor compact value={line.style} onChange={(style) => onChange({ style })} printMode={printMode} />
             </>
           )}

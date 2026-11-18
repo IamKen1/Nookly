@@ -84,7 +84,7 @@ export function printDocument(fragment: string, paperWidth: PaperWidth, title: s
 @page{size:${paperWidth}mm auto;margin:0}
 html,body{margin:0;background:#fff}
 body{width:${paperWidth}mm}
-.r-text{width:100%;font-size:${paperWidth === 58 ? 10.4 : 10.2}px}
+.r-text{width:100%;font-size:calc((${paperWidth}mm - 8px) / ${(0.6 * (paperWidth === 58 ? 32 : 48)).toFixed(1)})}
 </style></head><body>${fragment}${autoPrint ? "<script>window.onload=function(){window.print()}</script>" : ""}</body></html>`;
 }
 

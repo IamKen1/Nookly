@@ -1,9 +1,9 @@
 import type { ReceiptData } from "@/types/receipt";
 import { formatPaymentMethodLabel, NOT_BIR_ACCREDITED_NOTICE, splitReceiptLines } from "@/types/receipt";
 import { buildComputationLines, isSeniorOrPwd, loyaltyLines, peso } from "@/lib/receipt";
-import type { Align, Block, ResolvedStyle, RuleChar, Style, Template, TotalsLine } from "./types";
+import type { Align, Block, FieldLayout, ResolvedStyle, RuleChar, Style, Template, TotalsKey, TotalsLine } from "./types";
 import { resolveStyle } from "./style";
-import { TOTALS_FIELDS } from "./totals";
+import { TOTALS_FIELDS, fillLabel } from "./totals";
 
 // A receipt as styled rows, before it's fitted to a paper width. Both the
 // thermal output (textmode.ts) and the HTML output are made from these.
@@ -124,10 +124,14 @@ function blockRows(
       }
       if (block.showItemCount) {
         if (block.countRule) out.push({ kind: "rule", char: "-", style: base });
-        out.push(text(`${block.itemCountLabel} ${data.items.length}`, base, "left"));
+        const count = block.countMode === "pieces" ? data.items.reduce((s, i) => s + i.quantity, 0) : data.items.length;
+        out.push(text(`${block.itemCountLabel} ${count}`, base, "left"));
       }
       return out;
     }
+
+    case "field":
+      return fieldRows(block, block.align, base, data);
 
     case "totals":
       return block.lines.flatMap((line) => totalsLineRows(line, data, base, at));
@@ -216,16 +220,27 @@ function totalsLineRows(
       return line.text.trim() ? [{ kind: "text", text: line.text, align: line.align, style: at(line.style) }] : [];
     case "rule":
       return [{ kind: "rule", char: line.char, style: base }];
-    case "value": {
-      const field = TOTALS_FIELDS[line.key];
-      const value = field.value(data);
-      if (value === null) return [];
-      if (typeof value === "number" && line.hideWhenZero && Math.abs(value) < 0.005) return [];
-      const shown =
-        field.format === "money"
-          ? peso(line.minus ? -Math.abs(value as number) : (value as number))
-          : String(value);
-      return [{ kind: "pair", left: line.label, right: shown, style: at(line.style) }];
-    }
+    case "value":
+      return fieldRows(line, line.align ?? "left", at(line.style), data);
   }
+}
+
+// One value from the sale, as its own element or a line in a group.
+function fieldRows(
+  f: { key: TotalsKey; label: string; layout?: FieldLayout; minus: boolean; hideWhenZero: boolean },
+  align: Align,
+  style: ResolvedStyle,
+  data: ReceiptData
+): Row[] {
+  const field = TOTALS_FIELDS[f.key];
+  if (!field) return [];
+  const value = field.value(data);
+  if (value === null || value === "") return [];
+  if (typeof value === "number" && f.hideWhenZero && Math.abs(value) < 0.005) return [];
+  const shown = field.format === "money" ? peso(f.minus ? -Math.abs(value as number) : (value as number)) : String(value);
+  const label = fillLabel(f.label, data);
+  const layout = f.layout ?? "pair";
+  if (layout === "value" || (layout === "pair" && !label.trim())) return [{ kind: "text", text: shown, align, style }];
+  if (layout === "inline") return [{ kind: "text", text: `${label}${label.trim() ? " " : ""}${shown}`, align, style }];
+  return [{ kind: "pair", left: label, right: shown, style }];
 }
