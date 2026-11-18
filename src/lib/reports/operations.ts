@@ -253,13 +253,14 @@ export async function shiftSummary(ctx: ReportContext): Promise<ReportResult> {
   });
   const ids = shifts.map((s) => s.id);
   const [sales, cash] = await Promise.all([
-    prisma.sale.groupBy({ by: ["shiftId", "paymentMethod"], where: { shiftId: { in: ids }, status: { not: "CANCELLED" } }, _sum: { totalAmount: true }, _count: true }),
+    prisma.sale.groupBy({ by: ["shiftId", "paymentMethod"], where: { shiftId: { in: ids }, status: { not: "CANCELLED" } }, _sum: { totalAmount: true, pointsAmount: true }, _count: true }),
     prisma.cashTransaction.groupBy({ by: ["shiftId", "type"], where: { shiftId: { in: ids } }, _sum: { amount: true, serviceFee: true } }),
   ]);
   const rows = shifts.map((s) => {
     const mine = sales.filter((x) => x.shiftId === s.id);
     const net = mine.reduce((t, x) => t + n(x._sum.totalAmount), 0);
-    const cashSales = mine.filter((x) => x.paymentMethod === "CASH").reduce((t, x) => t + n(x._sum.totalAmount), 0);
+    // Cash actually received: the part paid with loyalty points never reached the drawer.
+    const cashSales = mine.filter((x) => x.paymentMethod === "CASH").reduce((t, x) => t + n(x._sum.totalAmount) - n(x._sum.pointsAmount), 0);
     const tx = cash.filter((x) => x.shiftId === s.id);
     const cashIn = tx.filter((x) => x.type !== "CASH_OUT").reduce((t, x) => t + n(x._sum.amount) + n(x._sum.serviceFee), 0);
     const cashOut = tx.filter((x) => x.type === "CASH_OUT").reduce((t, x) => t + n(x._sum.amount) - n(x._sum.serviceFee), 0);

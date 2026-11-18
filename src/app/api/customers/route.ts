@@ -8,18 +8,23 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search")?.trim();
+  // Every word must match the first name, last name or phone, so a full name
+  // like "Juan Dela Cruz" finds Juan whose last name is Dela Cruz.
+  const words = search ? search.split(/\s+/).filter(Boolean).slice(0, 5) : [];
 
   const customers = await prisma.customer.findMany({
     where: {
       tenantId: session.tenantId,
       isActive: true,
-      ...(search
+      ...(words.length
         ? {
-            OR: [
-              { firstName: { contains: search, mode: "insensitive" } },
-              { lastName: { contains: search, mode: "insensitive" } },
-              { phone: { contains: search } },
-            ],
+            AND: words.map((w) => ({
+              OR: [
+                { firstName: { contains: w, mode: "insensitive" as const } },
+                { lastName: { contains: w, mode: "insensitive" as const } },
+                { phone: { contains: w } },
+              ],
+            })),
           }
         : {}),
     },

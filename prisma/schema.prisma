@@ -37,6 +37,9 @@ model Plan {
   // Staff security codes: whoever sends an order or completes a sale enters
   // their own code, so it's on record as theirs even on a shared login.
   featureStaffCode     Boolean             @default(false)
+  // Customer profiles & loyalty points. The plan offers it; each pharmacy's
+  // owner still turns it on in Settings › Loyalty Points (LoyaltySettings.enabled).
+  featureLoyalty       Boolean             @default(false)
   isActive             Boolean             @default(true)
   sortOrder            Int                 @default(0)
   createdAt            DateTime            @default(now())
@@ -115,6 +118,8 @@ model Tenant {
   stockMovements       StockMovement[]
   receiptSettings      ReceiptSettings?
   notificationSettings NotificationSettings?
+  loyaltySettings      LoyaltySettings?
+  loyaltyTransactions  LoyaltyTransaction[]
   scheduledReports     ScheduledReportDelivery[]
   apiKeys              ApiKey[]
   importBatches        ImportBatch[]
@@ -378,6 +383,7 @@ model User {
   supplierReturns       SupplierReturn[]       @relation("SupplierReturnCreatedBy")
   ordersTakenByCode     PendingOrder[]         @relation("PendingOrderTakenBy")
   salesServed           Sale[]                 @relation("SaleServedBy")
+  loyaltyTransactions   LoyaltyTransaction[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, staffCodeHash])
@@ -415,30 +421,33 @@ model LoginAttempt {
 }
 
 model Customer {
-  id               String         @id @default(cuid())
-  tenantId         String
-  firstName        String
-  lastName         String
-  email            String?
-  phone            String?
-  address          String?
-  city             String?
-  state            String?
-  zipCode          String?
-  dateOfBirth      DateTime?
-  gender           Gender?
-  insuranceCarrier String?
-  insuranceId      String?
-  insuranceGroup   String?
-  allergies        String?
-  medicalNotes     String?
-  isActive         Boolean        @default(true)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  loyaltyPoints    Int            @default(0)
-  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  prescriptions    Prescription[]
-  sales            Sale[]
+  id                  String               @id @default(cuid())
+  tenantId            String
+  firstName           String
+  lastName            String
+  email               String?
+  phone               String?
+  address             String?
+  city                String?
+  state               String?
+  zipCode             String?
+  dateOfBirth         DateTime?
+  gender              Gender?
+  insuranceCarrier    String?
+  insuranceId         String?
+  insuranceGroup      String?
+  allergies           String?
+  medicalNotes        String?
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  // Current points balance. Only changed through src/lib/loyalty.ts, which
+  // writes a LoyaltyTransaction in the same DB transaction.
+  loyaltyPoints       Int                  @default(0)
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  prescriptions       Prescription[]
+  sales               Sale[]
+  loyaltyTransactions LoyaltyTransaction[]
 
   @@index([tenantId])
   @@map("customers")
@@ -759,16 +768,16 @@ model PrescriptionItem {
 }
 
 model Sale {
-  id                       String        @id @default(cuid())
+  id                       String               @id @default(cuid())
   tenantId                 String
   storeId                  String
   saleNumber               String
-  subtotal                 Decimal       @db.Decimal(10, 2)
-  vatableSales             Decimal?      @db.Decimal(10, 2)
-  nonVatableSales          Decimal?      @db.Decimal(10, 2)
-  taxAmount                Decimal       @db.Decimal(10, 2)
-  discountType             String?       @default("NONE")
-  discountAmount           Decimal       @default(0) @db.Decimal(10, 2)
+  subtotal                 Decimal              @db.Decimal(10, 2)
+  vatableSales             Decimal?             @db.Decimal(10, 2)
+  nonVatableSales          Decimal?             @db.Decimal(10, 2)
+  taxAmount                Decimal              @db.Decimal(10, 2)
+  discountType             String?              @default("NONE")
+  discountAmount           Decimal              @default(0) @db.Decimal(10, 2)
   discountIdNumber         String? // SC/PWD/etc ID number — optional, captured for audit if the cashier has it
   discountHolderName       String? // Name of the SC/PWD ID holder — printed on the signature block for discount sales
   // The discount as it was when the sale was made, so receipts and reprints
@@ -776,30 +785,37 @@ model Sale {
   discountId               String?
   discountName             String?
   discountRate             String? // e.g. "20%" or "₱50.00"
-  discountVatExempt        Boolean       @default(false)
+  discountVatExempt        Boolean              @default(false)
   // Split-out computation breakdown, persisted so a reprinted receipt can show
   // the exact original +/- derivation instead of reverse-engineering it later.
-  vatableGross             Decimal       @default(0) @db.Decimal(10, 2)
-  nonVatableGross          Decimal       @default(0) @db.Decimal(10, 2)
-  vatableDiscountAmount    Decimal       @default(0) @db.Decimal(10, 2)
-  nonVatableDiscountAmount Decimal       @default(0) @db.Decimal(10, 2)
-  vatRemovedFromVatable    Decimal       @default(0) @db.Decimal(10, 2)
-  totalAmount              Decimal       @db.Decimal(10, 2)
+  vatableGross             Decimal              @default(0) @db.Decimal(10, 2)
+  nonVatableGross          Decimal              @default(0) @db.Decimal(10, 2)
+  vatableDiscountAmount    Decimal              @default(0) @db.Decimal(10, 2)
+  nonVatableDiscountAmount Decimal              @default(0) @db.Decimal(10, 2)
+  vatRemovedFromVatable    Decimal              @default(0) @db.Decimal(10, 2)
+  totalAmount              Decimal              @db.Decimal(10, 2)
+  // Loyalty points used as payment (like a voucher): totalAmount and VAT are
+  // unchanged, and the money actually received is totalAmount − pointsAmount.
+  // pointsAmount is the peso value at the time of sale, so a later rate change
+  // doesn't alter old receipts. Negative on RET- return rows.
+  pointsRedeemed           Int                  @default(0)
+  pointsAmount             Decimal              @default(0) @db.Decimal(10, 2)
+  pointsEarned             Int                  @default(0)
   paymentMethod            PaymentMethod
-  cashReceived             Decimal?      @db.Decimal(10, 2)
-  changeGiven              Decimal?      @db.Decimal(10, 2)
+  cashReceived             Decimal?             @db.Decimal(10, 2)
+  changeGiven              Decimal?             @db.Decimal(10, 2)
   // E-wallet payments: which wallet (GCash, Maya, ...) and its reference number,
   // so the cashier can match the sale to the transfer the store received.
   paymentProvider          String?
   paymentReference         String?
-  insuranceClaim           Boolean       @default(false)
-  copayAmount              Decimal?      @db.Decimal(10, 2)
-  insurancePaid            Decimal?      @db.Decimal(10, 2)
+  insuranceClaim           Boolean              @default(false)
+  copayAmount              Decimal?             @db.Decimal(10, 2)
+  insurancePaid            Decimal?             @db.Decimal(10, 2)
   orderRemarks             String?
-  status                   SaleStatus    @default(COMPLETED)
-  saleDate                 DateTime      @default(now())
-  createdAt                DateTime      @default(now())
-  updatedAt                DateTime      @updatedAt
+  status                   SaleStatus           @default(COMPLETED)
+  saleDate                 DateTime             @default(now())
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
   customerId               String?
   userId                   String
   prescriptionId           String?
@@ -811,19 +827,20 @@ model Sale {
   // The person who entered their security code to complete the sale (null
   // without codes). userId stays the account it was rung up on (its drawer/shift).
   servedById               String?
-  tenant                   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  store                    Store         @relation(fields: [storeId], references: [id])
+  tenant                   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store                    Store                @relation(fields: [storeId], references: [id])
   items                    SaleItem[]
-  customer                 Customer?     @relation(fields: [customerId], references: [id])
-  prescription             Prescription? @relation(fields: [prescriptionId], references: [id])
-  user                     User          @relation("SaleCashier", fields: [userId], references: [id])
-  orderTaker               User?         @relation("SaleOrderTaker", fields: [orderTakerId], references: [id])
-  servedBy                 User?         @relation("SaleServedBy", fields: [servedById], references: [id])
-  discount                 Discount?     @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  customer                 Customer?            @relation(fields: [customerId], references: [id])
+  prescription             Prescription?        @relation(fields: [prescriptionId], references: [id])
+  user                     User                 @relation("SaleCashier", fields: [userId], references: [id])
+  orderTaker               User?                @relation("SaleOrderTaker", fields: [orderTakerId], references: [id])
+  servedBy                 User?                @relation("SaleServedBy", fields: [servedById], references: [id])
+  discount                 Discount?            @relation(fields: [discountId], references: [id], onDelete: SetNull)
   pendingOrder             PendingOrder?
-  originalSale             Sale?         @relation("SaleReturns", fields: [originalSaleId], references: [id])
-  returns                  Sale[]        @relation("SaleReturns")
-  shift                    Shift?        @relation(fields: [shiftId], references: [id])
+  originalSale             Sale?                @relation("SaleReturns", fields: [originalSaleId], references: [id])
+  returns                  Sale[]               @relation("SaleReturns")
+  shift                    Shift?               @relation(fields: [shiftId], references: [id])
+  loyaltyTransactions      LoyaltyTransaction[]
 
   @@unique([tenantId, saleNumber])
   @@index([tenantId, storeId, saleDate])
@@ -1114,6 +1131,51 @@ enum PlanChangeRequestStatus {
   CONTACTED
   ACTIVATED
   CANCELLED
+}
+
+enum LoyaltyTxnType {
+  EARN
+  REDEEM
+  RETURN
+  VOID
+  ADJUST
+}
+
+// Settings › Loyalty Points. No row = off, with the defaults below.
+model LoyaltySettings {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+  enabled           Boolean  @default(false)
+  pesosPerPoint     Decimal  @default(50) @db.Decimal(10, 2) // pesos paid to earn 1 point
+  pesoValuePerPoint Decimal  @default(1) @db.Decimal(10, 2) // pesos 1 point is worth when used as payment
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("loyalty_settings")
+}
+
+// Every change to a customer's points, with the balance right after it.
+// Customer.loyaltyPoints is kept equal to the latest balanceAfter.
+model LoyaltyTransaction {
+  id           String         @id @default(cuid())
+  tenantId     String
+  customerId   String
+  saleId       String?
+  userId       String
+  type         LoyaltyTxnType
+  points       Int // + adds to the balance, − takes away
+  balanceAfter Int
+  reason       String? // required for ADJUST
+  createdAt    DateTime       @default(now())
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer     Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sale         Sale?          @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  user         User           @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, customerId, createdAt])
+  @@index([saleId])
+  @@map("loyalty_transactions")
 }
 
 // One delivery received at a branch: what came in, from whom, under which

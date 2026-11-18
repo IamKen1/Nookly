@@ -22,6 +22,8 @@ export const PERMISSION_MODULES = [
   { key: "suppliers", parent: null, path: "/suppliers", label: "Suppliers", description: "Supplier list, their deliveries, and returns to suppliers" },
   { key: "suppliers_pay", parent: "suppliers", path: null, label: "Payables & payments", description: "See what's owed to suppliers and record payments" },
   { key: "prescriptions", parent: null, path: "/prescriptions", label: "Prescriptions", description: "View and record prescriptions" },
+  { key: "customers", parent: null, path: "/customers", label: "Customers", description: "Customer profiles, purchase history, and loyalty points" },
+  { key: "customers_adjust_points", parent: "customers", path: null, label: "Adjust points", description: "Add or remove a customer's points by hand, with a reason" },
   { key: "sales", parent: null, path: "/sales", label: "Sales", description: "Look up past sales and reprint receipts" },
   { key: "sales_view_all", parent: "sales", path: null, label: "See everyone's sales", description: "Unticked: only sales they rang up or took the order for" },
   { key: "sales_void", parent: "sales", path: null, label: "Void / return sales", description: "Cancel a completed sale or process a return and refund" },
@@ -88,14 +90,14 @@ export const ALL_ROLE_LABELS: Record<string, string> = { OWNER: "Owner", ...ROLE
 export const DEFAULT_PERMISSIONS: Record<ConfigurableRole, PermissionModuleKey[]> = {
   ADMIN: [
     "dashboard", "all_branches", "pos", "pos_checkout", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "suppliers_pay",
-    "prescriptions", "sales", "sales_view_all", "sales_void", "reports", "users", "shifts", "settings", "support",
+    "prescriptions", "customers", "customers_adjust_points", "sales", "sales_view_all", "sales_void", "reports", "users", "shifts", "settings", "support",
   ],
   MANAGER: [
-    "dashboard", "pos", "pos_checkout", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "prescriptions",
+    "dashboard", "pos", "pos_checkout", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "prescriptions", "customers",
     "sales", "sales_view_all", "sales_void", "reports", "shifts", "support",
   ],
-  PHARMACIST: ["dashboard", "pos", "pos_checkout", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "prescriptions", "sales", "sales_view_all", "reports"],
-  PHARMACY_TECH: ["dashboard", "pos", "pos_checkout", "products", "inventory", "prescriptions", "sales", "sales_view_all", "reports"],
+  PHARMACIST: ["dashboard", "pos", "pos_checkout", "products", "products_edit", "inventory", "inventory_adjust", "suppliers", "prescriptions", "customers", "sales", "sales_view_all", "reports"],
+  PHARMACY_TECH: ["dashboard", "pos", "pos_checkout", "products", "inventory", "prescriptions", "customers", "sales", "sales_view_all", "reports"],
   CASHIER: ["dashboard", "pos", "pos_checkout", "products", "prescriptions", "sales", "reports"],
 };
 

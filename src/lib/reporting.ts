@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { paymentParts } from "@/lib/payment-methods";
 
 export type PeriodType = "daily" | "weekly" | "monthly" | "annually";
 
@@ -79,6 +80,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   INSURANCE: "Insurance",
   CHECK: "Check",
   SPLIT: "Split",
+  POINTS: "Loyalty points",
 };
 
 const zeroSummary = (key: string, label: string, periodStart: string, periodEnd: string): SummaryBucket => ({
@@ -318,6 +320,7 @@ export const generateSalesDashboardReport = async (
       discountAmount: true,
       taxAmount: true,
       totalAmount: true,
+      pointsAmount: true,
       user: { select: { firstName: true, lastName: true } },
       servedBy: { select: { firstName: true, lastName: true } },
       items: {
@@ -368,15 +371,18 @@ export const generateSalesDashboardReport = async (
     addSaleToBucket(monthlyMap, getMonthMeta(localParts.year, localParts.month), values);
     addSaleToBucket(annualMap, getYearMeta(localParts.year), values);
 
-    const paymentMethodBucket = paymentMethodMap.get(sale.paymentMethod) ?? {
-      method: sale.paymentMethod,
-      label: PAYMENT_METHOD_LABELS[sale.paymentMethod] ?? sale.paymentMethod,
-      salesCount: 0,
-      totalAmount: 0,
-    };
-    paymentMethodBucket.salesCount += 1;
-    paymentMethodBucket.totalAmount += netSales;
-    paymentMethodMap.set(sale.paymentMethod, paymentMethodBucket);
+    // Money under its method; the part paid with loyalty points as its own row.
+    for (const part of paymentParts(sale)) {
+      const paymentMethodBucket = paymentMethodMap.get(part.method) ?? {
+        method: part.method,
+        label: PAYMENT_METHOD_LABELS[part.method] ?? part.method,
+        salesCount: 0,
+        totalAmount: 0,
+      };
+      paymentMethodBucket.salesCount += 1;
+      paymentMethodBucket.totalAmount += part.amount;
+      paymentMethodMap.set(part.method, paymentMethodBucket);
+    }
 
     for (const item of sale.items) {
       const productId = item.product.id;

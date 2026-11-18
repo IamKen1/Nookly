@@ -42,12 +42,26 @@ interface SaleNotificationInput {
   paymentMethod: string;
   cashReceived?: number;
   changeGiven?: number;
+  // Loyalty points used as payment (peso value) and earned on this sale.
+  pointsRedeemed?: number;
+  pointsAmount?: number;
+  pointsEarned?: number;
   customer?: { firstName: string; lastName: string };
   cashier: { firstName: string; lastName: string };
   orderRemarks?: string | null;
   createdBy?: string;
   store: ReceiptStoreSettings;
 }
+
+const pointsRows = (input: SaleNotificationInput): [string, string][] => {
+  const rows: [string, string][] = [];
+  if (input.pointsRedeemed && input.pointsRedeemed > 0) {
+    rows.push([`Points used (${input.pointsRedeemed})`, `-${peso(input.pointsAmount ?? 0)}`]);
+    rows.push(["Amount paid", peso(input.totalAmount - (input.pointsAmount ?? 0))]);
+  }
+  if (input.pointsEarned && input.pointsEarned > 0) rows.push(["Points earned", String(input.pointsEarned)]);
+  return rows;
+};
 
 const escapeHtml = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -228,6 +242,7 @@ const renderSaleReceiptHtml = (input: SaleNotificationInput) => {
       }
 
       <table style="width: 100%; border-collapse: collapse; font-size: 13px; border-top: 1px solid #f1f5f9; padding-top: 4px;">
+        ${pointsRows(input).map(([label, value]) => row(label, value)).join("")}
         ${cashReceived ? row("Cash", peso(cashReceived)) : ""}
         ${changeGiven && changeGiven > 0 ? row("Change", peso(changeGiven)) : ""}
       </table>
@@ -300,6 +315,7 @@ const renderSaleReceiptText = (input: SaleNotificationInput) => {
     );
   }
 
+  for (const [label, value] of pointsRows(input)) lines.push(`${label}: ${value}`);
   if (cashReceived) lines.push(`Cash: ${peso(cashReceived)}`);
   if (changeGiven && changeGiven > 0) lines.push(`Change: ${peso(changeGiven)}`);
   if (orderRemarks?.trim()) lines.push("", `Remarks: ${orderRemarks.trim()}`);

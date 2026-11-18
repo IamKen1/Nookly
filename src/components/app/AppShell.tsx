@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, Boxes, ClipboardPlus, LayoutDashboard, Leaf, LifeBuoy, Package, Receipt, Settings, ShoppingCart, Truck, Users, Wallet } from "lucide-react";
+import { BarChart3, Boxes, ClipboardPlus, Contact, LayoutDashboard, Leaf, LifeBuoy, Package, Receipt, Settings, ShoppingCart, Truck, Users, Wallet } from "lucide-react";
 import LogoutButton from "./LogoutButton";
 import HeaderPrinterButton from "./HeaderPrinterButton";
 import OnboardingTourLoader from "@/components/onboarding/OnboardingTourLoader";
@@ -8,16 +8,19 @@ import { ALL_ROLE_LABELS } from "@/lib/permissions-shared";
 import { getSession } from "@/lib/session";
 import { canManageAllBranches, getBranchContext } from "@/lib/branch-scope";
 import BranchSwitcher from "./BranchSwitcher";
+import { getSubscriptionWithPlan } from "@/lib/request-cache";
 
 // Every item is a module from Settings > User Access; a role only sees the
-// modules it's allowed.
-const navItems: { href: string; label: string; icon: typeof LayoutDashboard; module: PermissionModuleKey }[] = [
+// modules it's allowed. An item with planFlag is also hidden when the plan
+// doesn't include it.
+const navItems: { href: string; label: string; icon: typeof LayoutDashboard; module: PermissionModuleKey; planFlag?: "featureLoyalty" }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard" },
   { href: "/pos", label: "POS", icon: ShoppingCart, module: "pos" },
   { href: "/products", label: "Products", icon: Package, module: "products" },
   { href: "/inventory", label: "Inventory", icon: Boxes, module: "inventory" },
   { href: "/suppliers", label: "Suppliers", icon: Truck, module: "suppliers" },
   { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus, module: "prescriptions" },
+  { href: "/customers", label: "Customers", icon: Contact, module: "customers", planFlag: "featureLoyalty" },
   { href: "/sales", label: "Sales", icon: Receipt, module: "sales" },
   { href: "/reports", label: "Reports", icon: BarChart3, module: "reports" },
   { href: "/users", label: "Users", icon: Users, module: "users" },
@@ -40,11 +43,14 @@ export default async function AppShell({
   children: React.ReactNode;
 }) {
   const session = await getSession();
-  const [permissions, branches] = await Promise.all([
+  const [permissions, branches, subscription] = await Promise.all([
     role ? getRolePermissions(tenantId, role) : null,
     session ? getBranchContext(session) : null,
+    getSubscriptionWithPlan(tenantId),
   ]);
-  const visibleItems = navItems.filter((item) => permissions?.[item.module]);
+  const visibleItems = navItems.filter(
+    (item) => permissions?.[item.module] && (!item.planFlag || Boolean(subscription?.plan[item.planFlag]))
+  );
 
   return (
     <div className="flex min-h-screen bg-zinc-50">

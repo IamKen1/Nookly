@@ -14,8 +14,11 @@ import { batchesAtStore } from "@/lib/branch-scope";
 import { getRolePermissions, hasPermission, saleVisibilityWhere } from "@/lib/permissions";
 import { readOrderPrescription } from "@/lib/order-prescription";
 import { identifyStaff, staffCodeRequired } from "@/lib/staff-code";
+import { applyPoints, CustomerNotFoundError, getLoyaltyConfig, InsufficientPointsError } from "@/lib/loyalty";
+import { maxRedeemablePoints, pointsEarnedFor, pointsToPesos } from "@/lib/loyalty-math";
 
 class PendingOrderTakenError extends Error {}
+class PointsNeedCustomerError extends Error {}
 class StockRanOutError extends Error {
   constructor(readonly productId: string) {
     super("Stock ran out during the sale.");
@@ -106,6 +109,7 @@ export async function POST(request: NextRequest) {
     orderRemarks,
     prescriptionId: requestedPrescriptionId,
     prescriptionDraft: requestedPrescriptionDraft,
+    pointsToRedeem,
   }: {
     pendingOrderId?: string;
     items: CheckoutItem[];
@@ -121,6 +125,7 @@ export async function POST(request: NextRequest) {
     orderRemarks?: string;
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;
+    pointsToRedeem?: number;
   } = body;
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -224,12 +229,16 @@ export async function POST(request: NextRequest) {
   const prescriptionDraft: PrescriptionDraft | undefined = orderRx ? orderRx.prescriptionDraft : requestedPrescriptionDraft;
   const hasPrescriptionInput = Boolean(prescriptionId || prescriptionDraft);
   const prescriptionsGated = hasPrescriptionInput && (await hasFeature(await getTenantPlanCode(session.tenantId), "prescriptions"));
+  // The customer on a prescription being continued; with loyalty on, the sale
+  // earns points for them even if the cashier didn't pick them separately.
+  let continuedRxCustomerId: string | null = null;
   if (prescriptionsGated) {
     if (prescriptionId) {
       const prescription = await prisma.prescription.findFirst({ where: { id: prescriptionId, tenantId: session.tenantId } });
       if (!prescription) {
         return NextResponse.json({ error: "Prescription not found." }, { status: 400 });
       }
+      continuedRxCustomerId = prescription.customerId;
       if (prescription.status !== "PENDING" && prescription.status !== "PARTIAL") {
         return NextResponse.json({ error: `Prescription is ${prescription.status.toLowerCase()} and cannot be filled.` }, { status: 400 });
       }
@@ -280,10 +289,30 @@ export async function POST(request: NextRequest) {
   });
 
   const totalAmount = vatTotals.finalTotal;
-  const changeGiven =
-    paymentMethod === "CASH" && cashReceived ? Number((cashReceived - totalAmount).toFixed(2)) : null;
 
-  if (paymentMethod === "CASH" && cashReceived != null && cashReceived < totalAmount) {
+  // Loyalty points are a form of payment: the total and VAT stay as computed,
+  // and only the cash / e-wallet part shrinks. Ignored entirely unless the plan
+  // includes loyalty and the owner turned it on.
+  const loyalty = await getLoyaltyConfig(session.tenantId);
+  let pointsRedeemed = 0;
+  if (loyalty.active && pointsToRedeem != null && pointsToRedeem !== 0) {
+    const requested = Number(pointsToRedeem);
+    if (!Number.isInteger(requested) || requested < 0) {
+      return NextResponse.json({ error: "Points to use must be a whole number." }, { status: 400 });
+    }
+    if (requested > maxRedeemablePoints(Number.MAX_SAFE_INTEGER, totalAmount, loyalty.pesoValuePerPoint)) {
+      return NextResponse.json({ error: "That's more points than the total. Use fewer points." }, { status: 400 });
+    }
+    pointsRedeemed = requested;
+  }
+  const pointsAmount = pointsToPesos(pointsRedeemed, loyalty.pesoValuePerPoint);
+  // Exactly totalAmount when no points are used, so those sales compute as before.
+  const amountDue = pointsAmount > 0 ? Number((totalAmount - pointsAmount).toFixed(2)) : totalAmount;
+
+  const changeGiven =
+    paymentMethod === "CASH" && cashReceived ? Number((cashReceived - amountDue).toFixed(2)) : null;
+
+  if (paymentMethod === "CASH" && cashReceived != null && cashReceived < amountDue) {
     return NextResponse.json({ error: "Cash received is less than the total amount." }, { status: 400 });
   }
 
@@ -400,6 +429,12 @@ export async function POST(request: NextRequest) {
       resolvedCustomerId = resolvedCustomerId ?? draftCustomerId;
     }
 
+    // Points move only with a customer on the sale.
+    if (loyalty.active) resolvedCustomerId = resolvedCustomerId ?? continuedRxCustomerId;
+    const loyaltyCustomerId = loyalty.active ? resolvedCustomerId : null;
+    if (pointsRedeemed > 0 && !loyaltyCustomerId) throw new PointsNeedCustomerError();
+    const pointsEarned = loyaltyCustomerId ? pointsEarnedFor(amountDue, loyalty.pesosPerPoint) : 0;
+
     const created = await tx.sale.create({
       data: {
         tenantId: session.tenantId,
@@ -423,6 +458,9 @@ export async function POST(request: NextRequest) {
         nonVatableDiscountAmount: vatTotals.nonVatableDiscountAmount,
         vatRemovedFromVatable: vatTotals.vatRemovedFromVatable,
         totalAmount,
+        pointsRedeemed,
+        pointsAmount,
+        pointsEarned,
         paymentMethod: paymentMethod as never,
         cashReceived: isEWallet ? null : cashReceived ?? null,
         paymentProvider: walletProvider,
@@ -445,6 +483,14 @@ export async function POST(request: NextRequest) {
         data: { status: "COMPLETED", saleId: created.id },
       });
       if (claimed.count !== 1) throw new PendingOrderTakenError();
+    }
+
+    // Spend first, then earn, so the ledger reads in the order it happened.
+    // applyPoints locks the customer row, so two sales can't spend the same points.
+    if (loyaltyCustomerId) {
+      const pointsBase = { tenantId: session.tenantId, customerId: loyaltyCustomerId, userId: session.userId, saleId: created.id };
+      await applyPoints(tx, { ...pointsBase, type: "REDEEM", points: -pointsRedeemed });
+      await applyPoints(tx, { ...pointsBase, type: "EARN", points: pointsEarned });
     }
 
     await tx.saleItem.createMany({
@@ -535,6 +581,18 @@ export async function POST(request: NextRequest) {
         const name = productMap.get(error.productId)!.name;
         return NextResponse.json({ error: `Not enough stock for ${name}. Available: ${Math.max(0, left?.currentStock ?? 0)}.`, code: "STOCK" }, { status: 409 });
       }
+      if (error instanceof InsufficientPointsError) {
+        return NextResponse.json(
+          { error: `The customer now has only ${error.balance} points. Check the points and try again.`, code: "POINTS", balance: error.balance },
+          { status: 409 }
+        );
+      }
+      if (error instanceof PointsNeedCustomerError) {
+        return NextResponse.json({ error: "Choose the customer before using points." }, { status: 400 });
+      }
+      if (error instanceof CustomerNotFoundError) {
+        return NextResponse.json({ error: "Customer not found." }, { status: 400 });
+      }
       const target = (error as { code?: string; meta?: { target?: unknown } }).meta?.target;
       const isNumberClash = (error as { code?: string }).code === "P2002" && /saleNumber|prescriptionNumber/.test(String(target));
       if (isNumberClash && attempt < 5) continue;
@@ -587,6 +645,9 @@ export async function POST(request: NextRequest) {
         paymentMethod: completeSale.paymentMethod,
         cashReceived: completeSale.cashReceived != null ? Number(completeSale.cashReceived) : undefined,
         changeGiven: completeSale.changeGiven != null ? Number(completeSale.changeGiven) : undefined,
+        pointsRedeemed: completeSale.pointsRedeemed,
+        pointsAmount: Number(completeSale.pointsAmount),
+        pointsEarned: completeSale.pointsEarned,
         customer: completeSale.customer ?? undefined,
         cashier: { firstName: completeSale.user.firstName, lastName: completeSale.user.lastName },
         orderRemarks: completeSale.orderRemarks,

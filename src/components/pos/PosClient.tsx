@@ -17,6 +17,7 @@ import {
   Package,
   Boxes,
   ClipboardPlus,
+  Contact,
   Receipt,
   BarChart3,
   Users,
@@ -100,6 +101,7 @@ const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; mo
   { href: "/inventory", label: "Inventory", icon: Boxes, module: "inventory" },
   { href: "/suppliers", label: "Suppliers", icon: Truck, module: "suppliers" },
   { href: "/prescriptions", label: "Prescriptions", icon: ClipboardPlus, module: "prescriptions" },
+  { href: "/customers", label: "Customers", icon: Contact, module: "customers" },
   { href: "/sales", label: "Sales", icon: Receipt, module: "sales" },
   { href: "/reports", label: "Reports", icon: BarChart3, module: "reports" },
   { href: "/users", label: "Users", icon: Users, module: "users" },
@@ -120,6 +122,8 @@ export default function PosClient({
   canSendToCashier = false,
   canRecordPrescriptions = false,
   requireStaffCode = false,
+  loyalty = null,
+  showCustomers = false,
 }: {
   categories: Category[];
   tenantName: string;
@@ -138,6 +142,10 @@ export default function PosClient({
   canRecordPrescriptions?: boolean;
   // Security codes on (Empire, 2+ branches, owner's switch): asked before sending or taking payment.
   requireStaffCode?: boolean;
+  // Loyalty points on (plan includes it and the owner turned it on); null otherwise.
+  loyalty?: { pesosPerPoint: number; pesoValuePerPoint: number } | null;
+  // The plan includes customer profiles (shows Customers in the menu).
+  showCustomers?: boolean;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -159,7 +167,8 @@ export default function PosClient({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [menuOpen]);
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => permissions[item.module]);
+  // Customers only shows when the plan includes customer profiles & loyalty points.
+  const visibleNavItems = NAV_ITEMS.filter((item) => permissions[item.module] && (item.module !== "customers" || showCustomers));
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error"; visible: boolean }>({
     message: "",
     type: "success",
@@ -681,6 +690,8 @@ export default function PosClient({
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;
     staffCode?: string;
+    customerId?: string;
+    pointsToRedeem?: number;
   }) => {
     const res = await fetch("/api/sales", {
       method: "POST",
@@ -696,11 +707,20 @@ export default function PosClient({
       await handleStockRefused(data.error);
       return { ok: false, error: data.error };
     }
-    if (!res.ok) return { ok: false, error: data.error ?? "Checkout failed.", codeError: data.code === "STAFF_CODE" };
+    if (!res.ok)
+      return {
+        ok: false,
+        error: data.error ?? "Checkout failed.",
+        codeError: data.code === "STAFF_CODE",
+        ...(data.code === "POINTS" ? { pointsBalance: Number(data.balance) } : {}),
+      };
     clearCart();
     refreshShownStock();
     if (activeOrder) refreshPendingOrders();
-    showNotification(`Sale ${data.saleNumber} completed — total ${peso(Number(data.totalAmount))}`, "success");
+    showNotification(
+      `Sale ${data.saleNumber} completed — total ${peso(Number(data.totalAmount))}${data.pointsEarned > 0 ? ` · +${data.pointsEarned} points` : ""}`,
+      "success"
+    );
 
     // Printing is a side effect, not part of "did the sale succeed" — it must
     // never delay the success confirmation the cashier is waiting to see.
@@ -1110,6 +1130,7 @@ export default function PosClient({
         initialDiscount={activeOrder?.discount}
         initialRemarks={activeOrder?.remarks}
         requireStaffCode={requireStaffCode}
+        loyalty={loyalty}
         onProcessSale={handleProcessSale}
       />
 

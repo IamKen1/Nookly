@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
+import { paymentParts } from "@/lib/payment-methods";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -44,10 +45,12 @@ export async function GET(request: NextRequest) {
 
   const byMethod = new Map<string, { salesCount: number; totalAmount: number }>();
   for (const s of active) {
-    const cur = byMethod.get(s.paymentMethod) ?? { salesCount: 0, totalAmount: 0 };
-    cur.salesCount += 1;
-    cur.totalAmount += Number(s.totalAmount);
-    byMethod.set(s.paymentMethod, cur);
+    for (const part of paymentParts(s)) {
+      const cur = byMethod.get(part.method) ?? { salesCount: 0, totalAmount: 0 };
+      cur.salesCount += 1;
+      cur.totalAmount += part.amount;
+      byMethod.set(part.method, cur);
+    }
   }
 
   const shiftSummaries = shifts.map((s) => {

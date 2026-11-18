@@ -29,6 +29,10 @@ interface Sale {
   paymentMethod: string;
   paymentProvider: string | null;
   paymentReference: string | null;
+  // Loyalty points used as payment and earned (negative on return rows).
+  pointsRedeemed?: number;
+  pointsAmount?: number;
+  pointsEarned?: number;
   discountType: string | null;
   status: string;
   isReturnRecord: boolean;
@@ -214,7 +218,19 @@ export default function SalesClient({
         return;
       }
       setReturnTarget(null);
-      flashSuccess("Return processed — stock has been returned to inventory.");
+      // RET- rows carry negative amounts. With loyalty points on the sale, only
+      // part of the refund is money; the rest goes back to the customer as points.
+      const pointsBack = -(data.pointsRedeemed ?? 0);
+      const pointsTaken = -(data.pointsEarned ?? 0);
+      if (pointsBack > 0 || pointsTaken > 0) {
+        const refund = -(Number(data.totalAmount) - Number(data.pointsAmount ?? 0));
+        const parts = [`Refund ${peso(refund)}`];
+        if (pointsBack > 0) parts.push(`${pointsBack} points given back`);
+        if (pointsTaken > 0) parts.push(`${pointsTaken} earned points taken back`);
+        flashSuccess(`Return processed — ${parts.join(", ")}.`);
+      } else {
+        flashSuccess("Return processed — stock has been returned to inventory.");
+      }
       router.refresh();
     } catch {
       setReturnError("Network error.");
@@ -484,6 +500,8 @@ export default function SalesClient({
                             <span>
                               Payment: {s.paymentMethod === "E_WALLET" ? s.paymentProvider ?? "E-wallet" : paymentMethodLabel(s.paymentMethod)}
                               {s.paymentReference && ` · Ref ${s.paymentReference}`}
+                              {!!s.pointsRedeemed && ` · ${Math.abs(s.pointsRedeemed)} points (${peso(Math.abs(s.pointsAmount ?? 0))})`}
+                              {!!s.pointsEarned && ` · ${s.pointsEarned > 0 ? "Earned" : "Took back"} ${Math.abs(s.pointsEarned)} points`}
                             </span>
                             {s.discountType && s.discountType !== "NONE" && <span>Discount: {s.discountType}</span>}
                           </div>

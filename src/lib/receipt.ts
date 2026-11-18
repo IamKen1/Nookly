@@ -46,6 +46,23 @@ const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
   return getComputationLines(result, discountType, discountPercent, display).filter((line) => line.kind !== "total");
 };
 
+// Loyalty lines, shared by the HTML and thermal receipts. Points used are a
+// payment, so they sit with the payment lines; the total above is unchanged.
+const loyaltyLines = (r: ReceiptData) => {
+  const l = r.loyalty;
+  if (!l) return { paidWithPointsOnly: false, payment: [] as [string, string][], info: [] as [string, string][] };
+  const payment: [string, string][] = [];
+  const amountPaid = Math.round((r.totalAmount - l.pointsAmount) * 100) / 100;
+  if (l.pointsRedeemed > 0) {
+    payment.push([`Points used (${l.pointsRedeemed}):`, peso(-l.pointsAmount)]);
+    payment.push(["Amount paid:", peso(amountPaid)]);
+  }
+  const info: [string, string][] = [];
+  if (l.pointsEarned > 0) info.push(["Points earned:", String(l.pointsEarned)]);
+  if (l.balanceAfter !== null) info.push(["Points balance:", String(l.balanceAfter)]);
+  return { paidWithPointsOnly: l.pointsRedeemed > 0 && amountPaid <= 0, payment, info };
+};
+
 export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPrint?: boolean } = {}): string => {
   const { autoPrint = true } = options;
   const { saleNumber, date, items, totalAmount, paymentMethod, paymentProvider, paymentReference, cashReceived, changeGiven, customer, cashier, orderRemarks, store } = receiptData;
@@ -54,8 +71,9 @@ export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPri
   const footerLines = getReceiptFooterLines(store).filter((line) => line !== NOT_BIR_ACCREDITED_NOTICE);
   const computationLines = buildComputationLines(receiptData);
   const showScPwdBlock = isSeniorOrPwd(receiptData.discountType) && Boolean(receiptData.discountAmount && receiptData.discountAmount > 0);
+  const loyalty = loyaltyLines(receiptData);
 
-  const amountLine = (line: ComputationLine) =>
+  const amountLine =(line: ComputationLine) =>
     `<div class="total-line comp-${line.kind}"><span>${line.label}:</span><span>${line.kind === "subtotal" ? "= " : ""}${peso(line.amount)}</span></div>`;
 
   return `
@@ -155,10 +173,12 @@ export const generateReceiptHTML = (receiptData: ReceiptData, options: { autoPri
       }
 
       <div class="payment-info">
-        <div class="total-line"><span>Payment:</span><span>${formatPaymentMethodLabel(paymentMethod, paymentProvider)}</span></div>
+        ${loyalty.payment.map(([label, value]) => `<div class="total-line"><span>${label}</span><span>${value}</span></div>`).join("")}
+        <div class="total-line"><span>Payment:</span><span>${loyalty.paidWithPointsOnly ? "LOYALTY POINTS" : formatPaymentMethodLabel(paymentMethod, paymentProvider)}</span></div>
         ${paymentReference ? `<div class="total-line"><span>Ref No:</span><span>${paymentReference}</span></div>` : ""}
         ${cashReceived ? `<div class="total-line"><span>Cash:</span><span>${peso(cashReceived)}</span></div>` : ""}
         ${changeGiven && changeGiven > 0 ? `<div class="total-line"><span>Change:</span><span>${peso(changeGiven)}</span></div>` : ""}
+        ${loyalty.info.map(([label, value]) => `<div class="total-line"><span>${label}</span><span>${value}</span></div>`).join("")}
       </div>
 
       ${
@@ -335,10 +355,13 @@ export const generateThermalReceiptText = (receiptData: ReceiptData): string => 
     receipt += SEPARATOR + NEWLINE;
   }
 
-  receipt += `Payment: ${formatPaymentMethodLabel(paymentMethod, paymentProvider)}` + NEWLINE;
+  const loyalty = loyaltyLines(receiptData);
+  loyalty.payment.forEach(([label, value]) => addRow(label, value));
+  receipt += `Payment: ${loyalty.paidWithPointsOnly ? "LOYALTY POINTS" : formatPaymentMethodLabel(paymentMethod, paymentProvider)}` + NEWLINE;
   if (paymentReference) receipt += `Ref No: ${paymentReference}` + NEWLINE;
   if (cashReceived) addTotalLine("Cash:", cashReceived);
   if (changeGiven && changeGiven > 0) addTotalLine("Change:", changeGiven);
+  loyalty.info.forEach(([label, value]) => addRow(label, value));
   receipt += SEPARATOR + NEWLINE;
 
   if (store.includeOrderRemarks && orderRemarks?.trim()) {

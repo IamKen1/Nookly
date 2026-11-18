@@ -720,7 +720,7 @@ export function PharmacistDashboard({ scope, info, data }: { scope: DashboardSco
 
 // ─── Cashier: my shift, my drawer, my counter tools ─────────────────────────
 const methodLabel = (m: string) =>
-  ({ CASH: "Cash", E_WALLET: "E-wallet", CREDIT_CARD: "Credit card", DEBIT_CARD: "Debit card", INSURANCE: "Insurance", CHECK: "Check", SPLIT: "Split" })[m] ?? m;
+  ({ CASH: "Cash", E_WALLET: "E-wallet", CREDIT_CARD: "Credit card", DEBIT_CARD: "Debit card", INSURANCE: "Insurance", CHECK: "Check", SPLIT: "Split", POINTS: "Loyalty points" })[m] ?? m;
 
 export function CashierDashboard({ scope, info, data }: { scope: DashboardScope; info: HeroInfo; data: Awaited<ReturnType<typeof loadCashierData>> }) {
   const p = scope.permissions;

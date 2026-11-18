@@ -50,6 +50,7 @@ const METHOD_LABELS: Record<string, string> = {
   INSURANCE: "Insurance",
   CHECK: "Check",
   SPLIT: "Split",
+  POINTS: "Loyalty points",
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);

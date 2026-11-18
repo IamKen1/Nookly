@@ -6,6 +6,7 @@ import { batchesAtStore } from "@/lib/branch-scope";
 import { getRolePermissions, type PermissionModuleKey } from "@/lib/permissions";
 import { computeShiftReading } from "@/lib/shift-reading";
 import { parsePendingItems } from "@/lib/pending-orders";
+import { POINTS_METHOD } from "@/lib/payment-methods";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PH_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -158,10 +159,14 @@ export async function getPaymentMix(scope: DashboardScope, sinceDays = 30) {
   const rows = await prisma.sale.groupBy({
     by: ["paymentMethod"],
     where: { ...scope.saleWhere, saleDate: { gte: since } },
-    _sum: { totalAmount: true },
+    _sum: { totalAmount: true, pointsAmount: true },
   });
-  return rows
-    .map((r) => ({ method: r.paymentMethod as string, total: Number(r._sum.totalAmount ?? 0) }))
+  // Money under its own method, and anything paid with loyalty points as its own slice.
+  const points = rows.reduce((sum, r) => sum + Number(r._sum.pointsAmount ?? 0), 0);
+  return [
+    ...rows.map((r) => ({ method: r.paymentMethod as string, total: Number(r._sum.totalAmount ?? 0) - Number(r._sum.pointsAmount ?? 0) })),
+    { method: POINTS_METHOD, total: points },
+  ]
     .filter((r) => r.total > 0)
     .sort((a, b) => b.total - a.total);
 }

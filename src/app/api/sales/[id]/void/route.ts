@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { invalidateCached } from "@/lib/route-cache";
 import { hasPermission } from "@/lib/permissions";
+import { applyPoints } from "@/lib/loyalty";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -67,6 +68,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       if (sale.prescriptionId) {
         await tx.prescription.update({ where: { id: sale.prescriptionId }, data: { status: "PENDING" } });
+      }
+
+      // Undo the sale's points: give back what was used, take back what was
+      // earned. Done even if loyalty has since been turned off, since the points
+      // did move. If earned points were already spent, the balance stops at 0.
+      if (sale.customerId && (sale.pointsRedeemed > 0 || sale.pointsEarned > 0)) {
+        await applyPoints(tx, {
+          tenantId: session.tenantId,
+          customerId: sale.customerId,
+          userId: session.userId,
+          saleId: sale.id,
+          type: "VOID",
+          points: sale.pointsRedeemed - sale.pointsEarned,
+          reason: `Voided sale ${sale.saleNumber}`,
+          clampAtZero: true,
+        });
       }
     });
 

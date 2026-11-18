@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { invalidateCached } from "@/lib/route-cache";
 import { hasPermission } from "@/lib/permissions";
+import { applyPoints } from "@/lib/loyalty";
+import { pointsForNextReturn, savedValuePerPoint } from "@/lib/loyalty-math";
 
 interface ReturnItemInput {
   saleItemId: string;
@@ -75,8 +77,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     select: { id: true },
   });
 
+  const hasPoints = Boolean(sale.customerId) && (sale.pointsEarned > 0 || sale.pointsRedeemed > 0);
+
   try {
     const returnSale = await prisma.$transaction(async (tx) => {
+      // Points follow the returned share of the sale: earned points are taken
+      // back (rounded up) and used points are given back (rounded down) at the
+      // value they were used at. Worked on the total returned so far, so
+      // several partial returns never move more than the sale did.
+      let earnBack = 0;
+      let redeemBack = 0;
+      let pointsValueBack = 0;
+      if (hasPoints) {
+        const earlier = await tx.sale.aggregate({
+          where: { originalSaleId: sale.id, status: "RETURNED" },
+          _sum: { subtotal: true, pointsEarned: true, pointsRedeemed: true },
+        });
+        const earlierSubtotal = -Number(earlier._sum.subtotal ?? 0);
+        const cumulativeRatio = originalSubtotal > 0 ? (earlierSubtotal + returnSubtotal) / originalSubtotal : 0;
+        ({ earnBack, redeemBack } = pointsForNextReturn(
+          sale.pointsEarned,
+          sale.pointsRedeemed,
+          cumulativeRatio,
+          -(earlier._sum.pointsEarned ?? 0),
+          -(earlier._sum.pointsRedeemed ?? 0)
+        ));
+        const value = savedValuePerPoint(sale.pointsRedeemed, Number(sale.pointsAmount));
+        pointsValueBack = Math.min(returnTotal, Math.round(redeemBack * value * 100) / 100);
+      }
+
       const created = await tx.sale.create({
         data: {
           tenantId: session.tenantId,
@@ -86,6 +115,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           taxAmount: -returnTax,
           discountAmount: -returnDiscount,
           totalAmount: -returnTotal,
+          // Negative like the amounts above: the money refunded is
+          // totalAmount − pointsAmount, the rest goes back as points.
+          pointsRedeemed: -redeemBack,
+          pointsAmount: -pointsValueBack,
+          pointsEarned: -earnBack,
           paymentMethod: sale.paymentMethod,
           orderRemarks: reason ? `Return for ${sale.saleNumber}: ${reason}` : `Return for ${sale.saleNumber}`,
           customerId: sale.customerId,
@@ -131,6 +165,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           userId: session.userId,
         })),
       });
+
+      if (hasPoints && (earnBack > 0 || redeemBack > 0)) {
+        await applyPoints(tx, {
+          tenantId: session.tenantId,
+          customerId: sale.customerId!,
+          userId: session.userId,
+          saleId: created.id,
+          type: "RETURN",
+          points: redeemBack - earnBack,
+          reason: `Return for ${sale.saleNumber}`,
+          clampAtZero: true,
+        });
+      }
 
       const updatedItems = await tx.saleItem.findMany({ where: { saleId: sale.id } });
       const fullyReturned = updatedItems.every((i) => i.returnedQuantity >= i.quantity);

@@ -55,6 +55,13 @@ export interface ReceiptData {
   paymentReference?: string | null;
   cashReceived?: number;
   changeGiven?: number;
+  // Loyalty points on this sale, as saved with it. Absent when no points moved.
+  loyalty?: {
+    pointsRedeemed: number;
+    pointsAmount: number; // peso value of the points used
+    pointsEarned: number;
+    balanceAfter: number | null; // the customer's balance right after this sale
+  };
   customer?: { firstName: string; lastName: string };
   cashier: { firstName: string; lastName: string };
   orderRemarks?: string | null;

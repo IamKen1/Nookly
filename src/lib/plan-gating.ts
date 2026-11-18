@@ -4,16 +4,17 @@ import { getSubscriptionWithPlan } from "@/lib/request-cache";
 
 export type PlanCode = "SPROUT" | "BLOOM" | "EMPIRE";
 
-export type FeatureKey = "prescriptions" | "alerts" | "multiBranch" | "apiAccess";
+export type FeatureKey = "prescriptions" | "alerts" | "multiBranch" | "apiAccess" | "loyalty";
 
 const FEATURE_COLUMN: Record<
   FeatureKey,
-  "featurePrescriptions" | "featureAlerts" | "featureMultiBranch" | "featureApiAccess"
+  "featurePrescriptions" | "featureAlerts" | "featureMultiBranch" | "featureApiAccess" | "featureLoyalty"
 > = {
   prescriptions: "featurePrescriptions",
   alerts: "featureAlerts",
   multiBranch: "featureMultiBranch",
   apiAccess: "featureApiAccess",
+  loyalty: "featureLoyalty",
 };
 
 const UPGRADE_FEATURE_LABEL: Record<FeatureKey, string> = {
@@ -21,6 +22,7 @@ const UPGRADE_FEATURE_LABEL: Record<FeatureKey, string> = {
   alerts: "Email alerts",
   multiBranch: "Multi-branch",
   apiAccess: "API access",
+  loyalty: "Customer profiles & loyalty points",
 };
 
 // Reports are gated individually per plan (Plan.enabledReports, a JSON array
@@ -75,6 +77,7 @@ const loadPlanGates = cache((planCode: PlanCode) =>
       featureAlerts: true,
       featureMultiBranch: true,
       featureApiAccess: true,
+      featureLoyalty: true,
     },
   })
 );

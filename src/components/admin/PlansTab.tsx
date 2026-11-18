@@ -21,6 +21,7 @@ interface Plan {
   featureMultiBranch: boolean;
   featureApiAccess: boolean;
   featureStaffCode: boolean;
+  featureLoyalty: boolean;
   isActive: boolean;
   tenantCount: number;
 }
@@ -31,6 +32,7 @@ const FEATURE_FLAGS: { key: keyof Plan; label: string }[] = [
   { key: "featureMultiBranch", label: "Multi-branch stock transfer" },
   { key: "featureApiAccess", label: "API access (read-only data export)" },
   { key: "featureStaffCode", label: "Staff security codes (multi-branch only)" },
+  { key: "featureLoyalty", label: "Customer profiles & loyalty points" },
 ];
 
 // Every report in the catalog, grouped as on the Reports screen.
@@ -72,6 +74,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
           featureMultiBranch: draft.featureMultiBranch,
           featureApiAccess: draft.featureApiAccess,
           featureStaffCode: draft.featureStaffCode,
+          featureLoyalty: draft.featureLoyalty,
           isActive: draft.isActive,
           features: featuresText.split("\n").map((f) => f.trim()).filter(Boolean),
         }),

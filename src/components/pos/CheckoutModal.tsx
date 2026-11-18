@@ -8,8 +8,10 @@ import { discountCalcInput, discountDisplay } from "@/lib/discount-math";
 import type { DiscountDTO } from "@/lib/discounts";
 import { peso } from "@/lib/format";
 import { E_WALLET_PROVIDERS } from "@/lib/payment-methods";
+import { maxRedeemablePoints, pointsEarnedFor, pointsToPesos } from "@/lib/loyalty-math";
 import type { CartLine } from "./CartPanel";
 import PrescriptionFields, { type PrescriptionDraft, type PrescriptionSelection } from "./PrescriptionFields";
+import CustomerPicker, { type PickedCustomer } from "./CustomerPicker";
 
 export type { PrescriptionDraft };
 
@@ -42,6 +44,9 @@ interface CheckoutModalProps {
   // Filled in by whoever took the order; the cashier starts from it.
   initialDiscount?: { discountId: string; idNumber: string; holderName: string } | null;
   initialRemarks?: string | null;
+  // Loyalty points are on (plan includes it and the owner turned it on): the
+  // cashier can attach a customer and let them pay with points.
+  loyalty?: { pesosPerPoint: number; pesoValuePerPoint: number } | null;
   onProcessSale: (payload: {
     paymentMethod: string;
     cashReceived?: number;
@@ -55,7 +60,9 @@ interface CheckoutModalProps {
     prescriptionId?: string;
     prescriptionDraft?: PrescriptionDraft;
     staffCode?: string;
-  }) => Promise<{ ok: boolean; error?: string; saleNumber?: string; totalAmount?: number; codeError?: boolean }>;
+    customerId?: string;
+    pointsToRedeem?: number;
+  }) => Promise<{ ok: boolean; error?: string; saleNumber?: string; totalAmount?: number; codeError?: boolean; pointsBalance?: number }>;
 }
 
 
@@ -89,8 +96,11 @@ export default function CheckoutModal({
   initialDiscount,
   initialRemarks,
   requireStaffCode = false,
+  loyalty = null,
   onProcessSale,
 }: CheckoutModalProps) {
+  const [customer, setCustomer] = useState<PickedCustomer | null>(null);
+  const [pointsText, setPointsText] = useState("");
   // Asking for the security code before sending / taking payment.
   const [codeFor, setCodeFor] = useState<"send" | "pay" | null>(null);
   const [staffCode, setStaffCode] = useState("");
@@ -124,6 +134,8 @@ export default function CheckoutModal({
       setRemarks(initialRemarks ?? "");
       setPrescriptionSelection(null);
       setPrescriptionIncomplete(null);
+      setCustomer(null);
+      setPointsText("");
       setIsProcessing(false);
       setError(null);
       setSuccess(null);
@@ -144,9 +156,18 @@ export default function CheckoutModal({
   const finalTotal = totals.finalTotal;
   const computationLines = getComputationLines(totals, discountType, discountInput.discountPercent, discount ? discountDisplay(discount) : undefined);
 
+  // Loyalty points pay part of the total like a voucher; the total and VAT above
+  // don't change, only what's left to pay in cash or e-wallet.
+  const maxPoints = loyalty && customer ? maxRedeemablePoints(customer.loyaltyPoints, finalTotal, loyalty.pesoValuePerPoint) : 0;
+  const pointsToUse = Math.min(Math.max(0, Math.floor(Number(pointsText) || 0)), maxPoints);
+  const pointsValue = loyalty ? pointsToPesos(pointsToUse, loyalty.pesoValuePerPoint) : 0;
+  const amountDue = pointsToUse > 0 ? Math.round((finalTotal - pointsValue) * 100) / 100 : finalTotal;
+  const paidByPointsOnly = pointsToUse > 0 && amountDue <= 0;
+  const pointsToEarn = loyalty && customer ? pointsEarnedFor(amountDue, loyalty.pesosPerPoint) : 0;
+
   const cashAmount = parseFloat(cashReceived) || 0;
-  const changeAmount = cashAmount - finalTotal;
-  const isValidPayment = paymentMethod === "CASH" ? cashAmount >= finalTotal : walletReference.trim().length >= 4;
+  const changeAmount = cashAmount - amountDue;
+  const isValidPayment = paidByPointsOnly || (paymentMethod === "CASH" ? cashAmount >= amountDue : walletReference.trim().length >= 4);
 
   const handleCashInput = (value: string) => {
     const sanitized = value.replace(/[^\d.]/g, "");
@@ -219,16 +240,24 @@ export default function CheckoutModal({
     if (requireStaffCode && code === undefined) return askCode("pay");
     setIsProcessing(true);
     try {
+      // Fully paid with points: recorded as cash with nothing received.
+      const method = paidByPointsOnly ? "CASH" : paymentMethod;
       const result = await onProcessSale({
-        paymentMethod,
-        cashReceived: paymentMethod === "CASH" ? cashAmount : undefined,
-        paymentProvider: paymentMethod === "E_WALLET" ? walletProvider : undefined,
-        paymentReference: paymentMethod === "E_WALLET" ? walletReference.trim() : undefined,
+        paymentMethod: method,
+        cashReceived: method === "CASH" ? (paidByPointsOnly ? 0 : cashAmount) : undefined,
+        paymentProvider: method === "E_WALLET" ? walletProvider : undefined,
+        paymentReference: method === "E_WALLET" ? walletReference.trim() : undefined,
         ...orderPayload(),
         discountType: discount?.code,
         ...(code !== undefined ? { staffCode: code } : {}),
+        ...(loyalty && customer ? { customerId: customer.id, ...(pointsToUse > 0 ? { pointsToRedeem: pointsToUse } : {}) } : {}),
       });
       if (!result.ok) {
+        // The customer's points changed since they were picked: show the real balance.
+        if (result.pointsBalance !== undefined && customer) {
+          setCustomer({ ...customer, loyaltyPoints: result.pointsBalance });
+          setPointsText("");
+        }
         failed(result, "Payment processing failed.");
         return;
       }
@@ -357,6 +386,18 @@ export default function CheckoutModal({
                   <span className="font-semibold">Total Amount Due:</span>
                   <span className="font-semibold text-emerald-600">{peso(finalTotal)}</span>
                 </div>
+                {pointsToUse > 0 && (
+                  <>
+                    <div className="flex justify-between text-sm text-violet-700">
+                      <span>Less: Points used ({pointsToUse.toLocaleString("en-PH")}):</span>
+                      <span>-{peso(pointsValue)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="font-semibold">Amount to Pay:</span>
+                      <span className="font-semibold text-emerald-600">{peso(amountDue)}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="mt-3 space-y-1 border-t border-dashed border-gray-300 pt-2">
@@ -460,6 +501,63 @@ export default function CheckoutModal({
             </p>
           ) : (
           <>
+          {loyalty && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-gray-900">Customer &amp; Points</h3>
+              <CustomerPicker
+                value={customer}
+                onChange={(c) => {
+                  setCustomer(c);
+                  setPointsText("");
+                }}
+                pesoValuePerPoint={loyalty.pesoValuePerPoint}
+              />
+              {!customer && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Optional. Pick the customer so they earn points
+                  {prescriptionSelection ? " (otherwise the prescription's customer earns them)" : ""}.
+                </p>
+              )}
+              {customer && maxPoints > 0 && (
+                <div className="mt-2 flex items-end gap-2">
+                  <label className="flex-1 text-sm">
+                    <span className="mb-1 block text-xs font-medium text-gray-700">Use points (up to {maxPoints.toLocaleString("en-PH")})</span>
+                    <input
+                      value={pointsText}
+                      onChange={(e) => setPointsText(e.target.value.replace(/\D/g, ""))}
+                      inputMode="numeric"
+                      placeholder="0"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setPointsText(String(maxPoints))}
+                    className="rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+                  >
+                    Use max
+                  </button>
+                </div>
+              )}
+              {customer && Number(pointsText) > maxPoints && (
+                <p className="mt-1 text-xs text-amber-700">Only {maxPoints.toLocaleString("en-PH")} points can be used on this sale.</p>
+              )}
+              {customer && (
+                <p className="mt-1 text-xs text-emerald-700">
+                  {pointsToEarn > 0
+                    ? `Earns ${pointsToEarn.toLocaleString("en-PH")} ${pointsToEarn === 1 ? "point" : "points"} on this sale.`
+                    : paidByPointsOnly
+                    ? "No points are earned on the part paid with points."
+                    : `Earns a point for every ${peso(loyalty.pesosPerPoint)} paid.`}
+                </p>
+              )}
+            </div>
+          )}
+
+          {paidByPointsOnly ? (
+            <p className="rounded-lg bg-violet-50 px-3 py-2 text-sm font-medium text-violet-800">Fully paid with points. No cash needed.</p>
+          ) : (
+          <>
           <div>
             <h3 className="mb-2 text-sm font-semibold text-gray-900">Payment Method</h3>
             <div className="grid grid-cols-2 gap-2">
@@ -494,14 +592,14 @@ export default function CheckoutModal({
                     }`}
                   />
                 </div>
-                {cashReceived && !isValidPayment && <p className="mt-1 text-sm text-red-600">Need {peso(finalTotal - cashAmount)} more</p>}
+                {cashReceived && !isValidPayment && <p className="mt-1 text-sm text-red-600">Need {peso(amountDue - cashAmount)} more</p>}
               </div>
 
               <div className="mb-4">
                 <label className="mb-2 block text-sm font-medium text-gray-700">Quick Amount</label>
                 <div className="grid grid-cols-5 gap-2">
                   <button
-                    onClick={() => setCashReceived(finalTotal.toFixed(2))}
+                    onClick={() => setCashReceived(amountDue.toFixed(2))}
                     className="rounded-lg bg-green-100 p-2 text-xs font-medium text-green-700 transition-colors hover:bg-green-200 sm:text-sm"
                   >
                     Exact
@@ -530,8 +628,8 @@ export default function CheckoutModal({
                       <span>{peso(cashAmount)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Total:</span>
-                      <span>{peso(finalTotal)}</span>
+                      <span>{pointsToUse > 0 ? "Amount to pay:" : "Total:"}</span>
+                      <span>{peso(amountDue)}</span>
                     </div>
                     <div className="flex justify-between border-t border-emerald-200 pt-1 text-base font-bold">
                       <span>Change:</span>
@@ -572,10 +670,12 @@ export default function CheckoutModal({
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Check that {peso(finalTotal)} arrived in the store&apos;s {walletProvider === "Other" ? "e-wallet" : walletProvider} before completing the sale.
+                  Check that {peso(amountDue)} arrived in the store&apos;s {walletProvider === "Other" ? "e-wallet" : walletProvider} before completing the sale.
                 </p>
               </div>
             </div>
+          )}
+          </>
           )}
           </>
           )}

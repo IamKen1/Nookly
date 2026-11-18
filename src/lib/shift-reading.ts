@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { moneyReceived, paymentParts } from "@/lib/payment-methods";
 
 export interface ShiftReading {
   id: string;
@@ -71,15 +72,20 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
   const taxAmount = active.reduce((sum, s) => sum + Number(s.taxAmount), 0);
   const netSales = active.reduce((sum, s) => sum + Number(s.totalAmount), 0);
 
+  // Money goes under its own method; anything paid with loyalty points is a
+  // separate "Loyalty points" row, since no cash or e-wallet came in for it.
   const byMethod = new Map<string, { salesCount: number; totalAmount: number }>();
   for (const s of active) {
-    const cur = byMethod.get(s.paymentMethod) ?? { salesCount: 0, totalAmount: 0 };
-    cur.salesCount += 1;
-    cur.totalAmount += Number(s.totalAmount);
-    byMethod.set(s.paymentMethod, cur);
+    for (const part of paymentParts(s)) {
+      const cur = byMethod.get(part.method) ?? { salesCount: 0, totalAmount: 0 };
+      cur.salesCount += 1;
+      cur.totalAmount += part.amount;
+      byMethod.set(part.method, cur);
+    }
   }
 
-  const cashSalesTotal = active.filter((s) => s.paymentMethod === "CASH").reduce((sum, s) => sum + Number(s.totalAmount), 0);
+  // Only the cash actually received belongs in the drawer.
+  const cashSalesTotal = active.filter((s) => s.paymentMethod === "CASH").reduce((sum, s) => sum + moneyReceived(s), 0);
 
   const cashIns = cashTransactions.filter((t) => t.type === "CASH_IN");
   const cashOuts = cashTransactions.filter((t) => t.type === "CASH_OUT");

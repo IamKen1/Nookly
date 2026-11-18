@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { paymentMethodLabel } from "@/lib/payment-methods";
+import { moneyReceived, paymentMethodLabel, paymentParts } from "@/lib/payment-methods";
 import type { ReportResult } from "./registry";
 import { type ReportContext, daysIn, money, phDay, phHour, phWeekday, saleWhere, storeName } from "./context";
 
@@ -24,6 +24,7 @@ const saleSelect = {
   discountType: true,
   paymentMethod: true,
   paymentProvider: true,
+  pointsAmount: true,
 } as const;
 
 // Sales and returns in the period. Returns carry negative amounts, so adding
@@ -77,8 +78,14 @@ async function loadLines(ctx: ReportContext) {
 export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
   const { sales, returns } = await loadSales(ctx);
   const voids = await prisma.sale.aggregate({ where: saleWhere(ctx, "voids"), _count: true, _sum: { totalAmount: true } });
-  const days = new Map(daysIn(ctx).map((d) => [d, { date: d, transactions: 0, gross: 0, discounts: 0, vatExempt: 0, returns: 0, net: 0, vat: 0, cash: 0, ewallet: 0, other: 0 }]));
+  const days = new Map(daysIn(ctx).map((d) => [d, { date: d, transactions: 0, gross: 0, discounts: 0, vatExempt: 0, returns: 0, net: 0, vat: 0, cash: 0, ewallet: 0, other: 0, points: 0 }]));
   const row = (d: Date) => days.get(phDay(d));
+  // Money under its method; the part paid with loyalty points in its own column.
+  const addPayment = (r: NonNullable<ReturnType<typeof row>>, s: (typeof sales)[number]) => {
+    const bucket = s.paymentMethod === "CASH" ? "cash" : s.paymentMethod === "E_WALLET" ? "ewallet" : "other";
+    r[bucket] += moneyReceived(s);
+    r.points += n(s.pointsAmount);
+  };
   for (const s of sales) {
     const r = row(s.saleDate);
     if (!r) continue;
@@ -88,8 +95,7 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
     r.vatExempt += n(s.vatRemovedFromVatable);
     r.net += n(s.totalAmount);
     r.vat += n(s.taxAmount);
-    const bucket = s.paymentMethod === "CASH" ? "cash" : s.paymentMethod === "E_WALLET" ? "ewallet" : "other";
-    r[bucket] += n(s.totalAmount);
+    addPayment(r, s);
   }
   for (const s of returns) {
     const r = row(s.saleDate);
@@ -97,8 +103,7 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
     r.returns += -n(s.totalAmount);
     r.net += n(s.totalAmount);
     r.vat += n(s.taxAmount);
-    const bucket = s.paymentMethod === "CASH" ? "cash" : s.paymentMethod === "E_WALLET" ? "ewallet" : "other";
-    r[bucket] += n(s.totalAmount);
+    addPayment(r, s);
   }
   const rows = [...days.values()].map((r) => ({
     ...r,
@@ -111,10 +116,12 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
     cash: money(r.cash),
     ewallet: money(r.ewallet),
     other: money(r.other),
+    points: money(r.points),
     average: r.transactions ? money(r.net / r.transactions) : 0,
   }));
   const t = rows.reduce((a, r) => ({ tx: a.tx + r.transactions, net: a.net + r.net, gross: a.gross + r.gross, ret: a.ret + r.returns }), { tx: 0, net: 0, gross: 0, ret: 0 });
   const hasOther = rows.some((r) => r.other !== 0);
+  const hasPoints = rows.some((r) => r.points !== 0);
   return {
     summary: [
       { label: "Net sales", value: money(t.net), format: "money" },
@@ -135,10 +142,11 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
       { key: "cash", label: "Cash", format: "money", total: true },
       { key: "ewallet", label: "E-wallet", format: "money", total: true },
       ...(hasOther ? [{ key: "other", label: "Card/other", format: "money" as const, total: true }] : []),
+      ...(hasPoints ? [{ key: "points", label: "Points", format: "money" as const, total: true }] : []),
       { key: "average", label: "Avg sale", format: "money" },
     ],
     rows,
-    note: "Net sales = gross sales − discounts − VAT exempted on SC/PWD sales − returns. Voided sales are excluded.",
+    note: `Net sales = gross sales − discounts − VAT exempted on SC/PWD sales − returns. Voided sales are excluded.${hasPoints ? " Points = the part customers paid with loyalty points." : ""}`,
   };
 }
 
@@ -421,14 +429,19 @@ export async function paymentMethods(ctx: ReportContext): Promise<ReportResult> 
   const { sales, returns } = await loadSales(ctx);
   const refs = await prisma.sale.count({ where: { ...saleWhere(ctx, "sales"), paymentReference: { not: null } } });
   const by = new Map<string, { method: string; provider: string; transactions: number; amount: number; refunds: number }>();
+  const returnSet = new Set(returns);
   for (const s of [...sales, ...returns]) {
-    const provider = s.paymentMethod === "E_WALLET" ? s.paymentProvider ?? "Unspecified" : "—";
-    const key = `${s.paymentMethod}|${provider}`;
-    const r = by.get(key) ?? { method: paymentMethodLabel(s.paymentMethod), provider, transactions: 0, amount: 0, refunds: 0 };
-    if (returns.includes(s)) r.refunds += -n(s.totalAmount);
-    else r.transactions++;
-    r.amount += n(s.totalAmount);
-    by.set(key, r);
+    // Money under its own method/provider; anything paid with loyalty points
+    // is its own "Loyalty points" row, since no money came in for it.
+    for (const part of paymentParts(s)) {
+      const provider = part.method === "E_WALLET" ? s.paymentProvider ?? "Unspecified" : "—";
+      const key = `${part.method}|${provider}`;
+      const r = by.get(key) ?? { method: paymentMethodLabel(part.method), provider, transactions: 0, amount: 0, refunds: 0 };
+      if (returnSet.has(s)) r.refunds += -part.amount;
+      else r.transactions++;
+      r.amount += part.amount;
+      by.set(key, r);
+    }
   }
   const total = [...by.values()].reduce((s, r) => s + r.amount, 0);
   const rows = [...by.values()]

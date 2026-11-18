@@ -18,6 +18,7 @@ interface PlanUpdateBody {
   featureMultiBranch?: boolean;
   featureApiAccess?: boolean;
   featureStaffCode?: boolean;
+  featureLoyalty?: boolean;
   isActive?: boolean;
 }
 
@@ -50,6 +51,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ...(body.featureMultiBranch !== undefined ? { featureMultiBranch: body.featureMultiBranch } : {}),
       ...(body.featureApiAccess !== undefined ? { featureApiAccess: body.featureApiAccess } : {}),
       ...(body.featureStaffCode !== undefined ? { featureStaffCode: body.featureStaffCode } : {}),
+      ...(body.featureLoyalty !== undefined ? { featureLoyalty: body.featureLoyalty } : {}),
       ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
     },
   });

@@ -33,6 +33,11 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
       paymentReference: true,
       cashReceived: true,
       changeGiven: true,
+      pointsRedeemed: true,
+      pointsAmount: true,
+      pointsEarned: true,
+      // The sale's own points rows (not a later VOID), to show the balance right after it.
+      loyaltyTransactions: { where: { type: { in: ["EARN", "REDEEM", "RETURN"] } }, select: { type: true, balanceAfter: true } },
       orderRemarks: true,
       customer: { select: { firstName: true, lastName: true } },
       user: { select: { firstName: true, lastName: true } },
@@ -100,6 +105,21 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
     paymentReference: sale.paymentReference,
     cashReceived: sale.cashReceived ? toNumber(sale.cashReceived) : undefined,
     changeGiven: sale.changeGiven ? toNumber(sale.changeGiven) : undefined,
+    ...(sale.pointsRedeemed !== 0 || sale.pointsEarned !== 0
+      ? {
+          loyalty: {
+            pointsRedeemed: sale.pointsRedeemed,
+            pointsAmount: toNumber(sale.pointsAmount),
+            pointsEarned: sale.pointsEarned,
+            // EARN is written last at checkout, so its balance is the one after
+            // the sale; REDEEM when nothing was earned; RETURN on return rows.
+            balanceAfter:
+              (["EARN", "REDEEM", "RETURN"] as const)
+                .map((type) => sale.loyaltyTransactions.find((t) => t.type === type))
+                .find(Boolean)?.balanceAfter ?? null,
+          },
+        }
+      : {}),
     orderRemarks: sale.orderRemarks,
     customer: sale.customer ?? undefined,
     cashier: { firstName: (sale.servedBy ?? sale.user).firstName, lastName: (sale.servedBy ?? sale.user).lastName },

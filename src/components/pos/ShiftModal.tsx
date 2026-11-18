@@ -49,6 +49,7 @@ const METHOD_LABELS: Record<string, string> = {
   INSURANCE: "Insurance",
   CHECK: "Check",
   SPLIT: "Split",
+  POINTS: "Loyalty points",
 };
 
 export default function ShiftModal({
