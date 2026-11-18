@@ -22,6 +22,7 @@ interface Plan {
   featureApiAccess: boolean;
   featureStaffCode: boolean;
   featureLoyalty: boolean;
+  featureReceiptDesigner: boolean;
   isActive: boolean;
   tenantCount: number;
 }
@@ -33,6 +34,7 @@ const FEATURE_FLAGS: { key: keyof Plan; label: string }[] = [
   { key: "featureApiAccess", label: "API access (read-only data export)" },
   { key: "featureStaffCode", label: "Staff security codes (multi-branch only)" },
   { key: "featureLoyalty", label: "Customer profiles & loyalty points" },
+  { key: "featureReceiptDesigner", label: "Receipt designer" },
 ];
 
 // Every report in the catalog, grouped as on the Reports screen.
@@ -75,6 +77,7 @@ function PlanCard({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
           featureApiAccess: draft.featureApiAccess,
           featureStaffCode: draft.featureStaffCode,
           featureLoyalty: draft.featureLoyalty,
+          featureReceiptDesigner: draft.featureReceiptDesigner,
           isActive: draft.isActive,
           features: featuresText.split("\n").map((f) => f.trim()).filter(Boolean),
         }),

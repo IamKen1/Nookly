@@ -4,17 +4,18 @@ import { getSubscriptionWithPlan } from "@/lib/request-cache";
 
 export type PlanCode = "SPROUT" | "BLOOM" | "EMPIRE";
 
-export type FeatureKey = "prescriptions" | "alerts" | "multiBranch" | "apiAccess" | "loyalty";
+export type FeatureKey = "prescriptions" | "alerts" | "multiBranch" | "apiAccess" | "loyalty" | "receiptDesigner";
 
 const FEATURE_COLUMN: Record<
   FeatureKey,
-  "featurePrescriptions" | "featureAlerts" | "featureMultiBranch" | "featureApiAccess" | "featureLoyalty"
+  "featurePrescriptions" | "featureAlerts" | "featureMultiBranch" | "featureApiAccess" | "featureLoyalty" | "featureReceiptDesigner"
 > = {
   prescriptions: "featurePrescriptions",
   alerts: "featureAlerts",
   multiBranch: "featureMultiBranch",
   apiAccess: "featureApiAccess",
   loyalty: "featureLoyalty",
+  receiptDesigner: "featureReceiptDesigner",
 };
 
 const UPGRADE_FEATURE_LABEL: Record<FeatureKey, string> = {
@@ -23,6 +24,7 @@ const UPGRADE_FEATURE_LABEL: Record<FeatureKey, string> = {
   multiBranch: "Multi-branch",
   apiAccess: "API access",
   loyalty: "Customer profiles & loyalty points",
+  receiptDesigner: "Receipt designer",
 };
 
 // Reports are gated individually per plan (Plan.enabledReports, a JSON array
@@ -78,6 +80,7 @@ const loadPlanGates = cache((planCode: PlanCode) =>
       featureMultiBranch: true,
       featureApiAccess: true,
       featureLoyalty: true,
+      featureReceiptDesigner: true,
     },
   })
 );

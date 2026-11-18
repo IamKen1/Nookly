@@ -1,0 +1,230 @@
+import type { Align, Block, BlockType, PaperWidth, PrintMode, RuleChar, SaleDetailField, Style, Template, Theme, TotalsLine } from "./types";
+import { IMAGE_FONTS, TEMPLATE_VERSION } from "./types";
+import { newBlock, newId, DEFAULT_SALE_DETAILS } from "./blocks";
+import { TOTALS_FIELDS } from "./totals";
+
+// Turns whatever was saved or sent into a well-formed design: unknown fields
+// are dropped, numbers clamped, strings trimmed to size. Anything that would
+// make the receipt pose as a BIR document is reported as an error.
+
+const LIMITS = { blocks: 60, totalsLines: 40, text: 500, label: 60, qr: 300 };
+const BLOCK_TYPES: BlockType[] = [
+  "logo", "storeInfo", "title", "saleDetails", "items", "totals", "scPwd", "payment",
+  "loyalty", "remarks", "text", "qr", "barcode", "rule", "footer",
+];
+const RULE_CHARS: RuleChar[] = ["-", "=", ".", "*", " "];
+const ALIGNS: Align[] = ["left", "center", "right"];
+
+// Nookly isn't BIR-accredited, so no text on the receipt may call it one of these.
+const BIR_TITLES = /official\s*receipt|(sales|service)\s*invoice/i;
+
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
+const str = (v: unknown, max: number, fallback = "") => (typeof v === "string" ? v.slice(0, max) : fallback);
+const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+const num = (v: unknown, min: number, max: number, fallback: number) =>
+  typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
+const int = (v: unknown, min: number, max: number, fallback: number) => Math.round(num(v, min, max, fallback));
+const oneOf = <T extends string>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
+const color = (v: unknown) => (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : undefined);
+
+export function sanitizeStyle(v: unknown): Style {
+  if (!isObj(v)) return {};
+  const s: Style = {};
+  if (v.font === "A" || v.font === "B") s.font = v.font;
+  if (v.sizeW !== undefined) s.sizeW = int(v.sizeW, 1, 8, 1);
+  if (v.sizeH !== undefined) s.sizeH = int(v.sizeH, 1, 8, 1);
+  if (typeof v.fontFamily === "string" && v.fontFamily in IMAGE_FONTS) s.fontFamily = v.fontFamily;
+  if (v.fontSize !== undefined) s.fontSize = num(v.fontSize, 6, 48, 9);
+  for (const k of ["bold", "italic", "underline", "inverse"] as const) if (typeof v[k] === "boolean") s[k] = v[k] as boolean;
+  const c = color(v.color);
+  if (c) s.color = c;
+  if (v.background === null) s.background = null;
+  else if (color(v.background)) s.background = color(v.background);
+  if (v.lineHeight !== undefined) s.lineHeight = num(v.lineHeight, 0.8, 3, 1.3);
+  if (v.letterSpacing !== undefined) s.letterSpacing = num(v.letterSpacing, -2, 10, 0);
+  return s;
+}
+
+function sanitizeTotalsLine(v: unknown): TotalsLine | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id, 64) || newId("t");
+  switch (v.kind) {
+    case "computation":
+      return { id, kind: "computation", style: sanitizeStyle(v.style) };
+    case "rule":
+      return { id, kind: "rule", char: oneOf(v.char, RULE_CHARS, "-") };
+    case "heading":
+      return { id, kind: "heading", text: str(v.text, LIMITS.label), align: oneOf(v.align, ALIGNS, "left"), style: sanitizeStyle(v.style) };
+    case "value": {
+      if (typeof v.key !== "string" || !(v.key in TOTALS_FIELDS)) return null;
+      const key = v.key as keyof typeof TOTALS_FIELDS;
+      return {
+        id,
+        kind: "value",
+        key,
+        label: typeof v.label === "string" ? v.label.slice(0, LIMITS.label) : TOTALS_FIELDS[key].label,
+        style: sanitizeStyle(v.style),
+        minus: bool(v.minus, false),
+        hideWhenZero: bool(v.hideWhenZero, false),
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function sanitizeBlock(v: unknown): Block | null {
+  if (!isObj(v) || !BLOCK_TYPES.includes(v.type as BlockType)) return null;
+  const d = newBlock(v.type as BlockType, str(v.id, 64) || newId());
+  const common = {
+    id: d.id,
+    visible: bool(v.visible, true),
+    align: oneOf(v.align, ALIGNS, d.align),
+    style: sanitizeStyle(v.style),
+    spaceBefore: int(v.spaceBefore, 0, 5, 0),
+    spaceAfter: int(v.spaceAfter, 0, 5, 0),
+    ruleBefore: v.ruleBefore === null || v.ruleBefore === undefined ? null : oneOf(v.ruleBefore, RULE_CHARS, "-"),
+    ruleAfter: v.ruleAfter === null || v.ruleAfter === undefined ? null : oneOf(v.ruleAfter, RULE_CHARS, "-"),
+  };
+
+  switch (d.type) {
+    case "logo":
+      return { ...d, ...common, widthPct: int(v.widthPct, 10, 100, d.widthPct) };
+    case "storeInfo": {
+      const f = isObj(v.fields) ? v.fields : {};
+      const fields = Object.fromEntries(Object.entries(d.fields).map(([k, def]) => [k, bool(f[k], def)])) as typeof d.fields;
+      return { ...d, ...common, fields, nameStyle: isObj(v.nameStyle) ? sanitizeStyle(v.nameStyle) : d.nameStyle };
+    }
+    case "title":
+      return { ...d, ...common, text: str(v.text, LIMITS.label), uppercase: bool(v.uppercase, d.uppercase) };
+    case "saleDetails": {
+      const given = Array.isArray(v.fields) ? v.fields.filter(isObj) : [];
+      const seen = new Set<string>();
+      const fields: SaleDetailField[] = [];
+      for (const f of given) {
+        const def = DEFAULT_SALE_DETAILS.find((x) => x.key === f.key);
+        if (!def || seen.has(def.key)) continue;
+        seen.add(def.key);
+        fields.push({ key: def.key, visible: bool(f.visible, def.visible), label: typeof f.label === "string" ? f.label.slice(0, LIMITS.label) : def.label });
+      }
+      // Fields missing from an older design come back hidden, in their usual order.
+      for (const def of DEFAULT_SALE_DETAILS) if (!seen.has(def.key)) fields.push({ ...def, visible: given.length === 0 ? def.visible : false });
+      return { ...d, ...common, fields };
+    }
+    case "items":
+      return {
+        ...d,
+        ...common,
+        header: bool(v.header, d.header),
+        headerRule: bool(v.headerRule, d.headerRule),
+        countRule: bool(v.countRule, d.countRule),
+        headerLeft: str(v.headerLeft, LIMITS.label, d.headerLeft),
+        headerRight: str(v.headerRight, LIMITS.label, d.headerRight),
+        headerStyle: isObj(v.headerStyle) ? sanitizeStyle(v.headerStyle) : d.headerStyle,
+        nameStyle: isObj(v.nameStyle) ? sanitizeStyle(v.nameStyle) : d.nameStyle,
+        showVatMarker: bool(v.showVatMarker, d.showVatMarker),
+        showGenericName: bool(v.showGenericName, d.showGenericName),
+        showItemCount: bool(v.showItemCount, d.showItemCount),
+        itemCountLabel: str(v.itemCountLabel, LIMITS.label, d.itemCountLabel),
+      };
+    case "totals": {
+      const lines = Array.isArray(v.lines) ? v.lines.slice(0, LIMITS.totalsLines).map(sanitizeTotalsLine).filter((l): l is TotalsLine => l !== null) : d.lines;
+      return { ...d, ...common, lines };
+    }
+    case "scPwd":
+      return { ...d, ...common, titleStyle: isObj(v.titleStyle) ? sanitizeStyle(v.titleStyle) : d.titleStyle };
+    case "payment":
+      return {
+        ...d,
+        ...common,
+        showPointsPaid: bool(v.showPointsPaid, d.showPointsPaid),
+        showMethod: bool(v.showMethod, d.showMethod),
+        showReference: bool(v.showReference, d.showReference),
+        showCash: bool(v.showCash, d.showCash),
+        showChange: bool(v.showChange, d.showChange),
+        showPointsEarned: bool(v.showPointsEarned, d.showPointsEarned),
+        showPointsBalance: bool(v.showPointsBalance, d.showPointsBalance),
+        methodAsPair: bool(v.methodAsPair, d.methodAsPair),
+      };
+    case "loyalty":
+      return { ...d, ...common, showEarned: bool(v.showEarned, d.showEarned), showBalance: bool(v.showBalance, d.showBalance) };
+    case "remarks":
+      return { ...d, ...common, heading: str(v.heading, LIMITS.label, d.heading), headingStyle: isObj(v.headingStyle) ? sanitizeStyle(v.headingStyle) : d.headingStyle };
+    case "text":
+      return { ...d, ...common, text: str(v.text, LIMITS.text) };
+    case "qr":
+      return { ...d, ...common, content: str(v.content, LIMITS.qr), sizePct: int(v.sizePct, 10, 100, d.sizePct), caption: str(v.caption, LIMITS.label) };
+    case "barcode":
+      return { ...d, ...common, height: int(v.height, 20, 200, d.height), showText: bool(v.showText, d.showText) };
+    case "rule":
+      return { ...d, ...common, char: oneOf(v.char, RULE_CHARS, d.char) };
+    case "footer":
+      return { ...d, ...common, noticeFirst: bool(v.noticeFirst, d.noticeFirst) };
+  }
+}
+
+// Older saved designs are brought up to the current format here.
+function upgrade(input: Obj): Obj {
+  // Version 1 is the first format; future versions add steps here.
+  return input;
+}
+
+export interface SanitizeResult {
+  template: Template;
+  errors: string[];
+}
+
+export function sanitizeTemplate(input: unknown): SanitizeResult {
+  const v = upgrade(isObj(input) ? input : {});
+  const errors: string[] = [];
+  const blocksIn = Array.isArray(v.blocks) ? v.blocks : [];
+  if (blocksIn.length > LIMITS.blocks) errors.push(`A receipt can have at most ${LIMITS.blocks} blocks.`);
+  const blocks = blocksIn.slice(0, LIMITS.blocks).map(sanitizeBlock).filter((b): b is Block => b !== null);
+  const theme: Theme = { style: sanitizeStyle(isObj(v.theme) ? v.theme.style : undefined) };
+  const template: Template = {
+    version: TEMPLATE_VERSION,
+    paperWidth: (v.paperWidth === 80 ? 80 : 58) as PaperWidth,
+    printMode: oneOf<PrintMode>(v.printMode, ["TEXT", "IMAGE"], "TEXT"),
+    theme,
+    blocks,
+  };
+  for (const t of designTexts(template)) {
+    if (BIR_TITLES.test(t)) {
+      errors.push(`"${t.trim().slice(0, 40)}" can't be used: Nookly receipts aren't BIR-accredited Official Receipts or Sales Invoices.`);
+    }
+  }
+  return { template, errors };
+}
+
+// Every piece of text an owner typed into the design.
+function designTexts(t: Template): string[] {
+  const out: string[] = [];
+  for (const b of t.blocks) {
+    if (b.type === "title" || b.type === "text") out.push(b.text);
+    if (b.type === "qr") out.push(b.caption);
+    if (b.type === "remarks") out.push(b.heading);
+    if (b.type === "items") out.push(b.headerLeft, b.headerRight, b.itemCountLabel);
+    if (b.type === "saleDetails") b.fields.forEach((f) => out.push(f.label));
+    if (b.type === "totals") b.lines.forEach((l) => (l.kind === "value" ? out.push(l.label) : l.kind === "heading" ? out.push(l.text) : null));
+  }
+  return out.filter(Boolean);
+}
+
+// Advice shown in the designer. Owners decide; nothing here blocks saving.
+export function designWarnings(t: Template): string[] {
+  const warnings: string[] = [];
+  const visible = t.blocks.filter((b) => b.visible);
+  const lines = visible.flatMap((b) => (b.type === "totals" ? b.lines : []));
+  const hasLine = (key: string) => lines.some((l) => l.kind === "value" && l.key === key);
+  const hasComputation = lines.some((l) => l.kind === "computation");
+  if (!hasLine("totalDue")) warnings.push("There's no Total amount due line. Customers won't see what they paid.");
+  if (!hasComputation && !hasLine("discount")) warnings.push("SC/PWD sales won't show the discount. The law expects it on the receipt.");
+  if (!hasComputation && !hasLine("vatExemptSales") && !hasLine("vatRemoved"))
+    warnings.push("SC/PWD sales won't show the VAT exemption. The law expects it on the receipt.");
+  if (!visible.some((b) => b.type === "scPwd")) warnings.push("There's no SC/PWD info block, so SC/PWD receipts won't have the name, ID and signature lines.");
+  if (!visible.some((b) => b.type === "saleDetails" && b.fields.some((f) => f.key === "receiptNo" && f.visible)))
+    warnings.push("The AR number isn't shown. It's needed to look up the sale for returns and reprints.");
+  if (t.printMode === "IMAGE") warnings.push("Image mode prints slower, especially over Bluetooth (several seconds per receipt).");
+  return warnings;
+}

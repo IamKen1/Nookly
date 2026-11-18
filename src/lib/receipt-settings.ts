@@ -16,6 +16,7 @@ const select = {
   showCashierName: true,
   showCustomerName: true,
   includeOrderRemarks: true,
+  logoUrl: true, // printed only by the receipt designer's Logo block
 } as const;
 
 export const getReceiptSettings = async (tenantId: string): Promise<ReceiptStoreSettings> => {

@@ -245,8 +245,10 @@ export default function SalesClient({
       const res = await fetch(`/api/sales/${saleId}/receipt`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      const receiptData: ReceiptData = { ...data, date: new Date(data.date) };
-      await printReceiptAnywhere(receiptData);
+      // `designer` is present only when the owner's own receipt design is in use.
+      const { designer, ...rest } = data;
+      const receiptData: ReceiptData = { ...rest, date: new Date(rest.date) };
+      await printReceiptAnywhere(receiptData, designer ?? null);
     } catch {
       alert("Failed to load receipt.");
     } finally {

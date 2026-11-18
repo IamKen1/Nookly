@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
   const requestedFolder = formData.get("folder");
-  const folder = requestedFolder === "support" ? "support" : "products";
+  const folder = requestedFolder === "support" ? "support" : requestedFolder === "receipt" ? "receipt" : "products";
 
   if (!file) return NextResponse.json({ error: "No file received." }, { status: 400 });
   if (!file.type.startsWith("image/")) return NextResponse.json({ error: "File must be an image." }, { status: 400 });

@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
       featureApiAccess: p.featureApiAccess,
       featureStaffCode: p.featureStaffCode,
       featureLoyalty: p.featureLoyalty,
+      featureReceiptDesigner: p.featureReceiptDesigner,
       isActive: p.isActive,
       tenantCount: p._count.subscriptions,
     }))

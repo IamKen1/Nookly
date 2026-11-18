@@ -14,39 +14,42 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Plan {
-  id                   String              @id @default(cuid())
-  code                 PlanCode            @unique
-  name                 String
-  tagline              String?
-  priceMonthly         Decimal             @db.Decimal(10, 2)
-  priceYearly          Decimal             @db.Decimal(10, 2)
-  maxStores            Int // -1 = unlimited
-  maxUsers             Int // -1 = unlimited
-  maxProducts          Int // -1 = unlimited
-  features             Json // list of feature strings shown on pricing page
+  id                     String              @id @default(cuid())
+  code                   PlanCode            @unique
+  name                   String
+  tagline                String?
+  priceMonthly           Decimal             @db.Decimal(10, 2)
+  priceYearly            Decimal             @db.Decimal(10, 2)
+  maxStores              Int // -1 = unlimited
+  maxUsers               Int // -1 = unlimited
+  maxProducts            Int // -1 = unlimited
+  features               Json // list of feature strings shown on pricing page
   // Which Reports tabs this plan can see — a JSON array of report keys (see
   // ReportKey in src/lib/plan-gating.ts), e.g. ["overview","inventory-dates"].
   // Replaces a single on/off "Reports" flag so a plan can offer some report
   // tabs without all of them (e.g. expiry monitor on Sprout, full financials
   // reserved for Bloom+).
-  enabledReports       Json                @default("[]")
-  featurePrescriptions Boolean             @default(false)
-  featureAlerts        Boolean             @default(false)
-  featureMultiBranch   Boolean             @default(false)
-  featureApiAccess     Boolean             @default(false)
+  enabledReports         Json                @default("[]")
+  featurePrescriptions   Boolean             @default(false)
+  featureAlerts          Boolean             @default(false)
+  featureMultiBranch     Boolean             @default(false)
+  featureApiAccess       Boolean             @default(false)
   // Staff security codes: whoever sends an order or completes a sale enters
   // their own code, so it's on record as theirs even on a shared login.
-  featureStaffCode     Boolean             @default(false)
+  featureStaffCode       Boolean             @default(false)
   // Customer profiles & loyalty points. The plan offers it; each pharmacy's
   // owner still turns it on in Settings › Loyalty Points (LoyaltySettings.enabled).
-  featureLoyalty       Boolean             @default(false)
-  isActive             Boolean             @default(true)
-  sortOrder            Int                 @default(0)
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  subscriptions        Subscription[]
-  requestsFrom         PlanChangeRequest[] @relation("CurrentPlanRequests")
-  requestsTo           PlanChangeRequest[] @relation("RequestedPlanRequests")
+  featureLoyalty         Boolean             @default(false)
+  // Settings › Receipt designer: the owner designs their own receipt. Without
+  // an enabled ReceiptTemplate, receipts print exactly as before.
+  featureReceiptDesigner Boolean             @default(false)
+  isActive               Boolean             @default(true)
+  sortOrder              Int                 @default(0)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  subscriptions          Subscription[]
+  requestsFrom           PlanChangeRequest[] @relation("CurrentPlanRequests")
+  requestsTo             PlanChangeRequest[] @relation("RequestedPlanRequests")
 
   @@map("plans")
 }
@@ -120,6 +123,7 @@ model Tenant {
   notificationSettings NotificationSettings?
   loyaltySettings      LoyaltySettings?
   loyaltyTransactions  LoyaltyTransaction[]
+  receiptTemplate      ReceiptTemplate?
   scheduledReports     ScheduledReportDelivery[]
   apiKeys              ApiKey[]
   importBatches        ImportBatch[]
@@ -1139,6 +1143,31 @@ enum LoyaltyTxnType {
   RETURN
   VOID
   ADJUST
+}
+
+// The owner's own receipt design (Settings › Receipt designer). Used only when
+// the plan has featureReceiptDesigner AND enabled is on; otherwise receipts
+// come from the standard generator in src/lib/receipt.ts, unchanged.
+// blocks / theme follow src/lib/receipt-designer/types.ts (format `version`).
+model ReceiptTemplate {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique
+  enabled         Boolean  @default(false) // "Use this design"
+  paperWidth      Int      @default(58) // 58 or 80 (mm)
+  printMode       String   @default("TEXT") // TEXT or IMAGE
+  theme           Json     @default("{}")
+  blocks          Json     @default("[]") // the published design, what prints
+  draftBlocks     Json? // work in progress in the designer; never printed
+  draftTheme      Json?
+  draftPaperWidth Int?
+  draftPrintMode  String?
+  version         Int      @default(1)
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("receipt_templates")
 }
 
 // Settings › Loyalty Points. No row = off, with the defaults below.

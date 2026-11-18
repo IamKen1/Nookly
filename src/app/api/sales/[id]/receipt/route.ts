@@ -3,6 +3,7 @@ import { getSessionFromRequest } from "@/lib/session";
 import { buildReceiptDataForSale } from "@/lib/receipt-data";
 import { prisma } from "@/lib/prisma";
 import { saleVisibilityWhere } from "@/lib/permissions";
+import { getActiveReceiptTemplate } from "@/lib/receipt-designer/server";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(request);
@@ -18,8 +19,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   });
   if (!visible) return NextResponse.json({ error: "Sale not found." }, { status: 404 });
 
-  const receiptData = await buildReceiptDataForSale(id, session.tenantId);
+  const [receiptData, designer] = await Promise.all([
+    buildReceiptDataForSale(id, session.tenantId),
+    getActiveReceiptTemplate(session.tenantId),
+  ]);
   if (!receiptData) return NextResponse.json({ error: "Sale not found." }, { status: 404 });
 
-  return NextResponse.json(receiptData);
+  // `designer` is added only when the owner's own design is in use; without
+  // it the client prints the standard receipt, exactly as before.
+  return NextResponse.json(designer ? { ...receiptData, designer } : receiptData);
 }

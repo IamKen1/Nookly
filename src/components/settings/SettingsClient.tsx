@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BadgePercent, Bell, CreditCard, Gift, KeyRound, Loader2, PlayCircle, ReceiptText, ShieldCheck, Store, type LucideIcon } from "lucide-react";
+import { BadgePercent, Bell, CreditCard, Gift, KeyRound, Loader2, Palette, PlayCircle, ReceiptText, ShieldCheck, Store, type LucideIcon } from "lucide-react";
 import ReceiptSettingsForm from "./ReceiptSettingsForm";
 import NotificationSettingsForm from "./NotificationSettingsForm";
 import PlanSettingsForm from "./PlanSettingsForm";
@@ -36,6 +36,7 @@ export default function SettingsClient({
   canManageAlerts,
   canManagePlan,
   canManageApiAccess,
+  canDesignReceipts = false,
   isOwner,
   currentPlan,
   allPlans,
@@ -44,6 +45,7 @@ export default function SettingsClient({
   canManageAlerts: boolean;
   canManagePlan: boolean;
   canManageApiAccess: boolean;
+  canDesignReceipts?: boolean;
   isOwner: boolean;
   currentPlan: CurrentPlan | null;
   allPlans: PlanOption[];
@@ -145,6 +147,23 @@ export default function SettingsClient({
           )}
           {active.key === "discounts" && <DiscountsForm />}
           {active.key === "loyalty" && isOwner && <LoyaltySettingsForm />}
+          {active.key === "receipt" && canDesignReceipts && (
+            <a
+              href="/settings/receipt-designer"
+              className="mb-6 flex items-center gap-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 transition hover:border-emerald-300 hover:bg-emerald-50"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                <Palette className="h-5 w-5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-emerald-900">Receipt designer</span>
+                <span className="block text-xs text-emerald-800/80">
+                  Design your own receipt: logo, QR code, promos, fonts, and how totals and discounts are shown. Your current receipt stays until you choose
+                  &quot;Use this design&quot;.
+                </span>
+              </span>
+            </a>
+          )}
           {active.key === "receipt" && <ReceiptSettingsForm />}
           {active.key === "notifications" && canManageAlerts && <NotificationSettingsForm />}
           {active.key === "userAccess" && isOwner && <UserAccessForm />}

@@ -2,7 +2,9 @@ import type { ReceiptData } from "@/types/receipt";
 import { formatPaymentMethodLabel, getReceiptFooterLines, getReceiptHeaderLines, NOT_BIR_ACCREDITED_NOTICE } from "@/types/receipt";
 import { getComputationLines, type ComputationLine, type DiscountType, type VatCalculationResult } from "@/lib/vat-calculations";
 
-const peso = (value: number) => (value < 0 ? `-₱${(-value).toFixed(2)}` : `₱${value.toFixed(2)}`);
+// Exported (with the helpers below) for the receipt designer, which reuses
+// them so a designed receipt shows the same figures and wording.
+export const peso = (value: number) => (value < 0 ? `-₱${(-value).toFixed(2)}` : `₱${value.toFixed(2)}`);
 
 const DISCOUNT_PERCENT: Record<string, number> = { SENIOR: 20, PWD: 20, STUDENT: 10, EMPLOYEE: 15, NONE: 0 };
 const DISCOUNT_LABEL: Record<string, string> = {
@@ -11,14 +13,14 @@ const DISCOUNT_LABEL: Record<string, string> = {
   STUDENT: "STUDENT",
   EMPLOYEE: "EMPLOYEE",
 };
-const isSeniorOrPwd = (discountType?: string) => discountType === "SENIOR" || discountType === "PWD";
+export const isSeniorOrPwd = (discountType?: string) => discountType === "SENIOR" || discountType === "PWD";
 
 // Reuses the exact same step-by-step derivation the checkout screen shows
 // before the sale is even made — so the printed receipt can never disagree
 // with what the cashier already saw, and there is only one place that knows
 // how the math works. Every number is read straight off the fields persisted
 // on the Sale at checkout time, so a reprint always matches the original.
-const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
+export const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
   const discountType = (r.discountType ?? "NONE") as DiscountType;
   // The rate saved on the sale wins (it may have been edited since); older
   // sales fall back to the fixed percentages they were made with.
@@ -48,7 +50,7 @@ const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
 
 // Loyalty lines, shared by the HTML and thermal receipts. Points used are a
 // payment, so they sit with the payment lines; the total above is unchanged.
-const loyaltyLines = (r: ReceiptData) => {
+export const loyaltyLines = (r: ReceiptData) => {
   const l = r.loyalty;
   if (!l) return { paidWithPointsOnly: false, payment: [] as [string, string][], info: [] as [string, string][] };
   const payment: [string, string][] = [];

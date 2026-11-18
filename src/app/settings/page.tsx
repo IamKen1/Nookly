@@ -36,6 +36,7 @@ export default async function SettingsPage() {
         canManageAlerts={canManage}
         canManagePlan={canManage}
         canManageApiAccess={canManageApiAccess}
+        canDesignReceipts={session.role === "OWNER" && Boolean(tenant.subscription?.plan.featureReceiptDesigner)}
         isOwner={session.role === "OWNER"}
         currentPlan={
           tenant.subscription

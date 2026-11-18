@@ -155,7 +155,9 @@ export function ReprintButton({ saleId }: { saleId: string }) {
       const res = await fetch(`/api/sales/${saleId}/receipt`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
-      await printReceiptAnywhere({ ...json, date: new Date(json.date) } as ReceiptData);
+      // `designer` is present only when the owner's own receipt design is in use.
+      const { designer, ...rest } = json;
+      await printReceiptAnywhere({ ...rest, date: new Date(rest.date) } as ReceiptData, designer ?? null);
       setState("done");
       setTimeout(() => setState("idle"), 2500);
     } catch {

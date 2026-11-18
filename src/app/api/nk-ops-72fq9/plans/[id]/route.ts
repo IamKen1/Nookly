@@ -19,6 +19,7 @@ interface PlanUpdateBody {
   featureApiAccess?: boolean;
   featureStaffCode?: boolean;
   featureLoyalty?: boolean;
+  featureReceiptDesigner?: boolean;
   isActive?: boolean;
 }
 
@@ -52,6 +53,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ...(body.featureApiAccess !== undefined ? { featureApiAccess: body.featureApiAccess } : {}),
       ...(body.featureStaffCode !== undefined ? { featureStaffCode: body.featureStaffCode } : {}),
       ...(body.featureLoyalty !== undefined ? { featureLoyalty: body.featureLoyalty } : {}),
+      ...(body.featureReceiptDesigner !== undefined ? { featureReceiptDesigner: body.featureReceiptDesigner } : {}),
       ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
     },
   });

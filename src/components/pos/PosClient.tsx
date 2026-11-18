@@ -40,6 +40,7 @@ import { peso } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { usePrinterConnection } from "@/lib/printer/usePrinterConnection";
 import { generateThermalReceiptText, printReceipt } from "@/lib/receipt";
+import { printDesignedReceipt } from "@/lib/printer/print-receipt";
 import type { ReceiptData } from "@/types/receipt";
 import type { DiscountType } from "@/lib/vat-calculations";
 import { ALL_ROLE_LABELS, canCollectPayment, isShiftRequired, phDayOf, type PermissionModuleKey } from "@/lib/permissions-shared";
@@ -746,7 +747,17 @@ export default function PosClient({
       const receiptRes = await fetch(`/api/sales/${saleId}/receipt`);
       const receiptJson = await receiptRes.json();
       if (receiptRes.ok) {
-        const receiptData: ReceiptData = { ...receiptJson, date: new Date(receiptJson.date) };
+        // `designer` is present only when the owner's own receipt design is in use.
+        const { designer, ...rest } = receiptJson;
+        const receiptData: ReceiptData = { ...rest, date: new Date(rest.date) };
+        if (designer) {
+          try {
+            await printDesignedReceipt(receiptData, designer);
+            return;
+          } catch (error) {
+            console.error("Receipt design couldn't be printed; printing the standard receipt.", error);
+          }
+        }
         if (printer.connection) {
           // A paired thermal printer prints instantly with no dialog — showing the
           // browser print preview on top of that would just force an extra manual

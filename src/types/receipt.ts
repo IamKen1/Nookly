@@ -13,6 +13,8 @@ export interface ReceiptStoreSettings {
   showCashierName: boolean;
   showCustomerName: boolean;
   includeOrderRemarks: boolean;
+  // Used by the receipt designer only.
+  logoUrl?: string | null;
 }
 
 export interface ReceiptItem {
@@ -21,12 +23,14 @@ export interface ReceiptItem {
   unitPrice: number;
   totalPrice: number;
   isVatable: boolean;
+  genericName?: string | null; // receipt designer only
 }
 
 export interface ReceiptData {
   saleId?: string;
   saleNumber: string;
   date: Date;
+  branchName?: string | null; // receipt designer only
   items: ReceiptItem[];
   subtotal: number;
   discountType?: string;
