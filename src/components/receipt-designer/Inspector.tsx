@@ -9,6 +9,10 @@ import type { Align, Block, FieldLayout, PrintMode, RuleChar, SaleDetailField, S
 import { FIELDS_BY_NAME, LABEL_TOKENS, TOTALS_FIELDS } from "@/lib/receipt-designer/totals";
 import { BLOCK_LABELS, CAN_BREAK_APART, newId, valueLine } from "@/lib/receipt-designer/blocks";
 import StyleEditor from "./StyleEditor";
+import FormulaEditor from "./FormulaEditor";
+import ConditionEditor, { conditionSummary } from "./ConditionEditor";
+import { ItemFormatEditor, RowEditor } from "./ColumnEditors";
+import type { ReceiptData } from "@/types/receipt";
 
 const input = "h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 outline-none focus:border-emerald-500";
 const small = "text-xs font-medium text-zinc-600";
@@ -101,17 +105,27 @@ const DETAIL_NAMES: Record<SaleDetailField["key"], string> = {
   branch: "Branch",
 };
 
+interface Ctx {
+  sample?: ReceiptData | null; // the preview sale, for live formula results
+  branches: { id: string; name: string }[];
+}
+
 export default function Inspector({
   block,
   printMode,
   onChange,
   onBreakApart,
+  sample = null,
+  branches = [],
 }: {
   block: Block;
   printMode: PrintMode;
   onChange: (block: Block) => void;
   onBreakApart?: () => void;
+  sample?: ReceiptData | null;
+  branches?: { id: string; name: string }[];
 }) {
+  const ctx: Ctx = { sample, branches };
   const set = (patch: Partial<Block>) => onChange({ ...block, ...patch } as Block);
 
   return (
@@ -133,7 +147,11 @@ export default function Inspector({
         )}
       </div>
 
-      <TypeFields block={block} printMode={printMode} onChange={onChange} />
+      <TypeFields block={block} printMode={printMode} onChange={onChange} ctx={ctx} />
+
+      <Section title={`Show only when…${block.showWhen ? `  (${conditionSummary(block.showWhen)})` : ""}`} defaultOpen={Boolean(block.showWhen)}>
+        <ConditionEditor value={block.showWhen} branches={branches} onChange={(showWhen) => onChange({ ...block, showWhen } as Block)} />
+      </Section>
 
       <Section title="Look">
         {block.type !== "rule" && block.type !== "barcode" && (
@@ -168,7 +186,7 @@ export default function Inspector({
   );
 }
 
-function TypeFields({ block, printMode, onChange }: { block: Block; printMode: PrintMode; onChange: (b: Block) => void }) {
+function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMode: PrintMode; onChange: (b: Block) => void; ctx: Ctx }) {
   const set = <B extends Block>(patch: Partial<B>) => onChange({ ...block, ...patch } as Block);
 
   switch (block.type) {
@@ -234,16 +252,21 @@ function TypeFields({ block, printMode, onChange }: { block: Block; printMode: P
     case "items":
       return (
         <div className="space-y-2">
+          <ItemFormatEditor value={block.itemFormat} onChange={(itemFormat) => set({ itemFormat })} printMode={printMode} />
           <Check checked={block.header} onChange={(v) => set({ header: v })} label="Column header" />
-          {block.header && (
+          {block.header && !block.itemFormat && (
             <div className="grid grid-cols-2 gap-2">
               <input className={input} value={block.headerLeft} onChange={(e) => set({ headerLeft: e.target.value })} />
               <input className={input} value={block.headerRight} onChange={(e) => set({ headerRight: e.target.value })} />
             </div>
           )}
           {block.header && <Check checked={block.headerRule} onChange={(v) => set({ headerRule: v })} label="Divider under the header" />}
-          <Check checked={block.showVatMarker} onChange={(v) => set({ showVatMarker: v })} label="V / N marker (VAT or non-VAT)" />
-          <Check checked={block.showGenericName} onChange={(v) => set({ showGenericName: v })} label="Generic name under each item" />
+          {!block.itemFormat && (
+            <>
+              <Check checked={block.showVatMarker} onChange={(v) => set({ showVatMarker: v })} label="V / N marker (VAT or non-VAT)" />
+              <Check checked={block.showGenericName} onChange={(v) => set({ showGenericName: v })} label="Generic name under each item" />
+            </>
+          )}
           <Check checked={block.showItemCount} onChange={(v) => set({ showItemCount: v })} label="Item count line" />
           {block.showItemCount && (
             <>
@@ -269,7 +292,19 @@ function TypeFields({ block, printMode, onChange }: { block: Block; printMode: P
       );
 
     case "totals":
-      return <TotalsEditor lines={block.lines} printMode={printMode} onChange={(lines) => set({ lines })} />;
+      return <TotalsEditor lines={block.lines} printMode={printMode} onChange={(lines) => set({ lines })} ctx={ctx} />;
+
+    case "row":
+      return <RowEditor cells={block.cells} gap={block.gap} sample={ctx.sample} onChange={(patch) => set(patch as Partial<Block>)} />;
+
+    case "formula":
+      return (
+        <FormulaEditor
+          sample={ctx.sample}
+          value={{ label: block.label, expr: block.expr, format: block.format, decimals: block.decimals, layout: block.layout, minus: block.minus, hideWhenZero: block.hideWhenZero }}
+          onChange={(patch) => set(patch as Partial<Block>)}
+        />
+      );
 
     case "scPwd":
       return (
@@ -441,12 +476,13 @@ function FieldOptions({ value, onChange, showAlign = true }: { value: FieldValue
 
 function lineTitle(l: TotalsLine) {
   if (l.kind === "value") return l.label || TOTALS_FIELDS[l.key].name;
+  if (l.kind === "formula") return `ƒ ${l.label || l.expr}`;
   if (l.kind === "heading") return l.text || "Heading";
   if (l.kind === "rule") return `Divider ${l.char === " " ? "(blank)" : l.char.repeat(4)}`;
   return "Standard computation (step by step)";
 }
 
-function TotalsEditor({ lines, printMode, onChange }: { lines: TotalsLine[]; printMode: PrintMode; onChange: (l: TotalsLine[]) => void }) {
+function TotalsEditor({ lines, printMode, onChange, ctx }: { lines: TotalsLine[]; printMode: PrintMode; onChange: (l: TotalsLine[]) => void; ctx: Ctx }) {
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState("");
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
@@ -468,6 +504,8 @@ function TotalsEditor({ lines, printMode, onChange }: { lines: TotalsLine[]; pri
         ? { id: newId("t"), kind: "rule", char: "-" }
         : what === "computation"
         ? { id: newId("t"), kind: "computation", style: {} }
+        : what === "formula"
+        ? { id: newId("t"), kind: "formula", label: "VAT-exclusive total:", expr: "total / 1.12", format: "money", decimals: 2, style: {}, minus: false, hideWhenZero: false }
         : valueLine(what as TotalsKey);
     onChange([...lines, line]);
     setOpen(line.id);
@@ -489,6 +527,7 @@ function TotalsEditor({ lines, printMode, onChange }: { lines: TotalsLine[]; pri
                 onChange={(patch) => update(l.id, patch)}
                 onRemove={() => onChange(lines.filter((x) => x.id !== l.id))}
                 printMode={printMode}
+                ctx={ctx}
               />
             ))}
           </ul>
@@ -504,6 +543,7 @@ function TotalsEditor({ lines, printMode, onChange }: { lines: TotalsLine[]; pri
             </option>
           ))}
           <optgroup label="Layout">
+            <option value="formula">Formula (your own computation)</option>
             <option value="heading">Heading (e.g. VAT BREAKDOWN)</option>
             <option value="rule">Divider</option>
             <option value="computation">Standard computation (step by step)</option>
@@ -521,6 +561,7 @@ function TotalsLineRow({
   onChange,
   onRemove,
   printMode,
+  ctx,
 }: {
   line: TotalsLine;
   open: boolean;
@@ -528,6 +569,7 @@ function TotalsLineRow({
   onChange: (patch: Partial<TotalsLine>) => void;
   onRemove: () => void;
   printMode: PrintMode;
+  ctx: Ctx;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: line.id });
   return (
@@ -568,7 +610,25 @@ function TotalsLineRow({
               <StyleEditor compact value={line.style} onChange={(style) => onChange({ style })} printMode={printMode} />
             </>
           )}
+          {line.kind === "formula" && (
+            <>
+              <FormulaEditor
+                sample={ctx.sample}
+                value={{ label: line.label, expr: line.expr, format: line.format, decimals: line.decimals, layout: line.layout, minus: line.minus, hideWhenZero: line.hideWhenZero }}
+                onChange={(patch) => onChange(patch as Partial<TotalsLine>)}
+              />
+              <StyleEditor compact value={line.style} onChange={(style) => onChange({ style })} printMode={printMode} />
+            </>
+          )}
           {line.kind === "rule" && <RuleSelect value={line.char} onChange={(v) => onChange({ char: v ?? "-" })} />}
+          <details open={Boolean(line.showWhen)} className="rounded-md border border-zinc-100 p-2">
+            <summary className="cursor-pointer text-xs font-medium text-zinc-600">
+              Show this line only when…{line.showWhen && <span className="ml-1 text-emerald-700">({conditionSummary(line.showWhen)})</span>}
+            </summary>
+            <div className="mt-2">
+              <ConditionEditor value={line.showWhen} branches={ctx.branches} onChange={(showWhen) => onChange({ showWhen } as Partial<TotalsLine>)} />
+            </div>
+          </details>
           {line.kind === "computation" && (
             <>
               <p className="text-[11px] text-zinc-500">

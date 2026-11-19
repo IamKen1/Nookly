@@ -23,7 +23,8 @@ export function sampleReceipt(
   kind: SampleKind,
   store: ReceiptStoreSettings,
   cashier: { firstName: string; lastName: string },
-  branchName: string | null
+  branchName: string | null,
+  storeId: string | null = null
 ): ReceiptData {
   const vatableTotal = ITEMS.filter((i) => i.isVatable).reduce((s, i) => s + i.totalPrice, 0);
   const nonVatableTotal = ITEMS.filter((i) => !i.isVatable).reduce((s, i) => s + i.totalPrice, 0);
@@ -38,6 +39,7 @@ export function sampleReceipt(
     saleNumber: "AR-SAMPLE-0001",
     date: new Date(),
     branchName,
+    storeId,
     items: ITEMS,
     subtotal: t.subtotal,
     discountType: sc ? "SENIOR" : "NONE",

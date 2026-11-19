@@ -27,6 +27,7 @@ import {
   ImagePlus,
   Loader2,
   Printer,
+  Redo2,
   RotateCcw,
   Trash2,
   Undo2,
@@ -40,11 +41,26 @@ import { PRESETS, buildPreset } from "@/lib/receipt-designer/presets";
 import { SAMPLE_KINDS } from "@/lib/receipt-designer/samples";
 import { designWarnings, sanitizeTemplate } from "@/lib/receipt-designer/validate";
 import { printDesignedReceipt } from "@/lib/printer/print-receipt";
+import { ensurePrinter } from "@/lib/printer/store";
+import { DEFAULT_CALIBRATION, readCalibration, writeCalibration, type Calibration } from "@/lib/printer/calibration";
+import { columnsFor } from "@/lib/receipt-designer/textmode";
 import Inspector from "./Inspector";
-import Preview from "./Preview";
+import Preview, { PREVIEW_PREFIX } from "./Preview";
 import StyleEditor from "./StyleEditor";
 
 type SaveState = "saved" | "saving" | "unsaved" | "error";
+
+// For grouping quick edits into one undo step (only called from event handlers).
+const clock = () => Date.now();
+
+interface VersionRow {
+  id: string;
+  publishedAt: string;
+  publishedBy: string | null;
+  paperWidth: number;
+  printMode: string;
+  blockCount: number;
+}
 
 const uid = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `b${Date.now()}${Math.random().toString(36).slice(2)}`);
 
@@ -63,6 +79,8 @@ const ELEMENTS: PaletteEntry[] = [
   block("qr"),
   block("barcode", "Barcode (AR number)"),
   block("rule"),
+  block("row", "Row: values side by side"),
+  block("formula", "Formula: your own computation"),
   block("storeInfo"),
   block("title"),
   block("items", "Items list"),
@@ -118,7 +136,18 @@ export default function ReceiptDesigner() {
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [dragType, setDragType] = useState<string | null>(null); // label of what's being dragged in
   const [paletteSearch, setPaletteSearch] = useState("");
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [versions, setVersions] = useState<VersionRow[]>([]);
+  const [calibration, setCalibration] = useState<Calibration>(DEFAULT_CALIBRATION);
   const loaded = useRef(false);
+
+  // ---------- undo / redo ----------
+  // Steps of the design, newest last. Edits within a moment (typing) count as one step.
+  const history = useRef<{ past: Template[]; future: Template[]; lastAt: number }>({ past: [], future: [], lastAt: 0 });
+  const [steps, setSteps] = useState({ undo: 0, redo: 0 });
+  const syncSteps = () => setSteps({ undo: history.current.past.length, redo: history.current.future.length });
+  const canUndo = steps.undo > 0;
+  const canRedo = steps.redo > 0;
   // The design in use, to skip saving a "draft" that's identical to it.
   const publishedJson = useRef<string | null>(null);
   useEffect(() => {
@@ -139,6 +168,9 @@ export default function ReceiptDesigner() {
         setEnabled(data.enabled);
         setPublished(data.published);
         setSettings(data.settings);
+        setBranches(data.branches ?? []);
+        setVersions(data.versions ?? []);
+        setCalibration(readCalibration());
         setTemplate(data.draft ?? data.published ?? buildPreset("classic", data.settings));
         setSaveState(data.draft || !data.published ? "unsaved" : "saved");
         void loadSampleRef.current("regular");
@@ -196,11 +228,66 @@ export default function ReceiptDesigner() {
     return { errors: sanitizeTemplate(template).errors, warnings: designWarnings(template) };
   }, [template]);
 
-  const change = (t: Template) => {
+  const change = (t: Template, { coalesce = true }: { coalesce?: boolean } = {}) => {
+    if (template) {
+      const h = history.current;
+      const now = clock();
+      if (!(coalesce && now - h.lastAt < 700 && h.past.length > 0)) {
+        h.past.push(template);
+        if (h.past.length > 100) h.past.shift();
+      }
+      h.lastAt = now;
+      h.future = [];
+      syncSteps();
+    }
     setTemplate(t);
     setSaveState("unsaved");
     setMessage(null);
   };
+  const undo = () => {
+    const h = history.current;
+    const prev = h.past.pop();
+    if (!prev || !template) return;
+    h.future.push(template);
+    h.lastAt = 0;
+    setTemplate(prev);
+    setSaveState("unsaved");
+    syncSteps();
+  };
+  const redo = () => {
+    const h = history.current;
+    const next = h.future.pop();
+    if (!next || !template) return;
+    h.past.push(template);
+    h.lastAt = 0;
+    setTemplate(next);
+    setSaveState("unsaved");
+    syncSteps();
+  };
+  // Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z — but typing in a box keeps the box's own undo.
+  const undoRef = useRef(undo);
+  const redoRef = useRef(redo);
+  useEffect(() => {
+    undoRef.current = undo;
+    redoRef.current = redo;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undoRef.current();
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        e.preventDefault();
+        redoRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const updateBlock = (b: Block) => template && change({ ...template, blocks: template.blocks.map((x) => (x.id === b.id ? b : x)) });
   const insertBlock = (make: () => Block, index?: number) => {
     if (!template) return;
@@ -239,7 +326,58 @@ export default function ReceiptDesigner() {
       setPublished(template);
       setSaveState("saved");
       setMessage({ kind: "ok", text: "Done. New receipts and reprints now use this design." });
+      void refreshVersions();
     });
+
+  const refreshVersions = async () => {
+    try {
+      const res = await fetch("/api/settings/receipt-template");
+      const data = await res.json();
+      if (res.ok) setVersions(data.versions ?? []);
+    } catch {
+      // the list just stays as it was
+    }
+  };
+
+  const restoreVersion = async (v: VersionRow) => {
+    if (!confirm(`Load the design from ${new Date(v.publishedAt).toLocaleString("en-PH")} into the editor? You can undo this.`)) return;
+    setBusy("restore");
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/settings/receipt-template/versions/${v.id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't load that version.");
+      change({ ...data.template, blocks: data.template.blocks.map(withFreshIds) }, { coalesce: false });
+      setSelectedId(null);
+      setMessage({ kind: "ok", text: "Loaded. Check it, then press \"Use this design\" to print with it again." });
+    } catch (e) {
+      setMessage({ kind: "error", text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const printTestPage = async () => {
+    if (!template) return;
+    setBusy("testpage");
+    setMessage(null);
+    try {
+      const printer = await ensurePrinter();
+      if (!printer) throw new Error("Connect your receipt printer first (the printer button at the top of the POS or any page).");
+      const { testPageBytes } = await import("@/lib/receipt-designer/render");
+      await printer.send(testPageBytes(template.paperWidth, calibration));
+      setMessage({ kind: "ok", text: "Test page sent. Count where the digits wrap, then set the characters per line below." });
+    } catch (e) {
+      setMessage({ kind: "error", text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const updateCalibration = (next: Calibration) => {
+    setCalibration(next);
+    writeCalibration(next);
+  };
 
   const revert = () =>
     confirm("Go back to the standard Nookly receipt? Your design is kept, and you can use it again any time.") &&
@@ -252,6 +390,8 @@ export default function ReceiptDesigner() {
     confirm("Throw away the changes since you last used this design?") &&
     act("discard", { action: "discardDraft" }, () => {
       loaded.current = false;
+      history.current = { past: [], future: [], lastAt: 0 };
+      syncSteps();
       setTemplate(published ?? buildPreset("classic", settings!));
       setSaveState(published ? "saved" : "unsaved");
       setSelectedId(null);
@@ -318,8 +458,10 @@ export default function ReceiptDesigner() {
   const onDragEnd = (e: DragEndEvent) => {
     setDragType(null);
     if (!template || !e.over) return;
-    const activeId = String(e.active.id);
-    const overId = String(e.over.id);
+    // Pieces in the preview carry a prefix; they stand for the same blocks as the list.
+    const unprefix = (id: string) => (id.startsWith(PREVIEW_PREFIX) ? id.slice(PREVIEW_PREFIX.length) : id);
+    const activeId = unprefix(String(e.active.id));
+    const overId = unprefix(String(e.over.id));
     if (activeId.startsWith("new:")) {
       const entry = ENTRIES.get(activeId.slice(4));
       if (!entry) return;
@@ -395,12 +537,20 @@ export default function ReceiptDesigner() {
               </option>
             ))}
           </select>
+          <div className="inline-flex overflow-hidden rounded-full border border-zinc-200 bg-white">
+            <button type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-50 disabled:opacity-30">
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" className="border-l border-zinc-200 px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-50 disabled:opacity-30">
+              <Redo2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <button type="button" className={btn} onClick={testPrint} disabled={!sample || busy !== null}>
             {busy === "print" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} Test print
           </button>
           {published && saveState !== "saved" && (
             <button type="button" className={btn} onClick={discard} disabled={busy !== null}>
-              <Undo2 className="h-3.5 w-3.5" /> Discard changes
+              <Trash2 className="h-3.5 w-3.5" /> Discard changes
             </button>
           )}
           {enabled && (
@@ -493,7 +643,7 @@ export default function ReceiptDesigner() {
           <main className="min-w-0 flex-1 overflow-auto px-6 py-8" onClick={(e) => e.target === e.currentTarget && setSelectedId(null)}>
             {sampleError && <p className="mb-3 text-center text-xs text-amber-700">{sampleError}</p>}
             {sample ? (
-              <Preview template={template} data={sample} selectedId={selectedId} onSelect={setSelectedId} />
+              <Preview template={template} data={sample} selectedId={selectedId} onSelect={setSelectedId} override={calibration.cols[template.paperWidth]} />
             ) : (
               <p className="text-center text-sm text-zinc-400">Loading the sample sale…</p>
             )}
@@ -507,6 +657,8 @@ export default function ReceiptDesigner() {
                 block={selected}
                 printMode={template.printMode}
                 onChange={updateBlock}
+                sample={sample}
+                branches={branches}
                 onBreakApart={() => {
                   const i = template.blocks.findIndex((x) => x.id === selected.id);
                   const parts = breakApart(selected, uid);
@@ -588,6 +740,85 @@ export default function ReceiptDesigner() {
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-zinc-600">Default look (every block starts from this)</p>
                   <StyleEditor value={template.theme.style} onChange={(style) => change({ ...template, theme: { style } })} printMode={template.printMode} />
+                </div>
+
+                <div className="space-y-2 border-t border-zinc-100 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Printer on this device</p>
+                  <button type="button" className={btn} onClick={printTestPage} disabled={busy !== null}>
+                    {busy === "testpage" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} Print a test page
+                  </button>
+                  <p className="text-[11px] leading-snug text-zinc-500">
+                    The test page shows how many characters your printer really fits, every size and style, and the edges it can reach. If it fits a
+                    different number than usual, set it here: this device&apos;s receipts and preview will follow.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["A", "B"] as const).map((font) => (
+                      <label key={font} className="block space-y-1">
+                        <span className="text-xs font-medium text-zinc-600">
+                          Font {font} characters ({template.paperWidth}mm)
+                        </span>
+                        <input
+                          type="number"
+                          min={font === "A" ? 20 : 28}
+                          max={font === "A" ? 56 : 72}
+                          placeholder={String(columnsFor(template.paperWidth, font, 1))}
+                          value={calibration.cols[template.paperWidth][font] ?? ""}
+                          onChange={(e) =>
+                            updateCalibration({
+                              ...calibration,
+                              cols: {
+                                ...calibration.cols,
+                                [template.paperWidth]: { ...calibration.cols[template.paperWidth], [font]: e.target.value === "" ? null : Number(e.target.value) },
+                              },
+                            })
+                          }
+                          className="h-8 w-full rounded-md border border-zinc-200 px-2 text-sm"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-zinc-600">Left margin: {calibration.leftMargin} dots ({(calibration.leftMargin / 8).toFixed(1)}mm)</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={64}
+                      value={calibration.leftMargin}
+                      onChange={(e) => updateCalibration({ ...calibration, leftMargin: Number(e.target.value) })}
+                      className="w-full accent-emerald-600"
+                    />
+                  </label>
+                  {(calibration.cols[58].A || calibration.cols[58].B || calibration.cols[80].A || calibration.cols[80].B || calibration.leftMargin > 0) && (
+                    <button type="button" onClick={() => updateCalibration(DEFAULT_CALIBRATION)} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">
+                      Reset to the standard widths
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2 border-t border-zinc-100 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Version history</p>
+                  {versions.length === 0 ? (
+                    <p className="text-[11px] text-zinc-500">Each time you press &quot;Use this design&quot;, a copy is kept here so you can go back to it.</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {versions.map((v, i) => (
+                        <li key={v.id} className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-2 py-1.5">
+                          <span className="min-w-0">
+                            <span className="block truncate text-xs font-medium text-zinc-800">
+                              {new Date(v.publishedAt).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}
+                              {i === 0 && enabled && <span className="ml-1 rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-800">in use</span>}
+                            </span>
+                            <span className="block truncate text-[11px] text-zinc-500">
+                              {v.publishedBy ?? "Owner"} · {v.paperWidth}mm · {v.printMode === "IMAGE" ? "image" : "text"} · {v.blockCount} blocks
+                            </span>
+                          </span>
+                          <button type="button" onClick={() => restoreVersion(v)} disabled={busy !== null} className="shrink-0 text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-50">
+                            Restore
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             )}

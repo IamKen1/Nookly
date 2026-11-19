@@ -31,6 +31,7 @@ export interface ReceiptData {
   saleNumber: string;
   date: Date;
   branchName?: string | null; // receipt designer only
+  storeId?: string | null; // receipt designer only (branch conditions)
   items: ReceiptItem[];
   subtotal: number;
   discountType?: string;

@@ -25,10 +25,25 @@ export async function GET(request: NextRequest) {
   if (g.error) return g.error;
   if (!g.planHasIt) return NextResponse.json({ planHasIt: false });
 
-  const [row, settings] = await Promise.all([
+  const [row, settings, branches, versions] = await Promise.all([
     prisma.receiptTemplate.findUnique({ where: { tenantId: g.session.tenantId } }),
     getReceiptSettings(g.session.tenantId),
+    prisma.store.findMany({ where: { tenantId: g.session.tenantId, isActive: true }, orderBy: [{ isMainBranch: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
+    prisma.receiptTemplateVersion.findMany({
+      where: { tenantId: g.session.tenantId },
+      orderBy: { publishedAt: "desc" },
+      take: VERSIONS_KEPT,
+      select: { id: true, publishedAt: true, publishedByUserId: true, paperWidth: true, printMode: true, blocks: true },
+    }),
   ]);
+  const people = new Map(
+    (
+      await prisma.user.findMany({
+        where: { id: { in: [...new Set(versions.map((v) => v.publishedByUserId).filter((x): x is string => Boolean(x)))] } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    ).map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()])
+  );
   const published = row && Array.isArray(row.blocks) && row.blocks.length > 0 ? fromRow(row) : null;
   const draft =
     row?.draftBlocks != null
@@ -47,9 +62,21 @@ export async function GET(request: NextRequest) {
     published,
     draft,
     settings,
+    branches,
+    versions: versions.map((v) => ({
+      id: v.id,
+      publishedAt: v.publishedAt,
+      publishedBy: v.publishedByUserId ? people.get(v.publishedByUserId) ?? null : null,
+      paperWidth: v.paperWidth,
+      printMode: v.printMode,
+      blockCount: Array.isArray(v.blocks) ? v.blocks.length : 0,
+    })),
     updatedAt: row?.updatedAt ?? null,
   });
 }
+
+// How many past designs are kept for "Version history".
+const VERSIONS_KEPT = 30;
 
 type Body =
   | { action: "saveDraft"; template: unknown }
@@ -105,7 +132,20 @@ export async function PUT(request: NextRequest) {
         draftPrintMode: null,
         updatedByUserId: userId,
       };
-      await prisma.receiptTemplate.upsert({ where: { tenantId }, update: data, create: { tenantId, ...data } });
+      await prisma.$transaction(async (tx) => {
+        await tx.receiptTemplate.upsert({ where: { tenantId }, update: data, create: { tenantId, ...data } });
+        // Keep this design in Version history, and only the newest few.
+        await tx.receiptTemplateVersion.create({
+          data: { tenantId, paperWidth: template.paperWidth, printMode: template.printMode, theme, blocks, version: template.version, publishedByUserId: userId },
+        });
+        const old = await tx.receiptTemplateVersion.findMany({
+          where: { tenantId },
+          orderBy: { publishedAt: "desc" },
+          skip: VERSIONS_KEPT,
+          select: { id: true },
+        });
+        if (old.length) await tx.receiptTemplateVersion.deleteMany({ where: { id: { in: old.map((o) => o.id) } } });
+      });
       return NextResponse.json({ ok: true, enabled: true, warnings: designWarnings(template) });
     }
 

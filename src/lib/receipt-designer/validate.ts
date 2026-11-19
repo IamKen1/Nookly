@@ -1,16 +1,20 @@
-import type { Align, Block, BlockType, FieldLayout, PaperWidth, PrintMode, RuleChar, SaleDetailField, Style, Template, Theme, TotalsLine } from "./types";
+import type {
+  Align, Block, BlockType, Condition, FieldLayout, FormulaFormat, ItemField, ItemFormat, ItemLine, PaperWidth, PrintMode,
+  RowCell, RuleChar, SaleDetailField, SaleType, Style, Template, Theme, TotalsLine,
+} from "./types";
 import { IMAGE_FONTS, TEMPLATE_VERSION } from "./types";
-import { newBlock, newId, DEFAULT_SALE_DETAILS } from "./blocks";
+import { newBlock, newId, newItemCell, newRowCell, DEFAULT_SALE_DETAILS } from "./blocks";
 import { TOTALS_FIELDS } from "./totals";
+import { formulaError } from "./formula";
 
 // Turns whatever was saved or sent into a well-formed design: unknown fields
 // are dropped, numbers clamped, strings trimmed to size. Anything that would
 // make the receipt pose as a BIR document is reported as an error.
 
-const LIMITS = { blocks: 60, totalsLines: 40, text: 500, label: 60, qr: 300 };
+const LIMITS = { blocks: 80, totalsLines: 40, text: 500, label: 60, qr: 300, formula: 300 };
 const BLOCK_TYPES: BlockType[] = [
   "logo", "storeInfo", "title", "saleDetails", "items", "totals", "scPwd", "payment",
-  "loyalty", "remarks", "text", "qr", "barcode", "rule", "footer", "field",
+  "loyalty", "remarks", "text", "qr", "barcode", "rule", "footer", "field", "row", "formula",
 ];
 const LAYOUTS: FieldLayout[] = ["pair", "inline", "value"];
 const RULE_CHARS: RuleChar[] = ["-", "=", ".", "*", " "];
@@ -35,7 +39,7 @@ export function sanitizeStyle(v: unknown): Style {
   if (v.font === "A" || v.font === "B") s.font = v.font;
   if (v.sizeW !== undefined) s.sizeW = int(v.sizeW, 1, 8, 1);
   if (v.sizeH !== undefined) s.sizeH = int(v.sizeH, 1, 8, 1);
-  if (typeof v.fontFamily === "string" && v.fontFamily in IMAGE_FONTS) s.fontFamily = v.fontFamily;
+  if (typeof v.fontFamily === "string" && Object.hasOwn(IMAGE_FONTS, v.fontFamily)) s.fontFamily = v.fontFamily;
   if (v.fontSize !== undefined) s.fontSize = num(v.fontSize, 6, 48, 9);
   for (const k of ["bold", "italic", "underline", "inverse"] as const) if (typeof v[k] === "boolean") s[k] = v[k] as boolean;
   const c = color(v.color);
@@ -47,10 +51,106 @@ export function sanitizeStyle(v: unknown): Style {
   return s;
 }
 
+const SALE_TYPES: SaleType[] = ["scpwd", "discount", "noDiscount", "cash", "ewallet", "customer", "points"];
+const FORMATS: FormulaFormat[] = ["money", "number", "percent", "int"];
+const ITEM_FIELDS: ItemField[] = ["name", "generic", "qty", "unitPrice", "total", "vat", "qtyXPrice", "text"];
+const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+export function sanitizeCondition(v: unknown): Condition | undefined {
+  if (!isObj(v)) return undefined;
+  const c: Condition = {};
+  if (Array.isArray(v.saleTypes)) {
+    const types = [...new Set(v.saleTypes.filter((t): t is SaleType => SALE_TYPES.includes(t as SaleType)))];
+    if (types.length) c.saleTypes = types;
+  }
+  if (typeof v.minTotal === "number" && Number.isFinite(v.minTotal)) c.minTotal = Math.max(0, v.minTotal);
+  if (typeof v.maxTotal === "number" && Number.isFinite(v.maxTotal)) c.maxTotal = Math.max(0, v.maxTotal);
+  if (isDay(v.fromDate)) c.fromDate = v.fromDate;
+  if (isDay(v.toDate)) c.toDate = v.toDate;
+  if (Array.isArray(v.branches)) {
+    const ids = v.branches.filter((b): b is string => typeof b === "string" && b.length > 0 && b.length <= 64).slice(0, 50);
+    if (ids.length) c.branches = ids;
+  }
+  return Object.keys(c).length ? c : undefined;
+}
+
+const withCondition = <T extends object>(item: T, v: Obj): T => {
+  const showWhen = sanitizeCondition(v.showWhen);
+  return showWhen ? { ...item, showWhen } : item;
+};
+
+function sanitizeRowCell(v: unknown): RowCell | null {
+  if (!isObj(v)) return null;
+  const d = newRowCell();
+  const kind = oneOf(v.kind, ["field", "text", "formula"] as const, "field");
+  const key = typeof v.key === "string" && Object.hasOwn(TOTALS_FIELDS, v.key) ? (v.key as RowCell["key"]) : d.key;
+  return {
+    id: str(v.id, 64) || d.id,
+    kind,
+    key,
+    text: str(v.text, LIMITS.label),
+    expr: str(v.expr, LIMITS.formula, d.expr),
+    format: oneOf(v.format, FORMATS, "money"),
+    decimals: int(v.decimals, 0, 6, 2),
+    label: str(v.label, LIMITS.label),
+    width: int(v.width, 0, 100, 0),
+    align: oneOf(v.align, ALIGNS, "left"),
+    minus: bool(v.minus, false),
+  };
+}
+
+function sanitizeItemFormat(v: unknown): ItemFormat | null {
+  if (!isObj(v) || !Array.isArray(v.lines)) return null;
+  const lines = v.lines
+    .slice(0, 4)
+    .filter(isObj)
+    .map((l): ItemLine => ({
+      id: str(l.id, 64) || newId("l"),
+      style: sanitizeStyle(l.style),
+      cells: (Array.isArray(l.cells) ? l.cells : [])
+        .slice(0, 6)
+        .filter(isObj)
+        .filter((c) => ITEM_FIELDS.includes(c.field as ItemField))
+        .map((c) => {
+          const field = c.field as ItemField;
+          const d = newItemCell(field);
+          return {
+            id: str(c.id, 64) || d.id,
+            field,
+            text: str(c.text, LIMITS.label),
+            title: typeof c.title === "string" ? c.title.slice(0, LIMITS.label) : d.title,
+            width: int(c.width, 0, 100, 0),
+            align: oneOf(c.align, ALIGNS, d.align),
+          };
+        }),
+    }))
+    .filter((l) => l.cells.length > 0);
+  return lines.length ? { lines } : null;
+}
+
 function sanitizeTotalsLine(v: unknown): TotalsLine | null {
+  const line = sanitizeTotalsLineBody(v);
+  return line && isObj(v) ? withCondition(line, v) : line;
+}
+
+function sanitizeTotalsLineBody(v: unknown): TotalsLine | null {
   if (!isObj(v)) return null;
   const id = str(v.id, 64) || newId("t");
   switch (v.kind) {
+    case "formula":
+      return {
+        id,
+        kind: "formula",
+        label: str(v.label, LIMITS.label),
+        expr: str(v.expr, LIMITS.formula),
+        format: oneOf(v.format, FORMATS, "money"),
+        decimals: int(v.decimals, 0, 6, 2),
+        style: sanitizeStyle(v.style),
+        minus: bool(v.minus, false),
+        hideWhenZero: bool(v.hideWhenZero, false),
+        ...(LAYOUTS.includes(v.layout as FieldLayout) ? { layout: v.layout as FieldLayout } : {}),
+        ...(ALIGNS.includes(v.align as Align) ? { align: v.align as Align } : {}),
+      };
     case "computation":
       return { id, kind: "computation", style: sanitizeStyle(v.style) };
     case "rule":
@@ -58,7 +158,7 @@ function sanitizeTotalsLine(v: unknown): TotalsLine | null {
     case "heading":
       return { id, kind: "heading", text: str(v.text, LIMITS.label), align: oneOf(v.align, ALIGNS, "left"), style: sanitizeStyle(v.style) };
     case "value": {
-      if (typeof v.key !== "string" || !(v.key in TOTALS_FIELDS)) return null;
+      if (typeof v.key !== "string" || !Object.hasOwn(TOTALS_FIELDS, v.key)) return null;
       const key = v.key as keyof typeof TOTALS_FIELDS;
       return {
         id,
@@ -89,6 +189,7 @@ function sanitizeBlock(v: unknown): Block | null {
     spaceAfter: int(v.spaceAfter, 0, 5, 0),
     ruleBefore: v.ruleBefore === null || v.ruleBefore === undefined ? null : oneOf(v.ruleBefore, RULE_CHARS, "-"),
     ruleAfter: v.ruleAfter === null || v.ruleAfter === undefined ? null : oneOf(v.ruleAfter, RULE_CHARS, "-"),
+    ...(sanitizeCondition(v.showWhen) ? { showWhen: sanitizeCondition(v.showWhen) } : {}),
   };
 
   switch (d.type) {
@@ -131,9 +232,26 @@ function sanitizeBlock(v: unknown): Block | null {
         showItemCount: bool(v.showItemCount, d.showItemCount),
         itemCountLabel: str(v.itemCountLabel, LIMITS.label, d.itemCountLabel),
         countMode: oneOf(v.countMode, ["pieces", "products"] as const, d.countMode),
+        itemFormat: sanitizeItemFormat(v.itemFormat),
+      };
+    case "row": {
+      const cells = (Array.isArray(v.cells) ? v.cells : []).slice(0, 4).map(sanitizeRowCell).filter((c): c is RowCell => c !== null);
+      return { ...d, ...common, cells: cells.length ? cells : d.cells, gap: int(v.gap, 0, 4, 1) };
+    }
+    case "formula":
+      return {
+        ...d,
+        ...common,
+        label: str(v.label, LIMITS.label),
+        expr: str(v.expr, LIMITS.formula, d.expr),
+        format: oneOf(v.format, FORMATS, "money"),
+        decimals: int(v.decimals, 0, 6, 2),
+        layout: oneOf(v.layout, LAYOUTS, "pair"),
+        minus: bool(v.minus, false),
+        hideWhenZero: bool(v.hideWhenZero, false),
       };
     case "field": {
-      if (typeof v.key !== "string" || !(v.key in TOTALS_FIELDS)) return null;
+      if (typeof v.key !== "string" || !Object.hasOwn(TOTALS_FIELDS, v.key)) return null;
       const key = v.key as keyof typeof TOTALS_FIELDS;
       return {
         ...d,
@@ -211,7 +329,22 @@ export function sanitizeTemplate(input: unknown): SanitizeResult {
       errors.push(`"${t.trim().slice(0, 40)}" can't be used: Nookly receipts aren't BIR-accredited Official Receipts or Sales Invoices.`);
     }
   }
+  for (const { label, expr } of designFormulas(template)) {
+    const problem = formulaError(expr);
+    if (problem) errors.push(`Formula "${label.trim() || expr.slice(0, 30)}": ${problem}`);
+  }
   return { template, errors };
+}
+
+// Every formula in the design, wherever it sits.
+export function designFormulas(t: Template): { label: string; expr: string }[] {
+  const out: { label: string; expr: string }[] = [];
+  for (const b of t.blocks) {
+    if (b.type === "formula") out.push({ label: b.label, expr: b.expr });
+    if (b.type === "totals") b.lines.forEach((l) => l.kind === "formula" && out.push({ label: l.label, expr: l.expr }));
+    if (b.type === "row") b.cells.forEach((c) => c.kind === "formula" && out.push({ label: c.label, expr: c.expr }));
+  }
+  return out;
 }
 
 // Every piece of text an owner typed into the design.
@@ -223,8 +356,11 @@ function designTexts(t: Template): string[] {
     if (b.type === "remarks") out.push(b.heading);
     if (b.type === "items") out.push(b.headerLeft, b.headerRight, b.itemCountLabel);
     if (b.type === "saleDetails") b.fields.forEach((f) => out.push(f.label));
-    if (b.type === "field") out.push(b.label);
-    if (b.type === "totals") b.lines.forEach((l) => (l.kind === "value" ? out.push(l.label) : l.kind === "heading" ? out.push(l.text) : null));
+    if (b.type === "field" || b.type === "formula") out.push(b.label);
+    if (b.type === "totals")
+      b.lines.forEach((l) => (l.kind === "value" || l.kind === "formula" ? out.push(l.label) : l.kind === "heading" ? out.push(l.text) : null));
+    if (b.type === "row") b.cells.forEach((c) => out.push(c.label, c.text));
+    if (b.type === "items") b.itemFormat?.lines.forEach((l) => l.cells.forEach((c) => out.push(c.title, c.text)));
   }
   return out.filter(Boolean);
 }
@@ -246,5 +382,11 @@ export function designWarnings(t: Template): string[] {
   if (!visible.some((b) => b.type === "saleDetails" && b.fields.some((f) => f.key === "receiptNo" && f.visible)) && !hasLine("receiptNo"))
     warnings.push("The AR number isn't shown. It's needed to look up the sale for returns and reprints.");
   if (t.printMode === "IMAGE") warnings.push("Image mode prints slower, especially over Bluetooth (several seconds per receipt).");
+  // A formula dressed up as the total could show the customer a different amount than they paid.
+  for (const f of designFormulas({ ...t, blocks: visible })) {
+    // Labels that read as the amount to pay ("TOTAL:", "Amount due"), not ones that merely mention it ("VAT-exclusive total").
+    if (/^\s*(grand\s+)?total\b|^\s*amount\s*(due|to\s*pay)|babayaran|^\s*kabuuan/i.test(f.label) && f.expr.replace(/\s/g, "") !== "total")
+      warnings.push(`Formula "${f.label.trim()}" looks like a total. Make sure it matches what the customer actually paid.`);
+  }
   return warnings;
 }

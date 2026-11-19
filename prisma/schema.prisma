@@ -94,53 +94,54 @@ model ImportBatch {
 }
 
 model Tenant {
-  id                   String                    @id @default(cuid())
-  name                 String // Drugstore / business name shown on receipts
-  slug                 String                    @unique // used for subdomain / login routing e.g. mercury-drug
-  ownerEmail           String
-  contactNumber        String?
-  timezone             String                    @default("Asia/Manila")
-  currency             String                    @default("PHP")
-  isActive             Boolean                   @default(true)
-  onboardingStep       Int                       @default(0) // drives setup wizard progress
+  id                      String                    @id @default(cuid())
+  name                    String // Drugstore / business name shown on receipts
+  slug                    String                    @unique // used for subdomain / login routing e.g. mercury-drug
+  ownerEmail              String
+  contactNumber           String?
+  timezone                String                    @default("Asia/Manila")
+  currency                String                    @default("PHP")
+  isActive                Boolean                   @default(true)
+  onboardingStep          Int                       @default(0) // drives setup wizard progress
   // Settings › User access: require a staff security code to send orders and
   // complete sales. Only offered when the plan has it and there are 2+ branches.
-  requireStaffCode     Boolean                   @default(false)
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
-  subscription         Subscription?
-  stores               Store[]
-  users                User[]
-  customers            Customer[]
-  categories           Category[]
-  suppliers            Supplier[]
-  products             Product[]
-  doctors              Doctor[]
-  prescriptions        Prescription[]
-  sales                Sale[]
-  stockMovements       StockMovement[]
-  receiptSettings      ReceiptSettings?
-  notificationSettings NotificationSettings?
-  loyaltySettings      LoyaltySettings?
-  loyaltyTransactions  LoyaltyTransaction[]
-  receiptTemplate      ReceiptTemplate?
-  scheduledReports     ScheduledReportDelivery[]
-  apiKeys              ApiKey[]
-  importBatches        ImportBatch[]
-  supportTickets       SupportTicket[]
-  shifts               Shift[]
-  cashTransactions     CashTransaction[]
-  invites              TenantInvite[]
-  planChangeRequests   PlanChangeRequest[]
-  rolePermissions      RolePermission[]
-  shiftExpenses        ShiftExpense[]
-  pendingOrders        PendingOrder[]
-  stockRequests        StockRequest[]
-  receivings           Receiving[]
-  discounts            Discount[]
-  heldCarts            HeldCart[]
-  supplierPayments     SupplierPayment[]
-  supplierReturns      SupplierReturn[]
+  requireStaffCode        Boolean                   @default(false)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  subscription            Subscription?
+  stores                  Store[]
+  users                   User[]
+  customers               Customer[]
+  categories              Category[]
+  suppliers               Supplier[]
+  products                Product[]
+  doctors                 Doctor[]
+  prescriptions           Prescription[]
+  sales                   Sale[]
+  stockMovements          StockMovement[]
+  receiptSettings         ReceiptSettings?
+  notificationSettings    NotificationSettings?
+  loyaltySettings         LoyaltySettings?
+  loyaltyTransactions     LoyaltyTransaction[]
+  receiptTemplate         ReceiptTemplate?
+  receiptTemplateVersions ReceiptTemplateVersion[]
+  scheduledReports        ScheduledReportDelivery[]
+  apiKeys                 ApiKey[]
+  importBatches           ImportBatch[]
+  supportTickets          SupportTicket[]
+  shifts                  Shift[]
+  cashTransactions        CashTransaction[]
+  invites                 TenantInvite[]
+  planChangeRequests      PlanChangeRequest[]
+  rolePermissions         RolePermission[]
+  shiftExpenses           ShiftExpense[]
+  pendingOrders           PendingOrder[]
+  stockRequests           StockRequest[]
+  receivings              Receiving[]
+  discounts               Discount[]
+  heldCarts               HeldCart[]
+  supplierPayments        SupplierPayment[]
+  supplierReturns         SupplierReturn[]
 
   @@map("tenants")
 }
@@ -1168,6 +1169,24 @@ model ReceiptTemplate {
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("receipt_templates")
+}
+
+// Every design the owner put into use ("Use this design"), newest first; the
+// designer lists the last 30 and can restore one as the draft.
+model ReceiptTemplateVersion {
+  id                String   @id @default(cuid())
+  tenantId          String
+  paperWidth        Int
+  printMode         String
+  theme             Json
+  blocks            Json
+  version           Int      @default(1)
+  publishedByUserId String?
+  publishedAt       DateTime @default(now())
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, publishedAt])
+  @@map("receipt_template_versions")
 }
 
 // Settings › Loyalty Points. No row = off, with the defaults below.

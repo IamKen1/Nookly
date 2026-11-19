@@ -191,6 +191,31 @@ same output, byte for byte. Verified by comparing today's output with the
 - Manual: test print on a real 58mm and 80mm printer (owner's device), in
   both modes, over USB and Bluetooth; time image-mode prints.
 
+## Additions (2026-11-19)
+
+- **Any value anywhere:** every value is its own element (or a line inside a
+  group); groups can be broken apart. Labels take `{points}`, `{discountName}`,
+  `{discountRate}`.
+- **Total items** counts pieces or products.
+- **Formula element** (display only): owner-written math over the sale's
+  values (`total / 1.12`, `round(savings / subtotal * 100, 0)`, `if(…)`),
+  parsed by hand (no eval). A missing value or division by zero hides the
+  line. A broken formula blocks "Use this design"; a formula labeled like the
+  total gets a warning.
+- **Row element:** up to 4 columns on one line (values, text, formulas), widths
+  in % or auto; auto columns get what their content needs, and when space runs
+  out only the longest column wraps.
+- **Item lines:** columns per item (name, generic, qty, price, total, V/N,
+  qty × price, text), one to four lines; a table's rows and header share column
+  widths so they line up.
+- **Show only when:** sale type (SC/PWD, discount, cash, e-wallet, customer,
+  points), total range, date range (Philippine day), branches — on any element
+  or group line.
+- **Editor:** undo/redo (Ctrl+Z / Ctrl+Y), drag parts directly in the preview,
+  version history (last 30 "Use this design", restore as draft).
+- **Printer test page and per-device calibration:** characters per line for
+  Font A/B and a left margin (GS L), stored in the browser.
+
 ## Out of scope (for now)
 
 Per-branch designs, A4 invoices, custom formulas, multiple saved designs,

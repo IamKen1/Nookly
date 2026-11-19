@@ -11,6 +11,7 @@ import { encodeTextMode, encodeImageMode, barcodeBytes, rasterBytes, CMD } from 
 import { blankRaster, setDot, getDot, ditherToRaster, placeOnPaper, bands, qrRaster, rgbaToGray, PAPER_DOTS, qrMatrix } from "./raster";
 import { textModeHtml, qrSvg, printDocument } from "./html";
 import { newBlock } from "./blocks";
+import { buildTestPage, rulerLines } from "./testpage";
 import type { Template } from "./types";
 
 const store: ReceiptStoreSettings = {
@@ -106,6 +107,7 @@ function printBytes(bytes: Uint8Array, cols58 = { A: 32, B: 42 }): { lines: Pape
         continue;
       }
       if (c === 0x68 || c === 0x77 || c === 0x48 || c === 0x66) { i += 2; continue; }
+      if (c === 0x4c) { i += 3; continue; } // left margin
       if (c === 0x6b) {
         const len = bytes[i + 3];
         barcodes.push(String.fromCharCode(...bytes.slice(i + 4, i + 4 + len)));
@@ -239,6 +241,36 @@ test("image mode: one picture in bands, feed, cut", () => {
   assert.equal(out.rasters, 4);
   assert.equal(out.cut, true);
   assert.equal(out.lines.length, 3, "3 feed lines");
+});
+
+test("printer test page: rulers, sizes, pictures, barcode, cut", () => {
+  const page = printBytes(buildTestPage(58));
+  const texts = page.lines.map((l) => l.text);
+  assert.ok(texts.includes("Font A: 32 per line"));
+  assert.ok(texts.includes("Font B: 42 per line"));
+  assert.ok(texts.includes("12345678901234567890123456789012"), "Font A ruler, wrapped at 32 by the printer");
+  assert.ok(texts.some((l) => l.trim() === "1         2         3"), "tens line");
+  assert.ok(page.lines.some((l) => l.text.startsWith("3x3") && l.w === 3 && l.h === 3));
+  assert.ok(page.lines.some((l) => l.text.includes("White on black") && l.inverse));
+  assert.ok(page.lines.some((l) => l.text === "Right" && l.align === "right"));
+  assert.ok(texts.includes("Peso sign: P100.00"));
+  assert.ok(page.rasters >= 3, "edge strip, gray scale, QR");
+  assert.deepEqual(page.barcodes, ["{BAR-TEST-0001"]);
+  assert.equal(page.cut, true);
+
+  const calibrated = printBytes(buildTestPage(58, { A: 30 }, 16));
+  assert.ok(calibrated.lines.some((l) => l.text === "Font A: 30 per line"));
+  assert.ok(calibrated.lines.some((l) => l.text === "Left margin: 16 dots"));
+  const raw = Array.from(buildTestPage(58, {}, 16).slice(0, 6));
+  assert.deepEqual(raw, [0x1b, 0x40, 0x1d, 0x4c, 16, 0], "GS L right after init");
+  assert.deepEqual(rulerLines(12), ["         1  ", "123456789012"]);
+});
+
+test("left margin is sent with designed receipts when calibrated", () => {
+  const t = buildPreset("compact", store);
+  const lines = toPrintedLines(layoutReceipt(t, sale()), 58);
+  assert.deepEqual(Array.from(encodeTextMode(lines, () => undefined, { leftMargin: 300 }).slice(0, 6)), [0x1b, 0x40, 0x1d, 0x4c, 300 & 0xff, 300 >> 8]);
+  assert.deepEqual(Array.from(encodeTextMode(lines, () => undefined).slice(0, 4)), [0x1b, 0x40, 0x1b, 0x61], "no margin command without calibration");
 });
 
 test("HTML preview: escaped text, centered padding, inverse only on the text", () => {

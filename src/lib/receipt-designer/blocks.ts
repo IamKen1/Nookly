@@ -1,4 +1,4 @@
-import type { Block, BlockType, FieldLayout, RuleChar, SaleDetailField, Style, TotalsKey, TotalsLine } from "./types";
+import type { Block, BlockType, Condition, FieldLayout, ItemCell, ItemField, ItemFormat, RowCell, RuleChar, SaleDetailField, Style, TotalsKey, TotalsLine } from "./types";
 import { TOTALS_FIELDS } from "./totals";
 
 let counter = 0;
@@ -43,7 +43,90 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   rule: "Divider",
   footer: "Footer",
   field: "Field",
+  row: "Row (side by side)",
+  formula: "Formula",
 };
+
+export const newRowCell = (overrides: Partial<RowCell> = {}): RowCell => ({
+  id: newId("c"),
+  kind: "field",
+  key: "date",
+  text: "",
+  expr: "total / 1.12",
+  format: "money",
+  decimals: 2,
+  label: "",
+  width: 0,
+  align: "left",
+  minus: false,
+  ...overrides,
+});
+
+export const newItemCell = (field: ItemField, overrides: Partial<ItemCell> = {}): ItemCell => ({
+  id: newId("i"),
+  field,
+  text: "",
+  title: ITEM_FIELD_TITLES[field],
+  width: 0,
+  align: field === "name" || field === "generic" || field === "text" ? "left" : "right",
+  ...overrides,
+});
+
+export const ITEM_FIELD_NAMES: Record<ItemField, string> = {
+  name: "Product name",
+  generic: "Generic name",
+  qty: "Quantity",
+  unitPrice: "Unit price",
+  total: "Line total",
+  vat: "V / N (VAT or not)",
+  qtyXPrice: "Qty × price (2 x ₱6.50)",
+  text: "Text",
+};
+const ITEM_FIELD_TITLES: Record<ItemField, string> = {
+  name: "ITEM",
+  generic: "GENERIC",
+  qty: "QTY",
+  unitPrice: "PRICE",
+  total: "AMOUNT",
+  vat: "",
+  qtyXPrice: "QTY x PRICE",
+  text: "",
+};
+
+// Ready-made item layouts; owners can change every column afterwards.
+export const ITEM_FORMATS: { key: string; label: string; make: () => ItemFormat }[] = [
+  {
+    key: "twoLine",
+    label: "Two lines: name, then qty × price … amount",
+    make: () => ({
+      lines: [
+        { id: newId("l"), style: { bold: true }, cells: [newItemCell("name")] },
+        { id: newId("l"), style: {}, cells: [newItemCell("qtyXPrice"), newItemCell("total"), newItemCell("vat", { width: 6 })] },
+      ],
+    }),
+  },
+  {
+    key: "oneLine",
+    label: "One line: qty · name · amount",
+    make: () => ({
+      // Auto widths: qty and amount keep their size, the name takes the rest and wraps.
+      lines: [{ id: newId("l"), style: {}, cells: [newItemCell("qty", { align: "left" }), newItemCell("name"), newItemCell("total")] }],
+    }),
+  },
+  {
+    key: "table",
+    label: "Table: item | qty | price | amount",
+    make: () => ({
+      lines: [
+        {
+          id: newId("l"),
+          style: {},
+          cells: [newItemCell("name"), newItemCell("qty"), newItemCell("unitPrice"), newItemCell("total")],
+        },
+      ],
+    }),
+  },
+];
 
 // Groups that can be split into separate elements.
 export const CAN_BREAK_APART: BlockType[] = ["totals", "saleDetails", "payment", "loyalty", "items"];
@@ -92,6 +175,19 @@ export function breakApart(block: Block, makeId: () => string = () => newId()): 
             align: l.align ?? "left",
             style: merge(block.style, l.style),
           });
+        if (l.kind === "formula")
+          return {
+            ...newBlock("formula", makeId()),
+            label: l.label,
+            expr: l.expr,
+            format: l.format,
+            decimals: l.decimals,
+            layout: l.layout ?? "pair",
+            minus: l.minus,
+            hideWhenZero: l.hideWhenZero,
+            align: l.align ?? "left",
+            style: merge(block.style, l.style),
+          } as Block;
         if (l.kind === "heading") return { ...newBlock("text", makeId()), text: l.text, align: l.align, style: merge(block.style, l.style) } as Block;
         if (l.kind === "rule") return rule(l.char);
         // The step-by-step computation stays one element: its lines change with the discount used.
@@ -132,13 +228,33 @@ export function breakApart(block: Block, makeId: () => string = () => newId()): 
     default:
       return [block];
   }
+  // Line conditions (Totals) were carried onto their parts above; the group's own applies to all.
+  const lineConds = block.type === "totals" ? block.lines.map((l) => l.showWhen) : [];
   return [
     ...blank(block.spaceBefore),
     ...(block.ruleBefore ? [rule(block.ruleBefore)] : []),
-    ...parts.map((p) => (block.visible ? p : { ...p, visible: false })),
+    ...parts.map((p, i) => {
+      const showWhen = bothConditions(block.showWhen, lineConds[i]);
+      return { ...p, ...(block.visible ? {} : { visible: false }), ...(showWhen ? { showWhen } : {}) } as Block;
+    }),
     ...(block.ruleAfter ? [rule(block.ruleAfter)] : []),
     ...blank(block.spaceAfter),
-  ];
+  ].map((p) => (block.showWhen && !p.showWhen ? ({ ...p, showWhen: block.showWhen } as Block) : p));
+}
+
+// Both conditions must hold.
+export function bothConditions(a?: Condition, b?: Condition): Condition | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const branches = a.branches?.length && b.branches?.length ? a.branches.filter((x) => b.branches!.includes(x)) : a.branches?.length ? a.branches : b.branches;
+  return {
+    saleTypes: [...new Set([...(a.saleTypes ?? []), ...(b.saleTypes ?? [])])],
+    minTotal: a.minTotal != null && b.minTotal != null ? Math.max(a.minTotal, b.minTotal) : a.minTotal ?? b.minTotal ?? null,
+    maxTotal: a.maxTotal != null && b.maxTotal != null ? Math.min(a.maxTotal, b.maxTotal) : a.maxTotal ?? b.maxTotal ?? null,
+    fromDate: a.fromDate && b.fromDate ? (a.fromDate > b.fromDate ? a.fromDate : b.fromDate) : a.fromDate ?? b.fromDate ?? null,
+    toDate: a.toDate && b.toDate ? (a.toDate < b.toDate ? a.toDate : b.toDate) : a.toDate ?? b.toDate ?? null,
+    branches: branches ?? [],
+  };
 }
 
 // A new block of each type, as added from the designer's palette.
@@ -175,6 +291,26 @@ export function newBlock(type: BlockType, id = newId()): Block {
         showItemCount: true,
         itemCountLabel: "Total Items:",
         countMode: "pieces",
+        itemFormat: null,
+      };
+    case "row":
+      return {
+        ...b,
+        type,
+        gap: 1,
+        cells: [newRowCell({ key: "date", label: "Date:" }), newRowCell({ key: "time", align: "right" })],
+      };
+    case "formula":
+      return {
+        ...b,
+        type,
+        label: "VAT-exclusive total:",
+        expr: "total / 1.12",
+        format: "money",
+        decimals: 2,
+        layout: "pair",
+        minus: false,
+        hideWhenZero: false,
       };
     case "field":
       return { ...b, type, key: "grossTotal", label: TOTALS_FIELDS.grossTotal.label, layout: "pair", minus: false, hideWhenZero: false };

@@ -3,6 +3,7 @@
 import JsBarcode from "jsbarcode";
 import type { Row } from "./layout";
 import type { PrintedLine } from "./textmode";
+import { columnWidths } from "./textmode";
 import type { Align, PaperWidth, ResolvedStyle, Template } from "./types";
 import { IMAGE_FONTS } from "./types";
 import type { RasterFor } from "./escpos";
@@ -113,8 +114,17 @@ function wrapWords(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
 }
 
 // Draws (or, with ctx.canvas sized 0, just measures) the receipt. Returns its height.
-function paint(ctx: CanvasRenderingContext2D, rows: Row[], paper: number, assets: Assets, draw: boolean): number {
-  let y = PAD;
+function paint(ctx: CanvasRenderingContext2D, rows: Row[], paper: number, assets: Assets, draw: boolean, padY = PAD): number {
+  let y = padY;
+  // Rows of one table share column widths (the widest content of each column), as in text mode.
+  const groupNeed = new Map<string, number[]>();
+  for (const r of rows) {
+    if (r.kind !== "columns" || !r.group) continue;
+    ctx.font = cssFont(r.style);
+    const cur = groupNeed.get(r.group) ?? [];
+    r.cells.forEach((c, i) => (cur[i] = Math.max(cur[i] ?? 1, Math.ceil(Math.max(1, ...c.text.split(/\r?\n/).map((p) => ctx.measureText(p).width))))));
+    groupNeed.set(r.group, cur);
+  }
   const inner = paper - PAD * 2;
 
   const textLine = (text: string, s: ResolvedStyle, align: Align) => {
@@ -168,6 +178,41 @@ function paint(ctx: CanvasRenderingContext2D, rows: Row[], paper: number, assets
           for (const l of wrapWords(ctx, row.left, inner)) textLine(l, s, "left");
           textLine(row.right, s, "right");
         }
+        break;
+      }
+      case "columns": {
+        // Same split as text mode, in dots: fixed columns take their %, the rest share.
+        const s = row.style;
+        ctx.font = cssFont(s);
+        const gapPx = row.gap * ctx.measureText(" ").width;
+        const shared = row.group ? groupNeed.get(row.group) : undefined;
+        const widths = columnWidths(
+          row.cells.map((c, i) => ({ width: c.width, need: shared?.[i] ?? Math.ceil(Math.max(1, ...c.text.split(/\r?\n/).map((p) => ctx.measureText(p).width))) })),
+          Math.floor(inner),
+          Math.round(gapPx)
+        );
+        const wrapped = row.cells.map((c, i) => wrapWords(ctx, c.text, Math.max(8, widths[i])));
+        const h = lineHeightPx(s);
+        const height = Math.max(...wrapped.map((w) => w.length));
+        if (draw) {
+          if (s.inverse || s.background) {
+            ctx.fillStyle = s.inverse ? "#000000" : (s.background as string);
+            ctx.fillRect(0, y, paper, h * height);
+          }
+          ctx.fillStyle = s.inverse ? "#ffffff" : s.color;
+          ctx.textBaseline = "middle";
+          let x = PAD;
+          row.cells.forEach((c, i) => {
+            wrapped[i].forEach((t, r) => {
+              const w = ctx.measureText(t).width;
+              const tx = c.align === "right" ? x + widths[i] - w : c.align === "center" ? x + (widths[i] - w) / 2 : x;
+              ctx.fillText(t, tx, y + r * h + h / 2);
+              if (s.underline) ctx.fillRect(tx, y + r * h + h / 2 + fontPx(s) * 0.45, w, Math.max(1, Math.round(fontPx(s) / 14)));
+            });
+            x += widths[i] + Math.round(gapPx);
+          });
+        }
+        y += h * height;
         break;
       }
       case "rule": {
@@ -226,23 +271,24 @@ function paint(ctx: CanvasRenderingContext2D, rows: Row[], paper: number, assets
       }
     }
   }
-  return Math.ceil(y + PAD);
+  return Math.ceil(y + padY);
 }
 
 // The receipt as a color picture, PAPER_DOTS wide (image mode, its preview and browser print).
-export async function drawReceiptCanvas(rows: Row[], template: Template): Promise<HTMLCanvasElement> {
+// padY: blank space above and below (0 for one block of the designer preview).
+export async function drawReceiptCanvas(rows: Row[], template: Template, padY = PAD): Promise<HTMLCanvasElement> {
   const families = rows.flatMap((r) => ("style" in r ? [r.style.fontFamily] : []));
   const [assets] = await Promise.all([loadAssets(rows), loadFonts(families)]);
   const paper = PAPER_DOTS[template.paperWidth];
   const measure = document.createElement("canvas").getContext("2d")!;
-  const height = paint(measure, rows, paper, assets, false);
+  const height = Math.max(1, paint(measure, rows, paper, assets, false, padY));
   const canvas = document.createElement("canvas");
   canvas.width = paper;
   canvas.height = height;
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, paper, height);
-  paint(ctx, rows, paper, assets, true);
+  paint(ctx, rows, paper, assets, true, padY);
   return canvas;
 }
 

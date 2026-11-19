@@ -9,6 +9,7 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
     where: { id: saleId, tenantId },
     select: {
       id: true,
+      storeId: true,
       saleNumber: true,
       saleDate: true,
       subtotal: true,
@@ -84,6 +85,7 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
       genericName: item.product.genericName ?? null,
     })),
     branchName: sale.store.name,
+    storeId: sale.storeId,
     subtotal: toNumber(sale.subtotal),
     discountType: sale.discountType ?? "NONE",
     discountName: sale.discountName,

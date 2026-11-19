@@ -32,5 +32,5 @@ export async function GET(request: NextRequest) {
     prisma.user.findUnique({ where: { id: session.userId }, select: { firstName: true, lastName: true } }),
     session.storeId ? prisma.store.findUnique({ where: { id: session.storeId }, select: { name: true } }) : null,
   ]);
-  return NextResponse.json(sampleReceipt(kind as SampleKind, store, user ?? { firstName: "Cashier", lastName: "" }, branch?.name ?? null));
+  return NextResponse.json(sampleReceipt(kind as SampleKind, store, user ?? { firstName: "Cashier", lastName: "" }, branch?.name ?? null, session.storeId ?? null));
 }

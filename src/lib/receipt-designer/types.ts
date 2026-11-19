@@ -51,6 +51,17 @@ export interface Theme {
   style: Style;
 }
 
+// "Show only when…": every condition set must hold for the element to print.
+export type SaleType = "scpwd" | "discount" | "noDiscount" | "cash" | "ewallet" | "customer" | "points";
+export interface Condition {
+  saleTypes?: SaleType[];
+  minTotal?: number | null; // total amount due at least
+  maxTotal?: number | null; // at most
+  fromDate?: string | null; // YYYY-MM-DD, Philippine date of the sale, inclusive
+  toDate?: string | null;
+  branches?: string[]; // store ids; empty = every branch
+}
+
 interface BlockBase {
   id: string;
   visible: boolean;
@@ -61,6 +72,43 @@ interface BlockBase {
   // A rule printed only when the block itself prints (e.g. after the SC/PWD box).
   ruleBefore: RuleChar | null;
   ruleAfter: RuleChar | null;
+  showWhen?: Condition;
+}
+
+export type FormulaFormat = "money" | "number" | "percent" | "int";
+
+// One column of a Row: a value, some text, or a formula.
+export interface RowCell {
+  id: string;
+  kind: "field" | "text" | "formula";
+  key: TotalsKey; // kind "field"
+  text: string; // kind "text" (labels' {tokens} work here too)
+  expr: string; // kind "formula"
+  format: FormulaFormat; // kind "formula"
+  decimals: number;
+  label: string; // printed before the value ("Date: 11/19/2026"); empty = value only
+  width: number; // % of the line; 0 = share what's left
+  align: Align;
+  minus: boolean;
+}
+
+// Item lines built from columns. null on an Items block = the standard two-line layout.
+export type ItemField = "name" | "generic" | "qty" | "unitPrice" | "total" | "vat" | "qtyXPrice" | "text";
+export interface ItemCell {
+  id: string;
+  field: ItemField;
+  text: string; // field "text"
+  title: string; // column header
+  width: number; // % of the line; 0 = share what's left
+  align: Align;
+}
+export interface ItemLine {
+  id: string;
+  cells: ItemCell[];
+  style: Style;
+}
+export interface ItemFormat {
+  lines: ItemLine[];
 }
 
 export type StoreField = "name" | "address" | "contact" | "tin" | "permit" | "accreditation" | "serial";
@@ -114,7 +162,21 @@ export type FieldKey = TotalsKey;
 // pair = label left, value right · inline = "Label: value" · value = the value alone.
 export type FieldLayout = "pair" | "inline" | "value";
 
-export type TotalsLine =
+export type TotalsLine = TotalsLineBody & { showWhen?: Condition };
+type TotalsLineBody =
+  | {
+      id: string;
+      kind: "formula";
+      label: string;
+      expr: string;
+      format: FormulaFormat;
+      decimals: number;
+      style: Style;
+      minus: boolean;
+      hideWhenZero: boolean;
+      layout?: FieldLayout;
+      align?: Align;
+    }
   | {
       id: string;
       kind: "value";
@@ -151,6 +213,20 @@ export type Block =
       showItemCount: boolean;
       itemCountLabel: string;
       countMode: "pieces" | "products"; // pieces: 2 + 2 = 4 · products: 2 lines = 2
+      itemFormat: ItemFormat | null; // null = standard two-line items
+    })
+  // Several values side by side on one line.
+  | (BlockBase & { type: "row"; cells: RowCell[]; gap: number })
+  // A value the owner computes from the sale (display only).
+  | (BlockBase & {
+      type: "formula";
+      label: string;
+      expr: string;
+      format: FormulaFormat;
+      decimals: number;
+      layout: FieldLayout;
+      minus: boolean;
+      hideWhenZero: boolean;
     })
   // One value, anywhere on the receipt.
   | (BlockBase & {

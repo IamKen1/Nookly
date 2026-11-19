@@ -8,6 +8,8 @@ import { toPrintedLines } from "./textmode";
 import { encodeImageMode, encodeTextMode } from "./escpos";
 import { canvasToRaster, drawReceiptCanvas, prepareTextModeRasters } from "./canvas";
 import { imageModeHtml, printDocument, textModeHtml } from "./html";
+import { buildTestPage } from "./testpage";
+import { readCalibration, type Calibration } from "@/lib/printer/calibration";
 
 export const barcodeSvg = (content: string, height: number, showText: boolean) => {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -16,15 +18,20 @@ export const barcodeSvg = (content: string, height: number, showText: boolean) =
   return svg.outerHTML;
 };
 
-// Bytes for the paired thermal printer.
-export async function designerThermalBytes(data: ReceiptData, t: Template): Promise<Uint8Array> {
+// Bytes for the paired thermal printer, fitted to this device's calibration.
+export async function designerThermalBytes(data: ReceiptData, t: Template, cal: Calibration = readCalibration()): Promise<Uint8Array> {
   const rows = layoutReceipt(t, data);
   if (t.printMode === "IMAGE") {
     const canvas = await drawReceiptCanvas(rows, t);
-    return encodeImageMode(canvasToRaster(canvas), 0); // the picture already ends with blank paper
+    return encodeImageMode(canvasToRaster(canvas), 0, { leftMargin: cal.leftMargin }); // the picture already ends with blank paper
   }
-  const lines = toPrintedLines(rows, t.paperWidth);
-  return encodeTextMode(lines, await prepareTextModeRasters(lines, t.paperWidth));
+  const lines = toPrintedLines(rows, t.paperWidth, cal.cols[t.paperWidth]);
+  return encodeTextMode(lines, await prepareTextModeRasters(lines, t.paperWidth), { leftMargin: cal.leftMargin });
+}
+
+// The test page, fitted to this device's calibration.
+export function testPageBytes(paperWidth: Template["paperWidth"], cal: Calibration = readCalibration()): Uint8Array {
+  return buildTestPage(paperWidth, cal.cols[paperWidth], cal.leftMargin);
 }
 
 // The receipt as HTML: the preview, or (wrapped by printDocument) the browser print.

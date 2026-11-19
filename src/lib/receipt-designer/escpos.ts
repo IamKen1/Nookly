@@ -19,6 +19,8 @@ export const CMD = {
   inverse: (on: boolean) => [GS, 0x42, on ? 1 : 0],
   // Same cut as today's receipt (GS V "1").
   cut: [GS, 0x56, 0x31],
+  // GS L: where printing starts, in dots from the left edge.
+  leftMargin: (dots: number) => [GS, 0x4c, Math.max(0, Math.round(dots)) & 0xff, Math.max(0, Math.round(dots)) >> 8],
 };
 
 const clamp = (n: number) => Math.min(8, Math.max(1, Math.round(n)));
@@ -53,8 +55,8 @@ export type RasterFor = (row: Extract<Row, { kind: "image" | "qr" }>) => Raster 
 
 // Text mode: the printer's own fonts, sizes, bold, underline and inverse,
 // with pictures (logo, QR) sent as rasters prepared beforehand.
-export function encodeTextMode(lines: PrintedLine[], rasterFor: RasterFor): Uint8Array {
-  const out: number[] = [...CMD.init];
+export function encodeTextMode(lines: PrintedLine[], rasterFor: RasterFor, opts: { leftMargin?: number } = {}): Uint8Array {
+  const out: number[] = [...CMD.init, ...(opts.leftMargin ? CMD.leftMargin(opts.leftMargin) : [])];
   // Today's receipt starts centered; set everything explicitly from here.
   let state = { align: "", font: "", w: 0, h: 0, bold: null as boolean | null, underline: null as boolean | null, inverse: null as boolean | null };
   const push = (bytes: number[]) => {
@@ -95,8 +97,8 @@ export function encodeTextMode(lines: PrintedLine[], rasterFor: RasterFor): Uint
 }
 
 // Image mode: the whole receipt is one picture, sent in bands, then cut.
-export function encodeImageMode(receipt: Raster, feedLines = 3): Uint8Array {
-  const out: number[] = [...CMD.init, ...CMD.align("left")];
+export function encodeImageMode(receipt: Raster, feedLines = 3, opts: { leftMargin?: number } = {}): Uint8Array {
+  const out: number[] = [...CMD.init, ...(opts.leftMargin ? CMD.leftMargin(opts.leftMargin) : []), ...CMD.align("left")];
   for (const band of bands(receipt)) for (const b of rasterBytes(band)) out.push(b);
   for (let i = 0; i < feedLines; i++) out.push(LF);
   for (const b of CMD.cut) out.push(b);

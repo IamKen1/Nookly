@@ -1,5 +1,5 @@
 import type { PrintedLine } from "./textmode";
-import { columnsFor } from "./textmode";
+import { columnsFor, type ColumnOverride } from "./textmode";
 import type { PaperWidth } from "./types";
 import { qrMatrix } from "./raster";
 import { escPosSafeText } from "@/lib/printer/encode";
@@ -26,10 +26,16 @@ export interface HtmlOptions {
   barcodeSvg?: (content: string, height: number, showText: boolean) => string;
   // Marks each line with the block it came from, for clicking in the designer.
   lineAttrs?: (index: number) => string;
+  // This device's printer calibration (characters per line).
+  override?: ColumnOverride;
 }
 
 export function textModeHtml(lines: PrintedLine[], paperWidth: PaperWidth, opts: HtmlOptions = {}): string {
-  const cols = columnsFor(paperWidth, "A", 1);
+  return `<div class="r-paper r-text" style="--cols:${columnsFor(paperWidth, "A", 1, opts.override)}">${textModeLinesHtml(lines, paperWidth, opts)}</div>`;
+}
+
+// The lines alone (the designer wraps each block's lines to drag them).
+export function textModeLinesHtml(lines: PrintedLine[], paperWidth: PaperWidth, opts: HtmlOptions = {}): string {
   const body = lines
     .map((l, i) => {
       const attrs = `${l.blockId ? `data-block="${esc(l.blockId)}"` : ""} ${opts.lineAttrs?.(i) ?? ""}`.trim();
@@ -46,7 +52,7 @@ export function textModeHtml(lines: PrintedLine[], paperWidth: PaperWidth, opts:
         const svg = opts.barcodeSvg?.(l.content, l.height, l.showText) ?? `<div class="r-barcode">${esc(l.content)}</div>`;
         return `<div class="r-pic" style="justify-content:${just}" ${attrs}><div style="max-width:100%">${svg}</div></div>`;
       }
-      const lineCols = columnsFor(paperWidth, l.font, l.sizeW);
+      const lineCols = columnsFor(paperWidth, l.font, l.sizeW, opts.override);
       const len = Array.from(l.text).length;
       const pad = l.align === "center" ? Math.floor((lineCols - len) / 2) : l.align === "right" ? lineCols - len : 0;
       const w = l.sizeW * FONT_W[l.font];
@@ -63,7 +69,7 @@ export function textModeHtml(lines: PrintedLine[], paperWidth: PaperWidth, opts:
       return `<div class="r-line" style="${style}" ${attrs}>${" ".repeat(Math.max(0, pad))}<span${textStyle ? ` style="${textStyle}"` : ""}>${esc(escPosSafeText(l.text)) || "&nbsp;"}</span></div>`;
     })
     .join("");
-  return `<div class="r-paper r-text" style="--cols:${cols}">${body}</div>`;
+  return body;
 }
 
 // Shared CSS for the receipt preview and the print page.
