@@ -53,6 +53,7 @@ import PendingOrdersModal, { type PendingOrder } from "./PendingOrdersModal";
 import HeldCartsModal, { type HeldCart } from "./HeldCartsModal";
 import BranchSwitcher from "@/components/app/BranchSwitcher";
 import { PriceCheck } from "@/components/dashboard/cashier-tools";
+import ProductImage from "@/components/app/ProductImage";
 
 interface Product {
   id: string;
@@ -1271,18 +1272,11 @@ const ProductCard = memo(({ product, onAddToCart }: { product: Product; onAddToC
       } ${isLowStock ? "border-amber-200" : "border-gray-100 hover:border-emerald-200"}`}
     >
       <div className="relative mb-2 aspect-square overflow-hidden rounded-lg bg-linear-to-br from-gray-100 to-gray-200">
-        {product.imageUrl ? (
-          <img
-            src={getOptimizedImageUrl(getImageUrl(product.imageUrl), { width: 220, height: 220, quality: 78, crop: "fill" })}
-            alt={product.name}
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-xl font-bold text-gray-400">
-            {product.name.charAt(0).toUpperCase()}
-          </div>
-        )}
+        <ProductImage
+          src={product.imageUrl ? getOptimizedImageUrl(getImageUrl(product.imageUrl), { width: 220, height: 220, quality: 78, crop: "fill" }) : null}
+          alt={product.name}
+          className="h-full w-full"
+        />
         <StockBadge isOutOfStock={isOutOfStock} isLowStock={isLowStock} />
         {product.isVatable && (
           <span className="absolute left-1.5 top-1.5 rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">VAT</span>
@@ -1329,18 +1323,12 @@ const ProductListItem = memo(({ product, onAddToCart }: { product: Product; onAd
       } ${isLowStock ? "border-amber-200" : "border-gray-100 hover:border-emerald-200"}`}
     >
       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-linear-to-br from-gray-100 to-gray-200">
-        {product.imageUrl ? (
-          <img
-            src={getOptimizedImageUrl(getImageUrl(product.imageUrl), { width: 150, height: 150, quality: 75, crop: "fill" })}
-            alt={product.name}
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-base font-bold text-gray-400">
-            {product.name.charAt(0).toUpperCase()}
-          </div>
-        )}
+        <ProductImage
+          src={product.imageUrl ? getOptimizedImageUrl(getImageUrl(product.imageUrl), { width: 150, height: 150, quality: 75, crop: "fill" }) : null}
+          alt={product.name}
+          className="h-full w-full"
+          iconClassName="h-5 w-5"
+        />
       </div>
 
       <div className="min-w-0 flex-1">

@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { AlertTriangle, Plus, RotateCcw, Search, Settings, Trash2, X, Pencil, Loader2 } from "lucide-react";
 import ImageUpload from "./ImageUpload";
+import ProductImage from "@/components/app/ProductImage";
 import CategoryManager from "./CategoryManager";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { getOptimizedImageUrl } from "@/lib/cloudinary";
@@ -481,19 +482,14 @@ export default function ProductsClient({
                 <tr key={p.id} className="border-b border-zinc-50 last:border-0">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {p.imageUrl ? (
-                        <img
-                          src={getOptimizedImageUrl(p.imageUrl, { width: 72, height: 72, quality: "auto", crop: "fill" })}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          width={36}
-                          height={36}
-                          className="h-9 w-9 rounded-lg object-cover"
-                        />
-                      ) : (
-                        <div className="h-9 w-9 rounded-lg bg-zinc-100" />
-                      )}
+                      <ProductImage
+                        src={p.imageUrl ? getOptimizedImageUrl(p.imageUrl, { width: 72, height: 72, quality: "auto", crop: "fill" }) : null}
+                        alt=""
+                        width={36}
+                        height={36}
+                        className="h-9 w-9 shrink-0 rounded-lg"
+                        iconClassName="h-4 w-4"
+                      />
                       <div>
                         <p className="font-medium text-zinc-900">{p.name}</p>
                         <p className="text-xs text-zinc-500">{p.genericName || p.brandName || p.barcode}</p>
