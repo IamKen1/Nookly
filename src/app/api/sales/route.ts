@@ -392,14 +392,20 @@ export async function POST(request: NextRequest) {
           })
         ).id;
 
+      // A "new" doctor whose license number is already on file is that doctor
+      // (license numbers are unique per workspace), not a failed sale.
+      const newDoctorLicense = prescriptionDraft.newDoctor?.licenseNumber?.trim() || null;
       const draftDoctorId = prescriptionDraft.doctorId
+        ?? (newDoctorLicense
+          ? (await tx.doctor.findFirst({ where: { tenantId: session.tenantId, licenseNumber: newDoctorLicense }, select: { id: true } }))?.id
+          : undefined)
         ?? (
           await tx.doctor.create({
             data: {
               tenantId: session.tenantId,
               firstName: prescriptionDraft.newDoctor!.firstName,
               lastName: prescriptionDraft.newDoctor!.lastName,
-              licenseNumber: prescriptionDraft.newDoctor!.licenseNumber || null,
+              licenseNumber: newDoctorLicense,
             },
           })
         ).id;
