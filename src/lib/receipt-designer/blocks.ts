@@ -1,5 +1,6 @@
-import type { Block, BlockType, Condition, FieldLayout, ItemCell, ItemField, ItemFormat, RowCell, RuleChar, SaleDetailField, Style, TotalsKey, TotalsLine } from "./types";
+import type { Block, BlockType, Condition, FieldLayout, ItemCell, ItemField, ItemFormat, RowCell, RuleChar, SaleDetailField, StoreLabels, Style, TotalsKey, TotalsLine } from "./types";
 import { TOTALS_FIELDS } from "./totals";
+import { DEFAULT_VAT_CODES } from "./format";
 
 let counter = 0;
 // Unique enough within one design; the designer replaces these with UUIDs.
@@ -68,29 +69,43 @@ export const newItemCell = (field: ItemField, overrides: Partial<ItemCell> = {})
   text: "",
   title: ITEM_FIELD_TITLES[field],
   width: 0,
-  align: field === "name" || field === "generic" || field === "text" ? "left" : "right",
+  align: field === "name" || field === "generic" || field === "barcode" || field === "text" ? "left" : "right",
   ...overrides,
 });
 
 export const ITEM_FIELD_NAMES: Record<ItemField, string> = {
   name: "Product name",
   generic: "Generic name",
+  barcode: "Barcode",
   qty: "Quantity",
   unitPrice: "Unit price",
   total: "Line total",
-  vat: "V / N (VAT or not)",
+  vat: "VAT code (V / N, or your own letters)",
+  totalVat: "Line total + VAT code (312.50X)",
   qtyXPrice: "Qty × price (2 x ₱6.50)",
+  qtyAtPrice: "Qty @ price (2 @ ₱6.50)",
   text: "Text",
 };
 const ITEM_FIELD_TITLES: Record<ItemField, string> = {
   name: "ITEM",
   generic: "GENERIC",
+  barcode: "BARCODE",
   qty: "QTY",
   unitPrice: "PRICE",
   total: "AMOUNT",
   vat: "",
+  totalVat: "AMOUNT",
   qtyXPrice: "QTY x PRICE",
+  qtyAtPrice: "QTY @ PRICE",
   text: "",
+};
+
+export const DEFAULT_STORE_LABELS: StoreLabels = {
+  contact: "Contact: ",
+  tin: "TIN: ",
+  permit: "Permit: ",
+  accreditation: "Accreditation: ",
+  serial: "Serial: ",
 };
 
 // Ready-made item layouts; owners can change every column afterwards.
@@ -269,6 +284,7 @@ export function newBlock(type: BlockType, id = newId()): Block {
         type,
         align: "center",
         fields: { name: true, address: true, contact: true, tin: true, permit: true, accreditation: true, serial: true },
+        labels: { ...DEFAULT_STORE_LABELS },
         nameStyle: { bold: true },
       };
     case "title":
@@ -292,6 +308,7 @@ export function newBlock(type: BlockType, id = newId()): Block {
         itemCountLabel: "Total Items:",
         countMode: "pieces",
         itemFormat: null,
+        vatCodes: { ...DEFAULT_VAT_CODES },
       };
     case "row":
       return {

@@ -47,6 +47,8 @@ import { columnsFor } from "@/lib/receipt-designer/textmode";
 import Inspector from "./Inspector";
 import Preview, { PREVIEW_PREFIX } from "./Preview";
 import StyleEditor from "./StyleEditor";
+import { ValueFormatEditor } from "./ValueFormatEditor";
+import { DEFAULT_FORMAT } from "@/lib/receipt-designer/format";
 
 type SaveState = "saved" | "saving" | "unsaved" | "error";
 
@@ -739,8 +741,10 @@ export default function ReceiptDesigner() {
 
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-zinc-600">Default look (every block starts from this)</p>
-                  <StyleEditor value={template.theme.style} onChange={(style) => change({ ...template, theme: { style } })} printMode={template.printMode} />
+                  <StyleEditor value={template.theme.style} onChange={(style) => change({ ...template, theme: { ...template.theme, style } })} printMode={template.printMode} />
                 </div>
+
+                <ValueFormatEditor value={{ ...DEFAULT_FORMAT, ...template.theme.format }} onChange={(format) => change({ ...template, theme: { ...template.theme, format } })} />
 
                 <div className="space-y-2 border-t border-zinc-100 pt-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Printer on this device</p>

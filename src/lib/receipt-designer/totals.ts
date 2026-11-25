@@ -1,7 +1,8 @@
 import type { ReceiptData } from "@/types/receipt";
 import { formatPaymentMethodLabel } from "@/types/receipt";
 import { loyaltyLines } from "@/lib/receipt";
-import type { TotalsKey } from "./types";
+import type { TotalsKey, ValueFormat } from "./types";
+import { DEFAULT_FORMAT, formatDate, formatName, formatTime, moneyFormatter } from "./format";
 
 export type TotalsFormat = "money" | "int" | "text";
 
@@ -10,11 +11,11 @@ interface Field {
   label: string; // default label on the receipt (owners can rename)
   format: TotalsFormat;
   // null = doesn't apply to this sale (the line is skipped).
-  value: (r: ReceiptData) => number | string | null;
+  // f: the design's date/time/name formats (today's formats when not given).
+  value: (r: ReceiptData, f?: ValueFormat) => number | string | null;
 }
 
 const money = (n: number) => Math.round(n * 100) / 100;
-const person = (p?: { firstName: string; lastName: string } | null) => (p ? `${p.firstName} ${p.lastName}`.trim() : null);
 const hasPoints = (r: ReceiptData) => Boolean(r.loyalty && r.loyalty.pointsRedeemed > 0);
 
 // Every value a receipt can show, each usable anywhere on the receipt: as its
@@ -60,22 +61,16 @@ export const TOTALS_FIELDS: Record<TotalsKey, Field> = {
 
   // the sale
   receiptNo: { name: "AR number", label: "AR No:", format: "text", value: (r) => r.saleNumber },
-  date: { name: "Date", label: "Date:", format: "text", value: (r) => r.date.toLocaleDateString("en-PH") },
-  time: {
-    name: "Time",
-    label: "Time:",
-    format: "text",
-    value: (r) => r.date.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true }),
-  },
+  date: { name: "Date", label: "Date:", format: "text", value: (r, f = DEFAULT_FORMAT) => formatDate(r.date, f.date) },
+  time: { name: "Time", label: "Time:", format: "text", value: (r, f = DEFAULT_FORMAT) => formatTime(r.date, f.time) },
   dateTime: {
     name: "Date and time",
     label: "Date:",
     format: "text",
-    value: (r) =>
-      `${r.date.toLocaleDateString("en-PH")} ${r.date.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true })}`,
+    value: (r, f = DEFAULT_FORMAT) => `${formatDate(r.date, f.date)} ${formatTime(r.date, f.time)}`,
   },
-  cashier: { name: "Cashier", label: "Cashier:", format: "text", value: (r) => person(r.cashier) },
-  customer: { name: "Customer", label: "Customer:", format: "text", value: (r) => person(r.customer) },
+  cashier: { name: "Cashier", label: "Cashier:", format: "text", value: (r, f = DEFAULT_FORMAT) => formatName(r.cashier, f.cashierName) },
+  customer: { name: "Customer", label: "Customer:", format: "text", value: (r, f = DEFAULT_FORMAT) => formatName(r.customer, f.customerName) },
   branch: { name: "Branch", label: "Branch:", format: "text", value: (r) => r.branchName ?? null },
 
   // payment
@@ -113,17 +108,44 @@ export const TOTALS_KEYS = Object.keys(TOTALS_FIELDS) as TotalsKey[];
 // Every value, A–Z by what it is. No fixed groups: any value can go anywhere.
 export const FIELDS_BY_NAME = [...TOTALS_KEYS].sort((a, b) => TOTALS_FIELDS[a].name.localeCompare(TOTALS_FIELDS[b].name));
 
-// Owners can put these in any label; they're filled from the sale.
+// Store details that can go in any text: {storeName}, {tin}…
+const STORE_TOKENS: Record<string, { name: string; value: (r: ReceiptData) => string | null | undefined }> = {
+  storeName: { name: "store name", value: (r) => r.store.storeName },
+  address: { name: "address", value: (r) => [r.store.addressLine1, r.store.addressLine2].filter(Boolean).join(", ") },
+  contact: { name: "contact no.", value: (r) => r.store.contactNumber },
+  tin: { name: "TIN", value: (r) => r.store.tin },
+  permit: { name: "permit no.", value: (r) => r.store.permitNumber },
+  accreditation: { name: "accreditation no.", value: (r) => r.store.accreditationNumber },
+  serial: { name: "serial no.", value: (r) => r.store.serialNumberLabel },
+};
+
+// Owners can put these in any text or label; they're filled from the sale.
+// Any value's key works too ({quantity}, {receiptNo}, {cashier}…).
 export const LABEL_TOKENS: { token: string; name: string }[] = [
   { token: "{points}", name: "points used" },
   { token: "{discountName}", name: "discount name" },
   { token: "{discountRate}", name: "discount rate" },
 ];
 
-export const fillLabel = (label: string, r: ReceiptData) =>
-  label.includes("{")
-    ? label
-        .replace(/\{points\}/g, String(r.loyalty?.pointsRedeemed ?? 0))
-        .replace(/\{discountName\}/g, r.discountName || r.discountType || "")
-        .replace(/\{discountRate\}/g, r.discountRate || "")
-    : label;
+// Every token, for the designer's help list.
+export const ALL_TOKENS: { token: string; name: string }[] = [
+  ...Object.entries(STORE_TOKENS).map(([k, t]) => ({ token: `{${k}}`, name: t.name })),
+  ...FIELDS_BY_NAME.map((k) => ({ token: `{${k}}`, name: TOTALS_FIELDS[k].name.toLowerCase() })),
+  { token: "{points}", name: "points used (count)" },
+];
+
+// A value as text, for a {token}. Empty when it doesn't apply to this sale.
+export function tokenValue(key: string, r: ReceiptData, f: ValueFormat = DEFAULT_FORMAT): string | undefined {
+  if (key === "points") return String(r.loyalty?.pointsRedeemed ?? 0);
+  if (key === "discountName") return r.discountName || r.discountType || "";
+  if (key === "discountRate") return r.discountRate || "";
+  if (Object.hasOwn(STORE_TOKENS, key)) return STORE_TOKENS[key].value(r)?.trim() ?? "";
+  if (!Object.hasOwn(TOTALS_FIELDS, key)) return undefined; // not a token: printed as typed
+  const field = TOTALS_FIELDS[key as TotalsKey];
+  const v = field.value(r, f);
+  if (v === null || v === undefined) return "";
+  return field.format === "money" ? moneyFormatter(f)(v as number) : String(v);
+}
+
+export const fillLabel = (label: string, r: ReceiptData, f: ValueFormat = DEFAULT_FORMAT) =>
+  label.includes("{") ? label.replace(/\{([A-Za-z]+)\}/g, (whole, key: string) => tokenValue(key, r, f) ?? whole) : label;

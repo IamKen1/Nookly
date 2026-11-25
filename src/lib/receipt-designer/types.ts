@@ -29,6 +29,7 @@ export interface Style {
   background?: string | null;
   lineHeight?: number; // × font size
   letterSpacing?: number; // px, image mode / browser
+  uppercase?: boolean; // ALL CAPS, every mode
 }
 
 export type ResolvedStyle = Required<Omit<Style, "background">> & { background: string | null };
@@ -47,8 +48,21 @@ export const IMAGE_FONTS: Record<string, { label: string; css: string; google?: 
   courier: { label: "Courier (built-in)", css: "'Courier New', Courier, monospace" },
 };
 
+// How values are written on the whole receipt. "default" keeps today's format.
+export type DateFormat = "default" | "MM-DD-YY" | "MM/DD/YY" | "MM/DD/YYYY" | "YYYY-MM-DD" | "MMM D, YYYY";
+export type TimeFormat = "default" | "h:mmA" | "hh:mm AM" | "HH:mm" | "HH:mm:ss";
+export type NameFormat = "full" | "first" | "last" | "firstLastInitial" | "lastFirst";
+export interface ValueFormat {
+  currency: "peso" | "none"; // ₱312.50 or 312.50
+  date: DateFormat;
+  time: TimeFormat;
+  cashierName: NameFormat;
+  customerName: NameFormat;
+}
+
 export interface Theme {
   style: Style;
+  format?: ValueFormat; // unset = today's formats
 }
 
 // "Show only when…": every condition set must hold for the element to print.
@@ -93,7 +107,25 @@ export interface RowCell {
 }
 
 // Item lines built from columns. null on an Items block = the standard two-line layout.
-export type ItemField = "name" | "generic" | "qty" | "unitPrice" | "total" | "vat" | "qtyXPrice" | "text";
+export type ItemField =
+  | "name"
+  | "generic"
+  | "barcode"
+  | "qty"
+  | "unitPrice"
+  | "total"
+  | "vat"
+  | "totalVat" // amount with the VAT code right after it: 312.50X
+  | "qtyXPrice"
+  | "qtyAtPrice" // 10 @ 31.25
+  | "text";
+
+// The letter printed for each item's VAT status (items block, "V / N" columns).
+export interface VatCodes {
+  vatable: string; // a VATable item on a regular sale
+  exempt: string; // a VATable item made VAT-exempt by SC/PWD
+  nonVat: string; // a non-VAT / VAT-exempt product
+}
 export interface ItemCell {
   id: string;
   field: ItemField;
@@ -112,6 +144,7 @@ export interface ItemFormat {
 }
 
 export type StoreField = "name" | "address" | "contact" | "tin" | "permit" | "accreditation" | "serial";
+export type StoreLabels = Record<"contact" | "tin" | "permit" | "accreditation" | "serial", string>;
 export type SaleDetailKey = "receiptNo" | "date" | "cashier" | "time" | "customer" | "branch";
 
 export interface SaleDetailField {
@@ -196,7 +229,8 @@ type TotalsLineBody =
 
 export type Block =
   | (BlockBase & { type: "logo"; widthPct: number })
-  | (BlockBase & { type: "storeInfo"; fields: Record<StoreField, boolean>; nameStyle: Style })
+  // labels: what's printed before each detail ("TIN: ", "VAT REG TIN:"), exactly as typed.
+  | (BlockBase & { type: "storeInfo"; fields: Record<StoreField, boolean>; labels: StoreLabels; nameStyle: Style })
   | (BlockBase & { type: "title"; text: string; uppercase: boolean })
   | (BlockBase & { type: "saleDetails"; fields: SaleDetailField[] })
   | (BlockBase & {
@@ -214,6 +248,7 @@ export type Block =
       itemCountLabel: string;
       countMode: "pieces" | "products"; // pieces: 2 + 2 = 4 · products: 2 lines = 2
       itemFormat: ItemFormat | null; // null = standard two-line items
+      vatCodes: VatCodes;
     })
   // Several values side by side on one line.
   | (BlockBase & { type: "row"; cells: RowCell[]; gap: number })

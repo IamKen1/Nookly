@@ -23,7 +23,7 @@ export default function StyleEditor({
     else next[key] = v;
     onChange(next);
   };
-  const toggle = (key: "bold" | "italic" | "underline" | "inverse", label: string, title: string) => {
+  const toggle = (key: "bold" | "italic" | "underline" | "inverse" | "uppercase", label: string, title: string) => {
     const on = value[key] === true;
     const off = value[key] === false;
     return (
@@ -50,6 +50,7 @@ export default function StyleEditor({
         {printMode === "IMAGE" && toggle("italic", "I", "Italic")}
         {toggle("underline", "U", "Underline")}
         {toggle("inverse", "◼", "White on black")}
+        {toggle("uppercase", "AA", "ALL CAPS")}
       </div>
 
       {printMode === "TEXT" ? (

@@ -24,6 +24,7 @@ export interface ReceiptItem {
   totalPrice: number;
   isVatable: boolean;
   genericName?: string | null; // receipt designer only
+  barcode?: string | null; // receipt designer only
 }
 
 export interface ReceiptData {

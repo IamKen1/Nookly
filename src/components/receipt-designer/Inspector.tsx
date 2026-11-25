@@ -12,6 +12,7 @@ import StyleEditor from "./StyleEditor";
 import FormulaEditor from "./FormulaEditor";
 import ConditionEditor, { conditionSummary } from "./ConditionEditor";
 import { ItemFormatEditor, RowEditor } from "./ColumnEditors";
+import { TokenHelp } from "./ValueFormatEditor";
 import type { ReceiptData } from "@/types/receipt";
 
 const input = "h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 outline-none focus:border-emerald-500";
@@ -202,9 +203,23 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
       return (
         <div className="space-y-2">
           {STORE_FIELDS.map((f) => (
-            <Check key={f.key} checked={block.fields[f.key]} onChange={(v) => set({ fields: { ...block.fields, [f.key]: v } })} label={f.label} />
+            <div key={f.key} className="space-y-1">
+              <Check checked={block.fields[f.key]} onChange={(v) => set({ fields: { ...block.fields, [f.key]: v } })} label={f.label} />
+              {f.key !== "name" && f.key !== "address" && block.fields[f.key] && (
+                <input
+                  className={`${input} ml-6 w-[calc(100%-1.5rem)] font-mono`}
+                  value={block.labels[f.key]}
+                  title="Printed right before the detail, exactly as typed (spaces count)"
+                  placeholder="(no label)"
+                  onChange={(e) => set({ labels: { ...block.labels, [f.key]: e.target.value } })}
+                />
+              )}
+            </div>
           ))}
-          <p className="text-[11px] text-zinc-400">The details themselves come from Settings › Receipt.</p>
+          <p className="text-[11px] text-zinc-400">
+            The details themselves come from Settings › Receipt. Each label prints right before its detail, exactly as typed, e.g. &quot;VAT REG TIN:&quot;.
+            For anything else (a second phone number, a branch line), add a Custom text with {"{tokens}"}.
+          </p>
           <Section title="Store name look" defaultOpen={false}>
             <StyleEditor value={block.nameStyle} onChange={(nameStyle) => set({ nameStyle })} printMode={printMode} />
           </Section>
@@ -218,7 +233,8 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
             <input className={input} value={block.text} placeholder="Same as Settings › Receipt" onChange={(e) => set({ text: e.target.value })} />
           </Field>
           <Check checked={block.uppercase} onChange={(v) => set({ uppercase: v })} label="ALL CAPS" />
-          <p className="text-[11px] text-zinc-400">&quot;Official Receipt&quot; and &quot;Sales Invoice&quot; can&apos;t be used: Nookly receipts aren&apos;t BIR-accredited.</p>
+          <p className="text-[11px] text-zinc-400">&quot;Official Receipt&quot; and &quot;Invoice&quot; can&apos;t be used: Nookly receipts aren&apos;t BIR-accredited.</p>
+          <TokenHelp />
         </div>
       );
 
@@ -263,9 +279,34 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
           {block.header && <Check checked={block.headerRule} onChange={(v) => set({ headerRule: v })} label="Divider under the header" />}
           {!block.itemFormat && (
             <>
-              <Check checked={block.showVatMarker} onChange={(v) => set({ showVatMarker: v })} label="V / N marker (VAT or non-VAT)" />
+              <Check checked={block.showVatMarker} onChange={(v) => set({ showVatMarker: v })} label="VAT code after the amount (V / N)" />
               <Check checked={block.showGenericName} onChange={(v) => set({ showGenericName: v })} label="Generic name under each item" />
             </>
+          )}
+          {((!block.itemFormat && block.showVatMarker) || block.itemFormat?.lines.some((l) => l.cells.some((c) => c.field === "vat" || c.field === "totalVat"))) && (
+            <div className="space-y-1 rounded-md border border-zinc-100 p-2">
+              <span className={small}>VAT code letters</span>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    ["vatable", "VATable"],
+                    ["exempt", "VATable, SC/PWD sale"],
+                    ["nonVat", "Non-VAT item"],
+                  ] as const
+                ).map(([k, label]) => (
+                  <label key={k} className="block space-y-0.5">
+                    <span className="block text-[10px] leading-tight text-zinc-500">{label}</span>
+                    <input
+                      className={`${input} text-center font-mono`}
+                      maxLength={3}
+                      value={block.vatCodes[k]}
+                      onChange={(e) => set({ vatCodes: { ...block.vatCodes, [k]: e.target.value } })}
+                    />
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-zinc-400">E.g. T for VATable and X for VAT-exempt, to match a VAT summary with (T) and (X).</p>
+            </div>
           )}
           <Check checked={block.showItemCount} onChange={(v) => set({ showItemCount: v })} label="Item count line" />
           {block.showItemCount && (
@@ -277,6 +318,9 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
                 </select>
               </Field>
               <input className={input} value={block.itemCountLabel} onChange={(e) => set({ itemCountLabel: e.target.value })} />
+              <p className="text-[11px] text-zinc-400">
+                For a line like &quot;** 20 item(s) **&quot;, turn this off and add a Custom text <code>{"** {quantity} item(s) **"}</code>.
+              </p>
               <Check checked={block.countRule} onChange={(v) => set({ countRule: v })} label="Divider above the count" />
             </>
           )}
@@ -354,9 +398,12 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
 
     case "text":
       return (
-        <Field label="Text">
-          <textarea rows={4} className={`${input} h-auto py-1.5`} value={block.text} onChange={(e) => set({ text: e.target.value })} />
-        </Field>
+        <div className="space-y-2">
+          <Field label="Text">
+            <textarea rows={4} className={`${input} h-auto py-1.5 font-mono`} value={block.text} onChange={(e) => set({ text: e.target.value })} />
+          </Field>
+          <TokenHelp />
+        </div>
       );
 
     case "qr":
@@ -452,8 +499,9 @@ function FieldOptions({ value, onChange, showAlign = true }: { value: FieldValue
         <input className={input} value={value.label} placeholder="(no label)" onChange={(e) => onChange({ label: e.target.value })} />
       </Field>
       <p className="text-[11px] text-zinc-400">
-        Can include {LABEL_TOKENS.map((t) => `${t.token} (${t.name})`).join(", ")}.
+        Can include {LABEL_TOKENS.map((t) => `${t.token} (${t.name})`).join(", ")}, or any other value below.
       </p>
+      <TokenHelp />
       <Field label="Line">
         <select className={input} value={value.layout} onChange={(e) => onChange({ layout: e.target.value as FieldLayout })}>
           <option value="pair">Label left, value right</option>
@@ -466,7 +514,7 @@ function FieldOptions({ value, onChange, showAlign = true }: { value: FieldValue
           <AlignButtons value={value.align} onChange={(align) => onChange({ align })} />
         </div>
       )}
-      {f.format === "money" && <Check checked={value.minus} onChange={(v) => onChange({ minus: v })} label="Show as minus (−₱)" />}
+      {f.format === "money" && <Check checked={value.minus} onChange={(v) => onChange({ minus: v })} label="Show as minus (−)" />}
       {f.format !== "text" && <Check checked={value.hideWhenZero} onChange={(v) => onChange({ hideWhenZero: v })} label="Hide when zero" />}
       <p className="text-[11px] text-zinc-400">Prints only on sales where it applies (e.g. points only on sales with points).</p>
     </div>

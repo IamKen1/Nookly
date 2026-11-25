@@ -15,6 +15,7 @@ export const BASE_STYLE: ResolvedStyle = {
   background: null,
   lineHeight: 1.3,
   letterSpacing: 0,
+  uppercase: false,
 };
 
 const defined = <T extends object>(s: T | undefined): Partial<T> =>

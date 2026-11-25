@@ -12,9 +12,9 @@ export const SAMPLE_KINDS: { key: SampleKind | "recent"; label: string }[] = [
 ];
 
 const ITEMS: ReceiptItem[] = [
-  { name: "Biogesic 500mg Tablet", genericName: "Paracetamol", quantity: 2, unitPrice: 6.5, totalPrice: 13, isVatable: true },
-  { name: "Losartan 50mg Tablet", genericName: "Losartan Potassium", quantity: 30, unitPrice: 12, totalPrice: 360, isVatable: true },
-  { name: "Ascorbic Acid 500mg Capsule", genericName: "Vitamin C", quantity: 10, unitPrice: 3.25, totalPrice: 32.5, isVatable: false },
+  { name: "Biogesic 500mg Tablet", genericName: "Paracetamol", barcode: "4800010012345", quantity: 2, unitPrice: 6.5, totalPrice: 13, isVatable: true },
+  { name: "Losartan 50mg Tablet", genericName: "Losartan Potassium", barcode: "4800020067890", quantity: 30, unitPrice: 12, totalPrice: 360, isVatable: true },
+  { name: "Ascorbic Acid 500mg Capsule", genericName: "Vitamin C", barcode: "4800030011223", quantity: 10, unitPrice: 3.25, totalPrice: 32.5, isVatable: false },
 ];
 
 // A made-up sale for the designer's preview, computed with the same VAT and

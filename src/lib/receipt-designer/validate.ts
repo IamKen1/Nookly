@@ -1,9 +1,10 @@
 import type {
   Align, Block, BlockType, Condition, FieldLayout, FormulaFormat, ItemField, ItemFormat, ItemLine, PaperWidth, PrintMode,
-  RowCell, RuleChar, SaleDetailField, SaleType, Style, Template, Theme, TotalsLine,
+  RowCell, RuleChar, SaleDetailField, SaleType, Style, Template, Theme, TotalsLine, ValueFormat,
 } from "./types";
 import { IMAGE_FONTS, TEMPLATE_VERSION } from "./types";
-import { newBlock, newId, newItemCell, newRowCell, DEFAULT_SALE_DETAILS } from "./blocks";
+import { newBlock, newId, newItemCell, newRowCell, DEFAULT_SALE_DETAILS, DEFAULT_STORE_LABELS } from "./blocks";
+import { DATE_FORMATS, DEFAULT_FORMAT, DEFAULT_VAT_CODES, TIME_FORMATS } from "./format";
 import { TOTALS_FIELDS } from "./totals";
 import { formulaError } from "./formula";
 
@@ -20,8 +21,9 @@ const LAYOUTS: FieldLayout[] = ["pair", "inline", "value"];
 const RULE_CHARS: RuleChar[] = ["-", "=", ".", "*", " "];
 const ALIGNS: Align[] = ["left", "center", "right"];
 
-// Nookly isn't BIR-accredited, so no text on the receipt may call it one of these.
-const BIR_TITLES = /official\s*receipt|(sales|service)\s*invoice/i;
+// Nookly isn't BIR-accredited, so no text on the receipt may call it one of these
+// ("Official Receipt", "Sales Invoice", "INVOICE#…", "This is your invoice").
+const BIR_TITLES = /official\s*receipt|invoice/i;
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -41,7 +43,7 @@ export function sanitizeStyle(v: unknown): Style {
   if (v.sizeH !== undefined) s.sizeH = int(v.sizeH, 1, 8, 1);
   if (typeof v.fontFamily === "string" && Object.hasOwn(IMAGE_FONTS, v.fontFamily)) s.fontFamily = v.fontFamily;
   if (v.fontSize !== undefined) s.fontSize = num(v.fontSize, 6, 48, 9);
-  for (const k of ["bold", "italic", "underline", "inverse"] as const) if (typeof v[k] === "boolean") s[k] = v[k] as boolean;
+  for (const k of ["bold", "italic", "underline", "inverse", "uppercase"] as const) if (typeof v[k] === "boolean") s[k] = v[k] as boolean;
   const c = color(v.color);
   if (c) s.color = c;
   if (v.background === null) s.background = null;
@@ -53,7 +55,22 @@ export function sanitizeStyle(v: unknown): Style {
 
 const SALE_TYPES: SaleType[] = ["scpwd", "discount", "noDiscount", "cash", "ewallet", "customer", "points"];
 const FORMATS: FormulaFormat[] = ["money", "number", "percent", "int"];
-const ITEM_FIELDS: ItemField[] = ["name", "generic", "qty", "unitPrice", "total", "vat", "qtyXPrice", "text"];
+const ITEM_FIELDS: ItemField[] = ["name", "generic", "barcode", "qty", "unitPrice", "total", "vat", "totalVat", "qtyXPrice", "qtyAtPrice", "text"];
+
+function sanitizeFormat(v: unknown): ValueFormat | undefined {
+  if (!isObj(v)) return undefined;
+  const names = ["full", "first", "last", "firstLastInitial", "lastFirst"] as const;
+  return {
+    currency: oneOf(v.currency, ["peso", "none"] as const, DEFAULT_FORMAT.currency),
+    date: oneOf(v.date, DATE_FORMATS.map((f) => f.value), DEFAULT_FORMAT.date),
+    time: oneOf(v.time, TIME_FORMATS.map((f) => f.value), DEFAULT_FORMAT.time),
+    cashierName: oneOf(v.cashierName, names, DEFAULT_FORMAT.cashierName),
+    customerName: oneOf(v.customerName, names, DEFAULT_FORMAT.customerName),
+  };
+}
+
+// A short marker such as V, N, X, T, Z, or "" for none.
+const code = (v: unknown, fallback: string) => (typeof v === "string" ? v.slice(0, 3) : fallback);
 const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 export function sanitizeCondition(v: unknown): Condition | undefined {
@@ -198,7 +215,11 @@ function sanitizeBlock(v: unknown): Block | null {
     case "storeInfo": {
       const f = isObj(v.fields) ? v.fields : {};
       const fields = Object.fromEntries(Object.entries(d.fields).map(([k, def]) => [k, bool(f[k], def)])) as typeof d.fields;
-      return { ...d, ...common, fields, nameStyle: isObj(v.nameStyle) ? sanitizeStyle(v.nameStyle) : d.nameStyle };
+      const l = isObj(v.labels) ? v.labels : {};
+      const labels = Object.fromEntries(
+        Object.entries(DEFAULT_STORE_LABELS).map(([k, def]) => [k, typeof l[k] === "string" ? (l[k] as string).slice(0, LIMITS.label) : def])
+      ) as typeof d.labels;
+      return { ...d, ...common, fields, labels, nameStyle: isObj(v.nameStyle) ? sanitizeStyle(v.nameStyle) : d.nameStyle };
     }
     case "title":
       return { ...d, ...common, text: str(v.text, LIMITS.label), uppercase: bool(v.uppercase, d.uppercase) };
@@ -233,6 +254,10 @@ function sanitizeBlock(v: unknown): Block | null {
         itemCountLabel: str(v.itemCountLabel, LIMITS.label, d.itemCountLabel),
         countMode: oneOf(v.countMode, ["pieces", "products"] as const, d.countMode),
         itemFormat: sanitizeItemFormat(v.itemFormat),
+        vatCodes: (() => {
+          const c = isObj(v.vatCodes) ? v.vatCodes : {};
+          return { vatable: code(c.vatable, DEFAULT_VAT_CODES.vatable), exempt: code(c.exempt, DEFAULT_VAT_CODES.exempt), nonVat: code(c.nonVat, DEFAULT_VAT_CODES.nonVat) };
+        })(),
       };
     case "row": {
       const cells = (Array.isArray(v.cells) ? v.cells : []).slice(0, 4).map(sanitizeRowCell).filter((c): c is RowCell => c !== null);
@@ -316,7 +341,8 @@ export function sanitizeTemplate(input: unknown): SanitizeResult {
   const blocksIn = Array.isArray(v.blocks) ? v.blocks : [];
   if (blocksIn.length > LIMITS.blocks) errors.push(`A receipt can have at most ${LIMITS.blocks} blocks.`);
   const blocks = blocksIn.slice(0, LIMITS.blocks).map(sanitizeBlock).filter((b): b is Block => b !== null);
-  const theme: Theme = { style: sanitizeStyle(isObj(v.theme) ? v.theme.style : undefined) };
+  const format = sanitizeFormat(isObj(v.theme) ? v.theme.format : undefined);
+  const theme: Theme = { style: sanitizeStyle(isObj(v.theme) ? v.theme.style : undefined), ...(format ? { format } : {}) };
   const template: Template = {
     version: TEMPLATE_VERSION,
     paperWidth: (v.paperWidth === 80 ? 80 : 58) as PaperWidth,
@@ -352,6 +378,7 @@ function designTexts(t: Template): string[] {
   const out: string[] = [];
   for (const b of t.blocks) {
     if (b.type === "title" || b.type === "text") out.push(b.text);
+    if (b.type === "storeInfo") out.push(...Object.values(b.labels));
     if (b.type === "qr") out.push(b.caption);
     if (b.type === "remarks") out.push(b.heading);
     if (b.type === "items") out.push(b.headerLeft, b.headerRight, b.itemCountLabel);
@@ -378,14 +405,19 @@ export function designWarnings(t: Template): string[] {
   if (!hasComputation && !hasLine("discount")) warnings.push("SC/PWD sales won't show the discount. The law expects it on the receipt.");
   if (!hasComputation && !hasLine("vatExemptSales") && !hasLine("vatRemoved"))
     warnings.push("SC/PWD sales won't show the VAT exemption. The law expects it on the receipt.");
-  if (!visible.some((b) => b.type === "scPwd")) warnings.push("There's no SC/PWD info block, so SC/PWD receipts won't have the name, ID and signature lines.");
+  if (!visible.some((b) => b.type === "scPwd") && !hasLine("discountHolder") && !hasLine("discountIdNumber")) warnings.push("There's no SC/PWD info block, so SC/PWD receipts won't have the name, ID and signature lines.");
   if (!visible.some((b) => b.type === "saleDetails" && b.fields.some((f) => f.key === "receiptNo" && f.visible)) && !hasLine("receiptNo"))
     warnings.push("The AR number isn't shown. It's needed to look up the sale for returns and reprints.");
   if (t.printMode === "IMAGE") warnings.push("Image mode prints slower, especially over Bluetooth (several seconds per receipt).");
   // A formula dressed up as the total could show the customer a different amount than they paid.
   for (const f of designFormulas({ ...t, blocks: visible })) {
     // Labels that read as the amount to pay ("TOTAL:", "Amount due"), not ones that merely mention it ("VAT-exclusive total").
-    if (/^\s*(grand\s+)?total\b|^\s*amount\s*(due|to\s*pay)|babayaran|^\s*kabuuan/i.test(f.label) && f.expr.replace(/\s/g, "") !== "total")
+    if (
+      /^\s*(grand\s+)?total\b|^\s*amount\s*(due|to\s*pay)|babayaran|^\s*kabuuan/i.test(f.label) &&
+      // "TOTAL AMOUNT w/o VAT" and the like are a step in the computation, not what was paid.
+      !/w\/o\s*vat|without\s*vat|net\s*of\s*vat|vat[-\s]*excl/i.test(f.label) &&
+      f.expr.replace(/\s/g, "") !== "total"
+    )
       warnings.push(`Formula "${f.label.trim()}" looks like a total. Make sure it matches what the customer actually paid.`);
   }
   return warnings;

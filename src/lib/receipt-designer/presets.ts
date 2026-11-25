@@ -1,13 +1,18 @@
 import type { ReceiptStoreSettings } from "@/types/receipt";
-import type { Block, BlockType, Template, TotalsLine } from "./types";
+import type { Block, BlockType, Template, TotalsKey, TotalsLine } from "./types";
 import { TEMPLATE_VERSION } from "./types";
-import { newBlock, newId, valueLine } from "./blocks";
+import { newBlock, newField, newId, newItemCell, newRowCell, valueLine } from "./blocks";
 
-type PresetKey = "classic" | "chain" | "compact" | "promo";
+type PresetKey = "classic" | "chain" | "register" | "compact" | "promo";
 
 export const PRESETS: { key: PresetKey; label: string; description: string }[] = [
   { key: "classic", label: "Nookly Classic", description: "Your receipt today, block for block." },
   { key: "chain", label: "Chain drugstore", description: "VAT summary, V/N per item, barcode at the bottom." },
+  {
+    key: "register",
+    label: "POS register",
+    description: "Big-chain register style: no ₱ sign, barcode and qty @ price per item, T/X VAT letters, step-by-step SC/PWD lines, VAT summary.",
+  },
   { key: "compact", label: "Compact", description: "Fewest lines, saves paper." },
   { key: "promo", label: "Promo", description: "Big promo text and a QR code." },
 ];
@@ -76,6 +81,101 @@ function chain(settings: ReceiptStoreSettings): Block[] {
   ];
 }
 
+// The look of a big drugstore chain's register receipt, with the owner's own
+// store details: every line in printer font A, values with no ₱ sign.
+const SC_ONLY = { saleTypes: ["scpwd" as const] };
+const blank = (): TotalsLine => ({ id: newId("t"), kind: "rule", char: " " });
+
+// One line of the VAT summary: indented label, VAT letter, amount.
+const summaryRow = (label: string, letter: string, value: { key: TotalsKey } | { expr: string }) =>
+  make("row", {
+    gap: 0,
+    cells: [
+      newRowCell({ kind: "text", text: "", width: 6 }),
+      newRowCell({ kind: "text", text: label, width: 52 }),
+      newRowCell({ kind: "text", text: letter, width: 12 }),
+      "key" in value
+        ? newRowCell({ kind: "field", key: value.key, align: "right" })
+        : newRowCell({ kind: "formula", expr: value.expr, format: "money", align: "right" }),
+    ],
+  });
+
+function register(): Block[] {
+  const items = make("items", {
+    header: false,
+    showItemCount: false,
+    nameStyle: {},
+    vatCodes: { vatable: "T", exempt: "X", nonVat: "X" },
+    itemFormat: {
+      lines: [
+        { id: newId("l"), style: {}, cells: [newItemCell("name"), newItemCell("totalVat")] },
+        {
+          id: newId("l"),
+          style: {},
+          cells: [newItemCell("text", { width: 8 }), newItemCell("barcode", { width: 44 }), newItemCell("qtyAtPrice", { align: "left" })],
+        },
+      ],
+    },
+  });
+  const sc = <T extends BlockType>(type: T, changes: Partial<Extract<Block, { type: T }>>) => make(type, { showWhen: SC_ONLY, ...changes });
+
+  return [
+    make("storeInfo", {
+      nameStyle: {},
+      fields: { name: true, address: true, contact: true, tin: true, permit: false, accreditation: false, serial: true },
+      labels: { contact: "TEL NO : ", tin: "VAT REG TIN:", permit: "PERMIT NO: ", accreditation: "ACCRED NO: ", serial: "S/N: " },
+    }),
+    newField("cashier", { label: "CASHIER:", layout: "inline", align: "left", style: { uppercase: true } }),
+    items,
+    make("totals", {
+      lines: [
+        valueLine("nonVatableGross", { label: "Amt of VAT EXEMPT ITEMS" }),
+        valueLine("vatableGross", { label: "Amt of Sale With VAT" }),
+        { ...valueLine("vatRemoved", { label: "Less 12% VAT" }), showWhen: SC_ONLY },
+        {
+          id: newId("t"),
+          kind: "formula",
+          label: "TOTAL AMOUNT w/o VAT",
+          expr: "subtotal - vatRemoved",
+          format: "money",
+          decimals: 2,
+          style: {},
+          minus: false,
+          hideWhenZero: false,
+          showWhen: SC_ONLY,
+        },
+        valueLine("discount", { label: "LESS : {discountRate} {discountName}", hideWhenZero: true }),
+        valueLine("totalDue", { label: "TOTAL AMOUNT" }),
+        blank(),
+        valueLine("totalDue", { label: "TOTAL" }),
+        { id: newId("t"), kind: "heading", text: "AMOUNT TENDERED", align: "left", style: {} },
+        valueLine("cash", { label: "CASH" }),
+        { ...valueLine("ewalletRef", { label: "{paymentMethod} REF" }), showWhen: { saleTypes: ["ewallet"] } },
+        blank(),
+        blank(),
+        { ...valueLine("cash", { label: "TOTAL PAYMENT" }), showWhen: { saleTypes: ["cash"] } },
+        { ...valueLine("totalDue", { label: "TOTAL PAYMENT" }), showWhen: { saleTypes: ["ewallet"] } },
+        valueLine("change", { label: "CHANGE" }),
+      ],
+    }),
+    make("text", { text: "**   {quantity} item(s)   **", align: "left", spaceAfter: 1 }),
+    sc("field", { key: "discountIdNumber", label: "OSCA/PWD ID No.:", layout: "inline", align: "left" }),
+    sc("field", { key: "discountHolder", label: "SOLD TO:", layout: "inline", align: "left", style: { uppercase: true } }),
+    sc("text", { text: "SIGNATURE : __________________", align: "left" }),
+    sc("text", { text: "ADDRESS   : __________________", align: "left" }),
+    sc("text", { text: "TIN NO    : __________________", align: "left" }),
+    rule(),
+    summaryRow("VATable", "(T)", { key: "vatableSales" }),
+    summaryRow("VAT-Exempt Sale", "(X)", { expr: "vatExempt + nonVatGross" }),
+    summaryRow("Zero-Rated Sale", "(Z)", { key: "zeroRatedSales" }),
+    summaryRow("VAT - 12%", "", { key: "vatAmount" }),
+    summaryRow("Amount Due", "", { key: "totalDue" }),
+    make("footer", { noticeFirst: false, ruleBefore: "-", ruleAfter: "-" }),
+    make("field", { key: "receiptNo", label: "AR #", layout: "inline", align: "left", spaceBefore: 1 }),
+    make("text", { text: "{date} {time} {cashier}", align: "left", style: { uppercase: true } }),
+  ];
+}
+
 function compact(): Block[] {
   const details = make("saleDetails");
   details.fields = details.fields.map((f) => ({ ...f, visible: f.key === "receiptNo" || f.key === "date" || f.key === "time" }));
@@ -112,6 +212,15 @@ function promo(settings: ReceiptStoreSettings): Block[] {
 }
 
 export function buildPreset(key: PresetKey, settings: ReceiptStoreSettings, paperWidth: 58 | 80 = 58): Template {
-  const blocks = key === "classic" ? classic(settings) : key === "chain" ? chain(settings) : key === "compact" ? compact() : promo(settings);
-  return { version: TEMPLATE_VERSION, paperWidth, printMode: "TEXT", theme: { style: {} }, blocks };
+  const blocks =
+    key === "classic" ? classic(settings)
+    : key === "chain" ? chain(settings)
+    : key === "register" ? register()
+    : key === "compact" ? compact()
+    : promo(settings);
+  const theme =
+    key === "register"
+      ? { style: {}, format: { currency: "none" as const, date: "MM-DD-YY" as const, time: "h:mmA" as const, cashierName: "first" as const, customerName: "full" as const } }
+      : { style: {} };
+  return { version: TEMPLATE_VERSION, paperWidth, printMode: "TEXT", theme, blocks };
 }

@@ -1,11 +1,12 @@
 import type { ReceiptData } from "@/types/receipt";
 import { formatPaymentMethodLabel, NOT_BIR_ACCREDITED_NOTICE, splitReceiptLines } from "@/types/receipt";
-import { buildComputationLines, isSeniorOrPwd, loyaltyLines, peso } from "@/lib/receipt";
+import { buildComputationLines, isSeniorOrPwd, loyaltyLines } from "@/lib/receipt";
 import { phDayOf } from "@/lib/permissions-shared";
-import type { Align, Block, Condition, FieldLayout, FormulaFormat, ItemCell, ResolvedStyle, RowCell, RuleChar, Style, Template, TotalsKey, TotalsLine } from "./types";
+import type { Align, Block, Condition, FieldLayout, FormulaFormat, ItemCell, ResolvedStyle, RowCell, RuleChar, Style, Template, TotalsKey, TotalsLine, ValueFormat, VatCodes } from "./types";
 import { resolveStyle } from "./style";
 import { TOTALS_FIELDS, fillLabel } from "./totals";
 import { computeFormula, formatFormula } from "./formula";
+import { DEFAULT_FORMAT, moneyFormatter } from "./format";
 
 // A receipt as styled rows, before it's fitted to a paper width. Both the
 // thermal output (textmode.ts) and the HTML output are made from these.
@@ -29,7 +30,12 @@ type RowBody =
 // Blank lines after the last row, so the receipt clears the cutter.
 export const TAIL_FEED = 3;
 
-const fullName = (p: { firstName: string; lastName: string }) => `${p.firstName} ${p.lastName}`;
+// The design's value formats, passed to everything that writes a value.
+interface Fx {
+  vf: ValueFormat;
+  money: (n: number) => string;
+  cur: (s: string) => string; // drops ₱ from ready-made text when the design has no currency sign
+}
 
 // "Show only when…": true when every condition that's set holds for this sale.
 export function conditionHolds(c: Condition | undefined, data: ReceiptData): boolean {
@@ -57,45 +63,70 @@ export function conditionHolds(c: Condition | undefined, data: ReceiptData): boo
 
 const pieces = (data: ReceiptData) => data.items.reduce((s, i) => s + i.quantity, 0);
 
-function itemCellText(cell: ItemCell, item: ReceiptData["items"][number]): string {
+// Whether this sale made VATable items VAT-exempt (SC/PWD).
+const saleIsVatExempt = (data: ReceiptData) =>
+  (data.vatRemovedFromVatable ?? 0) > 0 ||
+  (Boolean(data.discountAmount && data.discountAmount > 0) && (Boolean(data.discountVatExempt) || isSeniorOrPwd(data.discountType)));
+
+const vatCode = (item: ReceiptData["items"][number], codes: VatCodes, exemptSale: boolean) =>
+  item.isVatable ? (exemptSale ? codes.exempt : codes.vatable) : codes.nonVat;
+
+function itemCellText(cell: ItemCell, item: ReceiptData["items"][number], code: string, fx: Fx): string {
   switch (cell.field) {
     case "name": return item.name;
     case "generic": return item.genericName ?? "";
+    case "barcode": return item.barcode ?? "";
     case "qty": return String(item.quantity);
-    case "unitPrice": return peso(item.unitPrice);
-    case "total": return peso(item.totalPrice);
-    case "vat": return item.isVatable ? "V" : "N";
-    case "qtyXPrice": return `${item.quantity} x ${peso(item.unitPrice)}`;
+    case "unitPrice": return fx.money(item.unitPrice);
+    case "total": return fx.money(item.totalPrice);
+    case "vat": return code;
+    case "totalVat": return `${fx.money(item.totalPrice)}${code}`;
+    case "qtyXPrice": return `${item.quantity} x ${fx.money(item.unitPrice)}`;
+    case "qtyAtPrice": return `${item.quantity} @ ${fx.money(item.unitPrice)}`;
     case "text": return cell.text;
   }
 }
 
-function formulaText(expr: string, format: FormulaFormat, decimals: number, minus: boolean, data: ReceiptData): { text: string; value: number } | null {
+function formulaText(expr: string, format: FormulaFormat, decimals: number, minus: boolean, data: ReceiptData, fx: Fx): { text: string; value: number } | null {
   const v = computeFormula(expr, data);
   if (v === null) return null;
   const shown = minus && format === "money" ? -Math.abs(v) : v;
-  return { text: formatFormula(shown, format, decimals, peso), value: v };
+  return { text: formatFormula(shown, format, decimals, fx.money), value: v };
 }
 
 // A Row's cell as printed text, or null when its value doesn't apply to this sale.
-function rowCellText(cell: RowCell, data: ReceiptData): string | null {
+function rowCellText(cell: RowCell, data: ReceiptData, fx: Fx): string | null {
   const withLabel = (v: string) => {
-    const label = fillLabel(cell.label, data);
+    const label = fillLabel(cell.label, data, fx.vf);
     return label.trim() ? `${label} ${v}` : v;
   };
-  if (cell.kind === "text") return fillLabel(cell.text, data);
+  if (cell.kind === "text") return fillLabel(cell.text, data, fx.vf);
   if (cell.kind === "formula") {
-    const r = formulaText(cell.expr, cell.format, cell.decimals, cell.minus, data);
+    const r = formulaText(cell.expr, cell.format, cell.decimals, cell.minus, data, fx);
     return r ? withLabel(r.text) : null;
   }
   const field = TOTALS_FIELDS[cell.key];
-  const v = field?.value(data);
+  const v = field?.value(data, fx.vf);
   if (v === null || v === undefined || v === "") return null;
-  return withLabel(field.format === "money" ? peso(cell.minus ? -Math.abs(v as number) : (v as number)) : String(v));
+  return withLabel(field.format === "money" ? fx.money(cell.minus ? -Math.abs(v as number) : (v as number)) : String(v));
+}
+
+// ALL CAPS, applied to a block's rows once they're built.
+function upper(row: Row): Row {
+  if (!("style" in row) || !row.style.uppercase) return row;
+  const u = (s: string) => s.toUpperCase();
+  switch (row.kind) {
+    case "text": return { ...row, text: u(row.text) };
+    case "pair": return { ...row, left: u(row.left), right: u(row.right) };
+    case "columns": return { ...row, cells: row.cells.map((c) => ({ ...c, text: u(c.text) })) };
+    default: return row;
+  }
 }
 
 export function layoutReceipt(template: Template, data: ReceiptData): Row[] {
   const theme = template.theme.style;
+  const vf: ValueFormat = { ...DEFAULT_FORMAT, ...template.theme.format };
+  const fx: Fx = { vf, money: moneyFormatter(vf), cur: (s) => (vf.currency === "none" ? s.replace(/₱/g, "") : s) };
   const rows: Row[] = [];
   let noticePrinted = false;
 
@@ -103,7 +134,7 @@ export function layoutReceipt(template: Template, data: ReceiptData): Row[] {
     if (!block.visible || !conditionHolds(block.showWhen, data)) continue;
     const base = resolveStyle(theme, block.style);
     const at = (...extra: (Style | undefined)[]) => resolveStyle(theme, block.style, ...extra);
-    const body = blockRows(block, data, base, at);
+    const body = blockRows(block, data, base, at, fx).map(upper);
     if (block.type === "footer") noticePrinted = true;
     if (body.length === 0) continue;
     const own: Row[] = [];
@@ -116,7 +147,7 @@ export function layoutReceipt(template: Template, data: ReceiptData): Row[] {
   }
 
   // The notice is required on every receipt; a design without a footer still prints it.
-  if (!noticePrinted) rows.push({ kind: "text", text: NOT_BIR_ACCREDITED_NOTICE, align: "center", style: resolveStyle(theme) });
+  if (!noticePrinted) rows.push(upper({ kind: "text", text: NOT_BIR_ACCREDITED_NOTICE, align: "center", style: resolveStyle(theme) }));
 
   rows.push({ kind: "feed", lines: TAIL_FEED, style: resolveStyle(theme) });
   return rows;
@@ -126,10 +157,12 @@ function blockRows(
   block: Block,
   data: ReceiptData,
   base: ResolvedStyle,
-  at: (...extra: (Style | undefined)[]) => ResolvedStyle
+  at: (...extra: (Style | undefined)[]) => ResolvedStyle,
+  fx: Fx
 ): Row[] {
   const text = (t: string, style = base, align: Align = block.align): Row => ({ kind: "text", text: t, align, style });
   const pair = (left: string, right: string, style = base): Row => ({ kind: "pair", left, right, style });
+  const fill = (t: string) => fillLabel(t, data, fx.vf);
   const store = data.store;
 
   switch (block.type) {
@@ -141,17 +174,18 @@ function blockRows(
       const out: Row[] = [];
       if (f.name) splitReceiptLines(store.storeName).forEach((l, i) => out.push(text(l, i === 0 ? at(block.nameStyle) : base)));
       if (f.address) splitReceiptLines(store.addressLine1, store.addressLine2).forEach((l) => out.push(text(l)));
-      if (f.contact && store.contactNumber) out.push(text(`Contact: ${store.contactNumber}`));
-      if (f.tin && store.tin) out.push(text(`TIN: ${store.tin}`));
-      if (f.permit && store.permitNumber) out.push(text(`Permit: ${store.permitNumber}`));
-      if (f.accreditation && store.accreditationNumber) out.push(text(`Accreditation: ${store.accreditationNumber}`));
-      if (f.serial && store.serialNumberLabel) out.push(text(`Serial: ${store.serialNumberLabel}`));
+      const l = block.labels;
+      if (f.contact && store.contactNumber) out.push(text(`${l.contact}${store.contactNumber}`));
+      if (f.tin && store.tin) out.push(text(`${l.tin}${store.tin}`));
+      if (f.permit && store.permitNumber) out.push(text(`${l.permit}${store.permitNumber}`));
+      if (f.accreditation && store.accreditationNumber) out.push(text(`${l.accreditation}${store.accreditationNumber}`));
+      if (f.serial && store.serialNumberLabel) out.push(text(`${l.serial}${store.serialNumberLabel}`));
       return out;
     }
 
     case "title": {
       // An empty title follows Settings › Receipt's title.
-      const t = (block.text.trim() || store.receiptTitle || "").trim();
+      const t = fill(block.text.trim() || store.receiptTitle || "").trim();
       return t ? [text(block.uppercase ? t.toUpperCase() : t)] : [];
     }
 
@@ -159,21 +193,8 @@ function blockRows(
       const out: Row[] = [];
       for (const field of block.fields) {
         if (!field.visible) continue;
-        const value =
-          field.key === "receiptNo"
-            ? data.saleNumber
-            : field.key === "date"
-            ? data.date.toLocaleDateString("en-PH")
-            : field.key === "time"
-            ? data.date.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true })
-            : field.key === "cashier"
-            ? fullName(data.cashier)
-            : field.key === "customer"
-            ? data.customer
-              ? fullName(data.customer)
-              : null
-            : data.branchName ?? null;
-        if (value) out.push(pair(field.label, value));
+        const value = TOTALS_FIELDS[field.key].value(data, fx.vf);
+        if (value) out.push(pair(fill(field.label), String(value)));
       }
       return out;
     }
@@ -181,6 +202,7 @@ function blockRows(
     case "items": {
       const out: Row[] = [];
       const fmt = block.itemFormat;
+      const exemptSale = saleIsVatExempt(data);
       if (block.header) {
         if (fmt && fmt.lines.length > 0) {
           // Column titles follow the widest item line (the one with the most columns).
@@ -200,7 +222,8 @@ function blockRows(
       if (fmt) {
         for (const item of data.items) {
           for (const line of fmt.lines) {
-            const cells = line.cells.map((c) => ({ text: itemCellText(c, item), width: c.width, align: c.align }));
+            const code = vatCode(item, block.vatCodes, exemptSale);
+            const cells = line.cells.map((c) => ({ text: itemCellText(c, item, code, fx), width: c.width, align: c.align }));
             if (cells.every((c) => c.text === "")) continue; // e.g. a generic-name line for an item without one
             out.push(
               cells.length === 1
@@ -213,32 +236,32 @@ function blockRows(
       for (const item of fmt ? [] : data.items) {
         out.push(text(item.name, at(block.nameStyle), "left"));
         if (block.showGenericName && item.genericName) out.push(text(item.genericName, base, "left"));
-        const amount = `${peso(item.totalPrice)}${block.showVatMarker ? ` ${item.isVatable ? "V" : "N"}` : ""}`;
-        out.push({ kind: "pair", left: `${item.quantity} x ${peso(item.unitPrice)}`, right: amount, style: base, tight: true });
+        const amount = `${fx.money(item.totalPrice)}${block.showVatMarker ? ` ${vatCode(item, block.vatCodes, exemptSale)}` : ""}`;
+        out.push({ kind: "pair", left: `${item.quantity} x ${fx.money(item.unitPrice)}`, right: amount, style: base, tight: true });
       }
       if (block.showItemCount) {
         if (block.countRule) out.push({ kind: "rule", char: "-", style: base });
         const count = block.countMode === "pieces" ? pieces(data) : data.items.length;
-        out.push(text(`${block.itemCountLabel} ${count}`, base, "left"));
+        out.push(text(`${fill(block.itemCountLabel)} ${count}`, base, "left"));
       }
       return out;
     }
 
     case "field":
-      return fieldRows(block, block.align, base, data);
+      return fieldRows(block, block.align, base, data, fx);
 
     case "formula":
-      return formulaRows(block, block.align, base, data);
+      return formulaRows(block, block.align, base, data, fx);
 
     case "row": {
-      const cells = block.cells.map((c) => ({ c, text: rowCellText(c, data) }));
+      const cells = block.cells.map((c) => ({ c, text: rowCellText(c, data, fx) }));
       // Nothing to show when every value in the row is missing for this sale.
       if (cells.every(({ c, text }) => c.kind !== "text" && text === null) || cells.length === 0) return [];
       return [{ kind: "columns", cells: cells.map(({ c, text }) => ({ text: text ?? "", width: c.width, align: c.align })), gap: block.gap, style: base }];
     }
 
     case "totals":
-      return block.lines.filter((line) => conditionHolds(line.showWhen, data)).flatMap((line) => totalsLineRows(line, data, base, at));
+      return block.lines.filter((line) => conditionHolds(line.showWhen, data)).flatMap((line) => totalsLineRows(line, data, base, at, fx));
 
     case "scPwd": {
       if (!isSeniorOrPwd(data.discountType) || !(data.discountAmount && data.discountAmount > 0)) return [];
@@ -253,13 +276,13 @@ function blockRows(
     case "payment": {
       const loyalty = loyaltyLines(data);
       const out: Row[] = [];
-      if (block.showPointsPaid) loyalty.payment.forEach(([l, v]) => out.push(pair(l, v)));
+      if (block.showPointsPaid) loyalty.payment.forEach(([l, v]) => out.push(pair(l, fx.cur(v))));
       const method = loyalty.paidWithPointsOnly ? "LOYALTY POINTS" : formatPaymentMethodLabel(data.paymentMethod, data.paymentProvider);
       if (block.showMethod) out.push(block.methodAsPair ? pair("Payment:", method) : text(`Payment: ${method}`, base, "left"));
       if (block.showReference && data.paymentReference)
         out.push(block.methodAsPair ? pair("Ref No:", data.paymentReference) : text(`Ref No: ${data.paymentReference}`, base, "left"));
-      if (block.showCash && data.cashReceived) out.push(pair("Cash:", peso(data.cashReceived)));
-      if (block.showChange && data.changeGiven && data.changeGiven > 0) out.push(pair("Change:", peso(data.changeGiven)));
+      if (block.showCash && data.cashReceived) out.push(pair("Cash:", fx.money(data.cashReceived)));
+      if (block.showChange && data.changeGiven && data.changeGiven > 0) out.push(pair("Change:", fx.money(data.changeGiven)));
       for (const [l, v] of loyalty.info) {
         if ((l === "Points earned:" && block.showPointsEarned) || (l === "Points balance:" && block.showPointsBalance)) out.push(pair(l, v));
       }
@@ -277,17 +300,17 @@ function blockRows(
     case "remarks": {
       const remarks = data.orderRemarks?.trim();
       if (!remarks) return [];
-      return [...(block.heading.trim() ? [text(block.heading, at(block.headingStyle), "left")] : []), text(remarks, base, "left")];
+      return [...(block.heading.trim() ? [text(fill(block.heading), at(block.headingStyle), "left")] : []), text(remarks, base, "left")];
     }
 
     case "text":
-      return block.text.trim() ? [text(block.text)] : [];
+      return block.text.trim() ? [text(fill(block.text))] : [];
 
     case "qr":
       if (!block.content.trim()) return [];
       return [
         { kind: "qr", content: block.content.trim(), sizePct: block.sizePct, align: block.align },
-        ...(block.caption.trim() ? [text(block.caption)] : []),
+        ...(block.caption.trim() ? [text(fill(block.caption))] : []),
       ];
 
     case "barcode":
@@ -309,25 +332,26 @@ function totalsLineRows(
   line: TotalsLine,
   data: ReceiptData,
   base: ResolvedStyle,
-  at: (...extra: (Style | undefined)[]) => ResolvedStyle
+  at: (...extra: (Style | undefined)[]) => ResolvedStyle,
+  fx: Fx
 ): Row[] {
   switch (line.kind) {
     case "computation":
       return buildComputationLines(data).map((l) => ({
         kind: "pair" as const,
         left: `${l.label}:`,
-        right: `${l.kind === "subtotal" ? "= " : ""}${peso(l.amount)}`,
+        right: `${l.kind === "subtotal" ? "= " : ""}${fx.money(l.amount)}`,
         // Same emphasis as today's receipt: the starting figure, running totals and savings in bold.
         style: at(line.style, l.kind === "base" || l.kind === "subtotal" || l.kind === "savings" ? { bold: true } : undefined),
       }));
     case "heading":
-      return line.text.trim() ? [{ kind: "text", text: line.text, align: line.align, style: at(line.style) }] : [];
+      return line.text.trim() ? [{ kind: "text", text: fillLabel(line.text, data, fx.vf), align: line.align, style: at(line.style) }] : [];
     case "rule":
       return [{ kind: "rule", char: line.char, style: base }];
     case "value":
-      return fieldRows(line, line.align ?? "left", at(line.style), data);
+      return fieldRows(line, line.align ?? "left", at(line.style), data, fx);
     case "formula":
-      return formulaRows(line, line.align ?? "left", at(line.style), data);
+      return formulaRows(line, line.align ?? "left", at(line.style), data, fx);
   }
 }
 
@@ -336,12 +360,13 @@ function formulaRows(
   f: { label: string; expr: string; format: FormulaFormat; decimals: number; layout?: FieldLayout; minus: boolean; hideWhenZero: boolean },
   align: Align,
   style: ResolvedStyle,
-  data: ReceiptData
+  data: ReceiptData,
+  fx: Fx
 ): Row[] {
-  const r = formulaText(f.expr, f.format, f.decimals, f.minus, data);
+  const r = formulaText(f.expr, f.format, f.decimals, f.minus, data, fx);
   if (!r) return [];
   if (f.hideWhenZero && Math.abs(r.value) < 0.005) return [];
-  return placeValue(fillLabel(f.label, data), r.text, f.layout ?? "pair", align, style);
+  return placeValue(fillLabel(f.label, data, fx.vf), r.text, f.layout ?? "pair", align, style);
 }
 
 function placeValue(label: string, shown: string, layout: FieldLayout, align: Align, style: ResolvedStyle): Row[] {
@@ -355,13 +380,14 @@ function fieldRows(
   f: { key: TotalsKey; label: string; layout?: FieldLayout; minus: boolean; hideWhenZero: boolean },
   align: Align,
   style: ResolvedStyle,
-  data: ReceiptData
+  data: ReceiptData,
+  fx: Fx
 ): Row[] {
   const field = TOTALS_FIELDS[f.key];
   if (!field) return [];
-  const value = field.value(data);
+  const value = field.value(data, fx.vf);
   if (value === null || value === "") return [];
   if (typeof value === "number" && f.hideWhenZero && Math.abs(value) < 0.005) return [];
-  const shown = field.format === "money" ? peso(f.minus ? -Math.abs(value as number) : (value as number)) : String(value);
-  return placeValue(fillLabel(f.label, data), shown, f.layout ?? "pair", align, style);
+  const shown = field.format === "money" ? fx.money(f.minus ? -Math.abs(value as number) : (value as number)) : String(value);
+  return placeValue(fillLabel(f.label, data, fx.vf), shown, f.layout ?? "pair", align, style);
 }
