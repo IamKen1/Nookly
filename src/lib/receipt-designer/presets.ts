@@ -128,20 +128,8 @@ export const registerItems = () =>
     },
   });
 
-function register(): Block[] {
-  const items = registerItems();
-  const sc = <T extends BlockType>(type: T, changes: Partial<Extract<Block, { type: T }>>) => make(type, { showWhen: SC_ONLY, ...changes });
-
-  return [
-    make("storeInfo", {
-      nameStyle: {},
-      fields: { name: true, address: true, contact: true, tin: true, permit: false, accreditation: false, serial: true },
-      labels: { contact: "TEL NO : ", tin: "VAT REG TIN:", permit: "PERMIT NO: ", accreditation: "ACCRED NO: ", serial: "S/N: " },
-    }),
-    newField("cashier", { label: "CASHIER:", layout: "inline", align: "left", style: { uppercase: true } }),
-    items,
-    make("totals", {
-      lines: [
+// Register-style totals: step by step in plain words, then what was paid.
+export const registerTotalsLines = (): TotalsLine[] => [
         valueLine("nonVatableGross", { label: "Amt of VAT EXEMPT ITEMS" }),
         valueLine("vatableGross", { label: "Amt of Sale With VAT" }),
         { ...valueLine("vatRemoved", { label: "Less 12% VAT" }), showWhen: SC_ONLY },
@@ -169,14 +157,34 @@ function register(): Block[] {
         { ...valueLine("cash", { label: "TOTAL PAYMENT" }), showWhen: { saleTypes: ["cash"] } },
         { ...valueLine("totalDue", { label: "TOTAL PAYMENT" }), showWhen: { saleTypes: ["ewallet"] } },
         valueLine("change", { label: "CHANGE" }),
-      ],
-    }),
-    make("text", { text: "**   {quantity} item(s)   **", align: "left", spaceAfter: 1 }),
+];
+
+// SC/PWD lines for a register receipt: ID, name, and lines to sign and fill in.
+export const registerScBlocks = (): Block[] => {
+  const sc = <T extends BlockType>(type: T, changes: Partial<Extract<Block, { type: T }>>) => make(type, { showWhen: SC_ONLY, ...changes });
+  return [
     sc("field", { key: "discountIdNumber", label: "OSCA/PWD ID No.:", layout: "inline", align: "left" }),
     sc("field", { key: "discountHolder", label: "SOLD TO:", layout: "inline", align: "left", style: { uppercase: true } }),
     sc("text", { text: "SIGNATURE : __________________", align: "left" }),
     sc("text", { text: "ADDRESS   : __________________", align: "left" }),
     sc("text", { text: "TIN NO    : __________________", align: "left" }),
+  ];
+};
+
+export const REGISTER_LABELS = { contact: "TEL NO : ", tin: "VAT REG TIN:", permit: "PERMIT NO: ", accreditation: "ACCRED NO: ", serial: "S/N: " };
+
+function register(): Block[] {
+  return [
+    make("storeInfo", {
+      nameStyle: {},
+      fields: { name: true, address: true, contact: true, tin: true, permit: false, accreditation: false, serial: true },
+      labels: { ...REGISTER_LABELS },
+    }),
+    newField("cashier", { label: "CASHIER:", layout: "inline", align: "left", style: { uppercase: true } }),
+    registerItems(),
+    make("totals", { lines: registerTotalsLines() }),
+    make("text", { text: "**   {quantity} item(s)   **", align: "left", spaceAfter: 1 }),
+    ...registerScBlocks(),
     rule(),
     ...vatSummary(),
     make("footer", { noticeFirst: false, ruleBefore: "-", ruleAfter: "-" }),

@@ -56,6 +56,12 @@ export interface ReceiptData {
   nonVatableDiscountAmount?: number;
   vatRemovedFromVatable?: number;
   totalAmount: number;
+  // Owner pricing rules, already inside totalAmount (0 / absent on most sales).
+  adjustmentAmount?: number;
+  adjustmentLabel?: string | null;
+  roundingAmount?: number;
+  // On adjusted sales: the standard computation's parts before the adjustments.
+  computedParts?: { vatableSales: number; vatAmount: number; nonVatableSales: number; finalTotal: number } | null;
   paymentMethod: string;
   paymentProvider?: string | null;
   paymentReference?: string | null;

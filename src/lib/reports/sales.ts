@@ -5,6 +5,8 @@ import { type ReportContext, daysIn, money, phDay, phHour, phWeekday, saleWhere,
 
 const saleSelect = {
   id: true,
+  adjustmentAmount: true,
+  roundingAmount: true,
   saleNumber: true,
   saleDate: true,
   status: true,
@@ -78,7 +80,7 @@ async function loadLines(ctx: ReportContext) {
 export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
   const { sales, returns } = await loadSales(ctx);
   const voids = await prisma.sale.aggregate({ where: saleWhere(ctx, "voids"), _count: true, _sum: { totalAmount: true } });
-  const days = new Map(daysIn(ctx).map((d) => [d, { date: d, transactions: 0, gross: 0, discounts: 0, vatExempt: 0, returns: 0, net: 0, vat: 0, cash: 0, ewallet: 0, other: 0, points: 0 }]));
+  const days = new Map(daysIn(ctx).map((d) => [d, { date: d, transactions: 0, gross: 0, discounts: 0, vatExempt: 0, adjustments: 0, returns: 0, net: 0, vat: 0, cash: 0, ewallet: 0, other: 0, points: 0 }]));
   const row = (d: Date) => days.get(phDay(d));
   // Money under its method; the part paid with loyalty points in its own column.
   const addPayment = (r: NonNullable<ReturnType<typeof row>>, s: (typeof sales)[number]) => {
@@ -93,6 +95,8 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
     r.gross += n(s.subtotal);
     r.discounts += n(s.discountAmount);
     r.vatExempt += n(s.vatRemovedFromVatable);
+    // The owner's price formula and cash rounding (Receipt designer › Apply to POS).
+    r.adjustments += n(s.adjustmentAmount) + n(s.roundingAmount);
     r.net += n(s.totalAmount);
     r.vat += n(s.taxAmount);
     addPayment(r, s);
@@ -110,6 +114,7 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
     gross: money(r.gross),
     discounts: money(r.discounts),
     vatExempt: money(r.vatExempt),
+    adjustments: money(r.adjustments),
     returns: money(r.returns),
     net: money(r.net),
     vat: money(r.vat),
@@ -122,6 +127,7 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
   const t = rows.reduce((a, r) => ({ tx: a.tx + r.transactions, net: a.net + r.net, gross: a.gross + r.gross, ret: a.ret + r.returns }), { tx: 0, net: 0, gross: 0, ret: 0 });
   const hasOther = rows.some((r) => r.other !== 0);
   const hasPoints = rows.some((r) => r.points !== 0);
+  const hasAdjustments = rows.some((r) => r.adjustments !== 0);
   return {
     summary: [
       { label: "Net sales", value: money(t.net), format: "money" },
@@ -136,6 +142,7 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
       { key: "gross", label: "Gross sales", format: "money", total: true },
       { key: "discounts", label: "Discounts", format: "money", total: true },
       { key: "vatExempt", label: "VAT exempt", format: "money", total: true },
+      ...(hasAdjustments ? [{ key: "adjustments", label: "Adjustments", format: "money" as const, total: true }] : []),
       { key: "returns", label: "Returns", format: "money", total: true },
       { key: "net", label: "Net sales", format: "money", total: true },
       { key: "vat", label: "VAT", format: "money", total: true },
@@ -146,7 +153,7 @@ export async function salesSummary(ctx: ReportContext): Promise<ReportResult> {
       { key: "average", label: "Avg sale", format: "money" },
     ],
     rows,
-    note: `Net sales = gross sales − discounts − VAT exempted on SC/PWD sales − returns. Voided sales are excluded.${hasPoints ? " Points = the part customers paid with loyalty points." : ""}`,
+    note: `Net sales = gross sales − discounts − VAT exempted on SC/PWD sales${hasAdjustments ? " + adjustments (your price formula and cash rounding)" : ""} − returns. Voided sales are excluded.${hasPoints ? " Points = the part customers paid with loyalty points." : ""}`,
   };
 }
 

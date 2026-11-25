@@ -45,7 +45,23 @@ export const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
     nonVatableDiscountAmount: r.nonVatableDiscountAmount ?? 0,
     vatRemovedFromVatable: r.vatRemovedFromVatable ?? 0,
   };
-  return getComputationLines(result, discountType, discountPercent, display).filter((line) => line.kind !== "total");
+  const adjustment = r.adjustmentAmount ?? 0;
+  const rounding = r.roundingAmount ?? 0;
+  if (adjustment === 0 && rounding === 0) {
+    return getComputationLines(result, discountType, discountPercent, display).filter((line) => line.kind !== "total");
+  }
+  // The saved VAT parts include the owner's adjustment and rounding. The steps
+  // show the standard computation first (its parts as saved with the sale),
+  // then each adjustment.
+  const money = (n: number) => Number(n.toFixed(2));
+  const parts = r.computedParts;
+  const computed: VatCalculationResult = parts
+    ? { ...result, vatableSales: parts.vatableSales, vatAmount: parts.vatAmount, nonVatableSales: parts.nonVatableSales, finalTotal: parts.finalTotal }
+    : { ...result, finalTotal: money(r.totalAmount - adjustment - rounding) };
+  const lines = getComputationLines(computed, discountType, discountPercent, display).filter((line) => line.kind !== "total");
+  if (adjustment !== 0) lines.push({ label: r.adjustmentLabel || "Adjustment", amount: adjustment, kind: "subtract" });
+  if (rounding !== 0) lines.push({ label: "Rounding", amount: rounding, kind: "subtract" });
+  return lines;
 };
 
 // Loyalty lines, shared by the HTML and thermal receipts. Points used are a

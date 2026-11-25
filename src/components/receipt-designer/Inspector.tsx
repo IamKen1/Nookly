@@ -110,6 +110,24 @@ interface Ctx {
   sample?: ReceiptData | null; // the preview sale, for live formula results
   branches: { id: string; name: string }[];
   focusLineId?: string | null;
+  onChargeFormula?: (f: { label: string; expr: string }) => void;
+}
+
+// Turns a display formula into what the POS charges, after a confirmation.
+function ChargeButton({ label, expr, ctx }: { label: string; expr: string; ctx: Ctx }) {
+  if (!ctx.onChargeFormula) return null;
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
+      <p className="text-[11px] text-amber-900">This formula only changes what the receipt shows. Want the POS to charge it too?</p>
+      <button
+        type="button"
+        onClick={() => ctx.onChargeFormula!({ label, expr })}
+        className="mt-1.5 rounded-full bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-500"
+      >
+        Charge customers this amount…
+      </button>
+    </div>
+  );
 }
 
 export default function Inspector({
@@ -120,6 +138,7 @@ export default function Inspector({
   sample = null,
   branches = [],
   focusLineId = null,
+  onChargeFormula,
 }: {
   block: Block;
   printMode: PrintMode;
@@ -128,8 +147,9 @@ export default function Inspector({
   sample?: ReceiptData | null;
   branches?: { id: string; name: string }[];
   focusLineId?: string | null; // a totals line clicked on the preview
+  onChargeFormula?: (f: { label: string; expr: string }) => void; // "Apply to POS"
 }) {
-  const ctx: Ctx = { sample, branches, focusLineId };
+  const ctx: Ctx = { sample, branches, focusLineId, onChargeFormula };
   const set = (patch: Partial<Block>) => onChange({ ...block, ...patch } as Block);
 
   return (
@@ -346,11 +366,14 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
 
     case "formula":
       return (
-        <FormulaEditor
-          sample={ctx.sample}
-          value={{ label: block.label, expr: block.expr, format: block.format, decimals: block.decimals, layout: block.layout, minus: block.minus, hideWhenZero: block.hideWhenZero }}
-          onChange={(patch) => set(patch as Partial<Block>)}
-        />
+        <div className="space-y-3">
+          <FormulaEditor
+            sample={ctx.sample}
+            value={{ label: block.label, expr: block.expr, format: block.format, decimals: block.decimals, layout: block.layout, minus: block.minus, hideWhenZero: block.hideWhenZero }}
+            onChange={(patch) => set(patch as Partial<Block>)}
+          />
+          {block.format === "money" && <ChargeButton label={block.label} expr={block.expr} ctx={ctx} />}
+        </div>
       );
 
     case "scPwd":
@@ -675,6 +698,7 @@ function TotalsLineRow({
                 onChange={(patch) => onChange(patch as Partial<TotalsLine>)}
               />
               <StyleEditor compact value={line.style} onChange={(style) => onChange({ style })} printMode={printMode} />
+              {line.format === "money" && <ChargeButton label={line.label} expr={line.expr} ctx={ctx} />}
             </>
           )}
           {line.kind === "rule" && <RuleSelect value={line.char} onChange={(v) => onChange({ char: v ?? "-" })} />}

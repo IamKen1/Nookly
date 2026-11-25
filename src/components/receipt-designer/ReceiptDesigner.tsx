@@ -53,6 +53,10 @@ import QuickBar, { type BlockAction } from "./QuickBar";
 import Tiles from "./Tiles";
 import Checklist from "./Checklist";
 import Wizard, { Confetti } from "./Wizard";
+import ConfirmDialog from "./ConfirmDialog";
+import PosPricing from "./PosPricing";
+import useSWR, { mutate as mutateSWR } from "swr";
+import type { DiscountDTO } from "@/lib/discounts";
 import { TILES_BY_ID, makeTile, type Tile } from "@/lib/receipt-designer/tiles";
 import type { Part } from "@/lib/receipt-designer/quick";
 import { DEFAULT_FORMAT } from "@/lib/receipt-designer/format";
@@ -133,6 +137,12 @@ export default function ReceiptDesigner() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const moreRef = useRef<HTMLDetailsElement>(null);
+  const [confirmPublish, setConfirmPublish] = useState(false);
+  // The workspace's own discounts (not SC/PWD), to preview the receipt with each.
+  const { data: allDiscounts } = useSWR<DiscountDTO[]>("/api/discounts");
+  const ownDiscounts = (allDiscounts ?? []).filter((d) => !d.isSystem && d.isActive);
+  // A formula on the receipt the owner wants the POS to charge ("Apply to POS").
+  const [posFormula, setPosFormula] = useState<{ label: string; expr: string } | null>(null);
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
   const [versions, setVersions] = useState<VersionRow[]>([]);
   const [calibration, setCalibration] = useState<Calibration>(DEFAULT_CALIBRATION);
@@ -599,6 +609,15 @@ export default function ReceiptDesigner() {
                 Preview: {s.label}
               </option>
             ))}
+            {ownDiscounts.length > 0 && (
+              <optgroup label="With one of your discounts">
+                {ownDiscounts.map((d) => (
+                  <option key={d.id} value={`discount:${d.id}`}>
+                    Preview: {d.name} discount
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <div className="inline-flex overflow-hidden rounded-full border border-zinc-200 bg-white">
             <button type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="px-2.5 py-1.5 text-zinc-700 hover:bg-zinc-50 disabled:opacity-30">
@@ -646,7 +665,7 @@ export default function ReceiptDesigner() {
           </details>
           <button
             type="button"
-            onClick={publish}
+            onClick={() => setConfirmPublish(true)}
             disabled={busy !== null || errors.length > 0 || (enabled && saveState === "saved")}
             className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
           >
@@ -785,6 +804,11 @@ export default function ReceiptDesigner() {
                 key={selected.id}
                 block={selected}
                 focusLineId={selectedPart?.lineId ?? null}
+                onChargeFormula={(f) => {
+                  // The POS panel lives under Receipt settings; show it with the formula ready to confirm.
+                  setPosFormula(f);
+                  setSelectedId(null);
+                }}
                 printMode={template.printMode}
                 onChange={updateBlock}
                 sample={sample}
@@ -874,6 +898,8 @@ export default function ReceiptDesigner() {
 
                 <ValueFormatEditor value={{ ...DEFAULT_FORMAT, ...template.theme.format }} onChange={(format) => change({ ...template, theme: { ...template.theme, format } })} />
 
+                <PosPricing formulaDraft={posFormula} onFormulaDraftDone={() => setPosFormula(null)} onApplied={() => void loadSample(sampleKind)} />
+
                 <div className="space-y-2 border-t border-zinc-100 pt-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Printer on this device</p>
                   <button type="button" className={btn} onClick={printTestPage} disabled={busy !== null}>
@@ -960,20 +986,61 @@ export default function ReceiptDesigner() {
       {wizardOpen && (
         <Wizard
           settings={settings}
-          sample={sample}
           paperWidth={template.paperWidth}
+          hasLogo={Boolean(settings.logoUrl)}
           onClose={() => setWizardOpen(false)}
-          onFinish={(t) => {
+          onFinish={async ({ template: t, roundingStep }) => {
             change({ ...t, blocks: t.blocks.map(withFreshIds) }, { coalesce: false });
             setWizardOpen(false);
             setSelectedId(null);
-            setMessage({ kind: "ok", text: "Your receipt is ready! Click any part of it to change it, or add pieces from the left. Undo is always there." });
+            let roundingNote = "";
+            if (roundingStep !== undefined) {
+              // A POS change: saved to the POS history, where it can be undone.
+              const res = await fetch("/api/settings/pos-changes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "pricing", roundingStep }) });
+              const json = await res.json().catch(() => null);
+              if (res.ok) {
+                await mutateSWR("/api/settings/pos-changes", json, { revalidate: false });
+                roundingNote = roundingStep ? ` Cash sales now round down to ₱${roundingStep.toFixed(2)} (undo it under What the POS charges).` : " Cash sales are back to the exact amount.";
+                void loadSample(sampleKind);
+              } else roundingNote = ` Cash rounding wasn't changed: ${json?.error ?? "please try again"}.`;
+            }
+            setMessage({ kind: "ok", text: `Your receipt is ready! Click any part of it to change it, or add pieces from the left. Undo is always there.${roundingNote}` });
             setCelebrate(true);
             setTimeout(() => setCelebrate(false), 3200);
           }}
         />
       )}
       {celebrate && <Confetti />}
+      {confirmPublish && (
+        <ConfirmDialog
+          title={enabled ? "Print receipts with these changes?" : "Start printing with this design?"}
+          confirmLabel={enabled ? "Yes, use the changes" : "Yes, use this design"}
+          busy={busy === "publish"}
+          onCancel={() => setConfirmPublish(false)}
+          onConfirm={async () => {
+            await publish();
+            setConfirmPublish(false);
+          }}
+        >
+          <p>
+            From now on, every new receipt and reprint{branches.length > 1 ? " at all your branches" : ""} prints with this design (
+            {template.paperWidth}mm, {template.printMode === "TEXT" ? "text mode" : "image mode"}). The amounts the POS charges don&apos;t change.
+          </p>
+          {checklist.some((c) => !c.done) ? (
+            <div className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+              <p className="font-semibold">Not on this receipt yet:</p>
+              <ul className="ml-4 list-disc">
+                {checklist.filter((c) => !c.done).map((c) => (
+                  <li key={c.key}>{c.label}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="rounded-lg bg-emerald-50 p-2 text-xs text-emerald-800">✓ Everything a receipt needs is there.</p>
+          )}
+          <p className="text-xs text-zinc-500">Changed your mind later? Restore an earlier version, or go back to the standard Nookly receipt from the More menu.</p>
+        </ConfirmDialog>
+      )}
       <DragOverlay>{dragType ? <div className="rounded-md border border-emerald-400 bg-white px-3 py-1.5 text-xs font-semibold shadow-lg">{dragType}</div> : null}</DragOverlay>
     </DndContext>
   );

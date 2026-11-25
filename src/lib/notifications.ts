@@ -39,6 +39,10 @@ interface SaleNotificationInput {
   zeroRatedSales?: number;
   vatExemptSales?: number;
   totalAmount: number;
+  // The owner's price formula and cash rounding, already inside totalAmount.
+  adjustmentAmount?: number;
+  adjustmentLabel?: string | null;
+  roundingAmount?: number;
   paymentMethod: string;
   cashReceived?: number;
   changeGiven?: number;
@@ -224,6 +228,8 @@ const renderSaleReceiptHtml = (input: SaleNotificationInput) => {
       <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px;">
         ${row("Subtotal", peso(subtotal))}
         ${discountAmount && discountAmount > 0 ? row(discountType && discountType !== "NONE" ? `${discountType} Discount` : "Discount", `-${peso(discountAmount)}`) : ""}
+        ${input.adjustmentAmount ? row(input.adjustmentLabel || "Adjustment", peso(input.adjustmentAmount)) : ""}
+        ${input.roundingAmount ? row("Rounding", peso(input.roundingAmount)) : ""}
         ${row("TOTAL", peso(totalAmount), true)}
       </table>
 
@@ -300,6 +306,8 @@ const renderSaleReceiptText = (input: SaleNotificationInput) => {
     discountAmount && discountAmount > 0
       ? `${discountType && discountType !== "NONE" ? `${discountType} Discount` : "Discount"}: -${peso(discountAmount)}`
       : "",
+    input.adjustmentAmount ? `${input.adjustmentLabel || "Adjustment"}: ${peso(input.adjustmentAmount)}` : "",
+    input.roundingAmount ? `Rounding: ${peso(input.roundingAmount)}` : "",
     `TOTAL: ${peso(totalAmount)}`,
   ];
 

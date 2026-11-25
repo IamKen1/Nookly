@@ -122,6 +122,8 @@ model Tenant {
   receiptSettings         ReceiptSettings?
   notificationSettings    NotificationSettings?
   loyaltySettings         LoyaltySettings?
+  pricingSettings         PricingSettings?
+  posChanges              PosChange[]
   loyaltyTransactions     LoyaltyTransaction[]
   receiptTemplate         ReceiptTemplate?
   receiptTemplateVersions ReceiptTemplateVersion[]
@@ -806,6 +808,16 @@ model Sale {
   pointsRedeemed           Int                  @default(0)
   pointsAmount             Decimal              @default(0) @db.Decimal(10, 2)
   pointsEarned             Int                  @default(0)
+  // Owner pricing rules (Receipt designer › Apply to POS), already inside
+  // totalAmount and spread over vatableSales / taxAmount / nonVatableSales so
+  // those still add up to totalAmount. 0 on every sale made without them.
+  adjustmentAmount         Decimal              @default(0) @db.Decimal(10, 2) // owner's formula: charged − computed
+  adjustmentLabel          String?
+  roundingAmount           Decimal              @default(0) @db.Decimal(10, 2) // cash rounding down, ≤ 0
+  // On adjusted sales only: the standard computation's VAT parts before the
+  // adjustments ({ vatableSales, vatAmount, nonVatableSales, finalTotal }), so
+  // the receipt's step-by-step lines show it exactly.
+  computedParts            Json?
   paymentMethod            PaymentMethod
   cashReceived             Decimal?             @db.Decimal(10, 2)
   changeGiven              Decimal?             @db.Decimal(10, 2)
@@ -1201,6 +1213,41 @@ model LoyaltySettings {
   tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("loyalty_settings")
+}
+
+// What the POS charges beyond the standard computation, set from the receipt
+// designer ("Apply to POS"). No row = everything off.
+model PricingSettings {
+  id           String   @id @default(cuid())
+  tenantId     String   @unique
+  roundingStep Decimal? @db.Decimal(6, 2) // cash totals round DOWN to this step; null = off
+  ruleEnabled  Boolean  @default(false)
+  ruleLabel    String   @default("Adjustment")
+  ruleExpr     String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("pricing_settings")
+}
+
+// Every change applied to the POS from the receipt designer, so it can be undone.
+model PosChange {
+  id         String    @id @default(cuid())
+  tenantId   String
+  kind       String // PRICING (rounding / formula) or DISCOUNT
+  targetId   String? // the discount's id for DISCOUNT
+  summary    String // "Cash rounding: off → ₱0.25"
+  before     Json // the settings before the change
+  after      Json
+  userId     String?
+  createdAt  DateTime  @default(now())
+  undoneAt   DateTime?
+  undoneById String?
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("pos_changes")
 }
 
 // Every change to a customer's points, with the balance right after it.

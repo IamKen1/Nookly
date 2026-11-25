@@ -27,6 +27,8 @@ type Node =
 export const FORMULA_VARIABLES: Record<string, { key: TotalsKey; name: string }> = {
   subtotal: { key: "grossTotal", name: "Subtotal (before discount)" },
   total: { key: "totalDue", name: "Total amount due" },
+  adjustment: { key: "adjustment", name: "Price adjustment (your formula)" },
+  rounding: { key: "rounding", name: "Cash rounding" },
   vat: { key: "vatAmount", name: "12% VAT" },
   vatableSales: { key: "vatableSales", name: "VATable sales" },
   vatExempt: { key: "vatExemptSales", name: "VAT-exempt sales" },
@@ -270,6 +272,22 @@ export function formatFormula(v: number, format: FormulaFormat, decimals: number
   if (format === "int") return String(Math.round(v));
   const fixed = v.toLocaleString("en-PH", { minimumFractionDigits: d, maximumFractionDigits: d });
   return format === "percent" ? `${fixed}%` : fixed;
+}
+
+// The value names a formula uses ("total", "pieces"…). Throws FormulaError if it can't be read.
+export function formulaVariables(src: string): string[] {
+  const out = new Set<string>();
+  const walk = (n: Node): void => {
+    if (n.t === "var") out.add(n.name);
+    else if (n.t === "un") walk(n.a);
+    else if (n.t === "bin") {
+      walk(n.a);
+      walk(n.b);
+    }
+    else if (n.t === "call") n.args.forEach(walk);
+  };
+  walk(parseFormula(src));
+  return [...out];
 }
 
 // For validation: the error message, or null if the formula is fine.

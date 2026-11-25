@@ -54,6 +54,20 @@ Allowed, in build order:
    in agreement with the drawer; preview shows before/after on sample sales
    before the owner confirms; one switch turns it off.
 
+### Apply to POS — detailed design (decided 2026-11-25)
+- One pure function `applyPricing` (src/lib/pricing.ts) used by checkout
+  screen and server: computed total → owner formula (if on) → rounding.
+- Rounding: **down only, cash sales only**, step ₱0.25/₱0.50/₱1.00; never
+  rounds a positive total to ₱0.
+- Formula: never on SC/PWD or VAT-exempt-discount sales; may only use sale
+  values known before payment; result ignored (computed total charged) when
+  invalid or more than **±20%** from the computed total.
+- The difference is spread across VATable / non-VAT parts and VAT is
+  recomputed, so VATable + VAT + non-VAT = total still holds for every report.
+- Sale gets `adjustmentAmount`, `adjustmentLabel`, `roundingAmount` (default
+  0 → old sales unchanged). New `PricingSettings` table per workspace.
+- With everything off, results must be identical to today (randomized test).
+
 ## Build order
 Direct editing → tiles → checklist → wizard. Unit tests for the engine pieces
 (lineId, checklist, tile/wizard builders); browser check of the designer.

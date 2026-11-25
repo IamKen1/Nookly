@@ -3,6 +3,8 @@ import { E_WALLET_PROVIDERS, normalizeReference } from "@/lib/payment-methods";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { calculateVatInclusiveTotals, type DiscountType } from "@/lib/vat-calculations";
+import { applyPricing } from "@/lib/pricing";
+import { getPricingRules } from "@/lib/pricing-settings";
 import { discountCalcInput, discountRateText, ensureDefaultDiscounts, isDiscountAvailable } from "@/lib/discounts";
 import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
 import { runInBackground } from "@/lib/background";
@@ -282,11 +284,19 @@ export async function POST(request: NextRequest) {
     : null;
   const normalizedDiscountType: DiscountType = appliedDiscount?.code ?? "NONE";
 
-  const vatTotals = calculateVatInclusiveTotals({
+  const computedTotals = calculateVatInclusiveTotals({
     vatableTotal: vatableSubtotal,
     nonVatableTotal: nonVatableSubtotal,
     ...(appliedDiscount ? discountCalcInput(appliedDiscount) : { discountType: "NONE", discountPercent: 0 }),
   });
+  // The owner's pricing rules (formula, cash rounding). With none set, the
+  // computed totals pass through untouched.
+  const pricing = applyPricing(
+    computedTotals,
+    { exemptSale: Boolean(appliedDiscount?.vatExempt), paymentMethod, items },
+    await getPricingRules(session.tenantId)
+  );
+  const vatTotals = pricing.totals;
 
   const totalAmount = vatTotals.finalTotal;
 
@@ -458,6 +468,10 @@ export async function POST(request: NextRequest) {
         nonVatableDiscountAmount: vatTotals.nonVatableDiscountAmount,
         vatRemovedFromVatable: vatTotals.vatRemovedFromVatable,
         totalAmount,
+        adjustmentAmount: pricing.adjustmentAmount,
+        adjustmentLabel: pricing.adjustmentLabel,
+        roundingAmount: pricing.roundingAmount,
+        ...(pricing.computedParts ? { computedParts: { ...pricing.computedParts } } : {}),
         pointsRedeemed,
         pointsAmount,
         pointsEarned,
@@ -642,6 +656,9 @@ export async function POST(request: NextRequest) {
         zeroRatedSales: 0,
         vatExemptSales,
         totalAmount: Number(completeSale.totalAmount),
+        adjustmentAmount: Number(completeSale.adjustmentAmount),
+        adjustmentLabel: completeSale.adjustmentLabel,
+        roundingAmount: Number(completeSale.roundingAmount),
         paymentMethod: completeSale.paymentMethod,
         cashReceived: completeSale.cashReceived != null ? Number(completeSale.cashReceived) : undefined,
         changeGiven: completeSale.changeGiven != null ? Number(completeSale.changeGiven) : undefined,

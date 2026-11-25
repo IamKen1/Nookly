@@ -40,6 +40,14 @@ export const TOTALS_FIELDS: Record<TotalsKey, Field> = {
   nonVatableSales: { name: "Non-VAT sales", label: "Non-VAT Sales:", format: "money", value: (r) => r.nonVatableSales ?? 0 },
   vatAmount: { name: "12% VAT", label: "12% VAT:", format: "money", value: (r) => r.taxAmount },
   totalDue: { name: "Total amount due", label: "TOTAL AMOUNT DUE:", format: "money", value: (r) => r.totalAmount },
+  // Only on sales where the owner's POS pricing rules changed the total.
+  adjustment: {
+    name: "Price adjustment (your formula)",
+    label: "Adjustment:",
+    format: "money",
+    value: (r) => (r.adjustmentAmount ? r.adjustmentAmount : null),
+  },
+  rounding: { name: "Cash rounding", label: "Rounding:", format: "money", value: (r) => (r.roundingAmount ? r.roundingAmount : null) },
   pointsUsed: {
     name: "Points used (peso value)",
     label: "Points used ({points}):",
@@ -139,6 +147,7 @@ export function tokenValue(key: string, r: ReceiptData, f: ValueFormat = DEFAULT
   if (key === "points") return String(r.loyalty?.pointsRedeemed ?? 0);
   if (key === "discountName") return r.discountName || r.discountType || "";
   if (key === "discountRate") return r.discountRate || "";
+  if (key === "adjustmentLabel") return r.adjustmentLabel || "Adjustment";
   if (Object.hasOwn(STORE_TOKENS, key)) return STORE_TOKENS[key].value(r)?.trim() ?? "";
   if (!Object.hasOwn(TOTALS_FIELDS, key)) return undefined; // not a token: printed as typed
   const field = TOTALS_FIELDS[key as TotalsKey];
@@ -147,5 +156,6 @@ export function tokenValue(key: string, r: ReceiptData, f: ValueFormat = DEFAULT
   return field.format === "money" ? moneyFormatter(f)(v as number) : String(v);
 }
 
+// {adjustmentLabel}: the name of the owner's price formula ("Service fee").
 export const fillLabel = (label: string, r: ReceiptData, f: ValueFormat = DEFAULT_FORMAT) =>
   label.includes("{") ? label.replace(/\{([A-Za-z]+)\}/g, (whole, key: string) => tokenValue(key, r, f) ?? whole) : label;

@@ -170,6 +170,8 @@ export type TotalsKey =
   | "nonVatableSales"
   | "vatAmount"
   | "totalDue"
+  | "adjustment"
+  | "rounding"
   | "pointsUsed"
   | "amountPaid"
   | "cash"

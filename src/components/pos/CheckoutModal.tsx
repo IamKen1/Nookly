@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { X, CreditCard, Calculator, KeyRound, Send } from "lucide-react";
 import { calculateVatInclusiveTotals, getComputationLines } from "@/lib/vat-calculations";
+import { applyPricing, NO_PRICING, type PricingRules } from "@/lib/pricing";
 import { discountCalcInput, discountDisplay } from "@/lib/discount-math";
 import type { DiscountDTO } from "@/lib/discounts";
 import { peso } from "@/lib/format";
@@ -147,14 +148,30 @@ export default function CheckoutModal({
   const vatableTotal = cart.filter((i) => i.isVatable).reduce((sum, i) => sum + i.price * i.quantity, 0);
   const nonVatableTotal = cart.filter((i) => !i.isVatable).reduce((sum, i) => sum + i.price * i.quantity, 0);
   const { data: discounts = [] } = useSWR<DiscountDTO[]>(isOpen ? "/api/discounts?forSale=1" : null);
+  // The owner's pricing rules (Receipt designer › Apply to POS), read fresh each
+  // time checkout opens so the screen matches what the server will charge.
+  const { data: pricing, error: pricingError } = useSWR<PricingRules>(isOpen ? "/api/pricing" : null, { revalidateOnFocus: true });
+  // Until the rules are in, the screen could show a different total than the server charges.
+  const pricingReady = pricing !== undefined || pricingError !== undefined;
   const discount = discounts.find((d) => d.id === discountId) ?? null;
   const discountInput = discount ? discountCalcInput(discount) : { discountType: "NONE", discountPercent: 0 };
   const discountType = discountInput.discountType;
   const isScPwd = discountType === "SENIOR" || discountType === "PWD";
 
-  const totals = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, ...discountInput });
+  const computed = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, ...discountInput });
+  // The owner's pricing rules (formula, cash rounding), exactly as the server applies them.
+  const priced = applyPricing(computed, { exemptSale: Boolean(discount?.vatExempt), paymentMethod, items: cart }, pricing ?? NO_PRICING);
+  const totals = priced.totals;
   const finalTotal = totals.finalTotal;
-  const computationLines = getComputationLines(totals, discountType, discountInput.discountPercent, discount ? discountDisplay(discount) : undefined);
+  const computationLines = getComputationLines(computed, discountType, discountInput.discountPercent, discount ? discountDisplay(discount) : undefined).flatMap((l) =>
+    l.kind === "total"
+      ? [
+          ...(priced.adjustmentAmount ? [{ label: priced.adjustmentLabel ?? "Adjustment", amount: priced.adjustmentAmount, kind: "subtract" as const }] : []),
+          ...(priced.roundingAmount ? [{ label: "Rounding (cash)", amount: priced.roundingAmount, kind: "subtract" as const }] : []),
+          { ...l, amount: finalTotal },
+        ]
+      : [l]
+  );
 
   // Loyalty points pay part of the total like a voucher; the total and VAT above
   // don't change, only what's left to pay in cash or e-wallet.
@@ -167,7 +184,7 @@ export default function CheckoutModal({
 
   const cashAmount = parseFloat(cashReceived) || 0;
   const changeAmount = cashAmount - amountDue;
-  const isValidPayment = paidByPointsOnly || (paymentMethod === "CASH" ? cashAmount >= amountDue : walletReference.trim().length >= 4);
+  const isValidPayment = pricingReady && (paidByPointsOnly || (paymentMethod === "CASH" ? cashAmount >= amountDue : walletReference.trim().length >= 4));
 
   const handleCashInput = (value: string) => {
     const sanitized = value.replace(/[^\d.]/g, "");
@@ -382,6 +399,21 @@ export default function CheckoutModal({
                     <span>{peso(totals.vatRemovedFromVatable + totals.discountAmount)}</span>
                   </div>
                 )}
+                {priced.adjustmentAmount !== 0 && (
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>{priced.adjustmentLabel}:</span>
+                    <span>
+                      {priced.adjustmentAmount > 0 ? "+" : "-"}
+                      {peso(Math.abs(priced.adjustmentAmount))}
+                    </span>
+                  </div>
+                )}
+                {priced.roundingAmount !== 0 && (
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>Rounding (cash):</span>
+                    <span>-{peso(Math.abs(priced.roundingAmount))}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="font-semibold">Total Amount Due:</span>
                   <span className="font-semibold text-emerald-600">{peso(finalTotal)}</span>
@@ -588,11 +620,11 @@ export default function CheckoutModal({
                     onChange={(e) => handleCashInput(e.target.value)}
                     placeholder="0.00"
                     className={`w-full rounded-lg border py-2 pl-8 pr-4 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 ${
-                      cashReceived && !isValidPayment ? "border-red-500" : "border-gray-300"
+                      cashReceived && cashAmount < amountDue ? "border-red-500" : "border-gray-300"
                     }`}
                   />
                 </div>
-                {cashReceived && !isValidPayment && <p className="mt-1 text-sm text-red-600">Need {peso(amountDue - cashAmount)} more</p>}
+                {cashReceived && cashAmount < amountDue && <p className="mt-1 text-sm text-red-600">Need {peso(amountDue - cashAmount)} more</p>}
               </div>
 
               <div className="mb-4">
