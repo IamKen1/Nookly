@@ -154,7 +154,13 @@ export default function ReceiptDesigner() {
   const ownDiscounts = (allDiscounts ?? []).filter((d) => !d.isSystem && d.isActive);
   // A formula on the receipt the owner wants the POS to charge ("Apply to POS").
   const [posFormula, setPosFormula] = useState<{ label: string; expr: string } | null>(null);
-  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [branches, setBranches] = useState<{ id: string; name: string; isMainBranch?: boolean }[]>([]);
+  // Which design is open: null = the workspace design (every branch), or one branch's own.
+  const [scope, setScope] = useState<string | null>(null);
+  const scopeRef = useRef<string | null>(null); // the design the template on screen belongs to
+  const [branchDesigns, setBranchDesigns] = useState<{ storeId: string; enabled: boolean; hasDraft: boolean; hasDesign: boolean }[]>([]);
+  const [mainEnabled, setMainEnabled] = useState(false);
+  const [ownRow, setOwnRow] = useState(true); // false: a branch still printing the workspace design
   const [versions, setVersions] = useState<VersionRow[]>([]);
   const [calibration, setCalibration] = useState<Calibration>(DEFAULT_CALIBRATION);
   const loaded = useRef(false);
@@ -173,40 +179,58 @@ export default function ReceiptDesigner() {
   }, [published]);
 
   // ---------- load ----------
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/settings/receipt-template");
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Couldn't load the designer.");
-        if (!data.planHasIt) {
-          setPlanHasIt(false);
-          return;
-        }
-        setEnabled(data.enabled);
-        setPublished(data.published);
-        setSettings(data.settings);
-        setBranches(data.branches ?? []);
-        setVersions(data.versions ?? []);
+  // A save still waiting to be sent, done before switching to another design.
+  const pendingSave = useRef<(() => Promise<void>) | null>(null);
+  const loadDesign = useCallback(async (next: string | null, kind: string, first = false) => {
+    try {
+      if (pendingSave.current) await pendingSave.current();
+      const res = await fetch(`/api/settings/receipt-template${next ? `?branch=${encodeURIComponent(next)}` : ""}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't load the designer.");
+      if (!data.planHasIt) {
+        setPlanHasIt(false);
+        return;
+      }
+      setEnabled(data.enabled);
+      setPublished(data.published);
+      setSettings(data.settings);
+      setBranches(data.branches ?? []);
+      setBranchDesigns(data.branchDesigns ?? []);
+      setMainEnabled(Boolean(data.mainEnabled));
+      setVersions(data.versions ?? []);
+      setOwnRow(!next || Boolean(data.draft || data.published));
+      // The template now on screen belongs to this design; don't autosave it as is.
+      scopeRef.current = next;
+      loaded.current = false;
+      history.current = { past: [], future: [], lastAt: 0 };
+      setSteps({ undo: 0, redo: 0 });
+      setScope(next);
+      setSelectedPart(null);
+      setTemplate(data.draft ?? data.published ?? data.mainDesign ?? buildPreset("classic", data.settings));
+      setSaveState(data.draft || !data.published ? "unsaved" : "saved");
+      if (first) {
         setCalibration(readCalibration());
-        setTemplate(data.draft ?? data.published ?? buildPreset("classic", data.settings));
-        setSaveState(data.draft || !data.published ? "unsaved" : "saved");
         // First visit: start with the guided setup.
         if (!data.draft && !data.published) setWizardOpen(true);
-        void loadSampleRef.current("regular");
-      } catch (e) {
-        setLoadError((e as Error).message);
-      } finally {
-        setLoading(false);
       }
-    })();
+      void loadSampleRef.current(kind, next);
+    } catch (e) {
+      if (first) setLoadError((e as Error).message);
+      else setMessage({ kind: "error", text: (e as Error).message });
+    } finally {
+      if (first) setLoading(false);
+    }
+  }, []);
+  const loadDesignRef = useRef(loadDesign);
+  useEffect(() => {
+    void loadDesignRef.current(null, "regular", true);
   }, []);
 
   // ---------- sample sale for the preview ----------
-  const loadSample = useCallback(async (kind: string) => {
+  const loadSample = useCallback(async (kind: string, branch: string | null = scopeRef.current) => {
     setSampleError(null);
     try {
-      const res = await fetch(`/api/settings/receipt-template/sample?kind=${kind}`);
+      const res = await fetch(`/api/settings/receipt-template/sample?kind=${kind}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't load the sample sale.");
       setSample({ ...data, date: new Date(data.date) });
@@ -223,7 +247,9 @@ export default function ReceiptDesigner() {
       loaded.current = true;
       return;
     }
-    const timer = setTimeout(async () => {
+    const branch = scopeRef.current;
+    const save = async () => {
+      pendingSave.current = null;
       if (publishedJson.current === JSON.stringify(template)) {
         setSaveState("saved");
         return;
@@ -233,14 +259,23 @@ export default function ReceiptDesigner() {
         const res = await fetch("/api/settings/receipt-template", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "saveDraft", template }),
+          body: JSON.stringify({ action: "saveDraft", template, branch }),
         });
         setSaveState(res.ok ? "unsaved" : "error");
+        if (res.ok && branch) {
+          setOwnRow(true);
+          setBranchDesigns((list) => (list.some((b) => b.storeId === branch) ? list : [...list, { storeId: branch, enabled: false, hasDraft: true, hasDesign: false }]));
+        }
       } catch {
         setSaveState("error");
       }
-    }, 900);
-    return () => clearTimeout(timer);
+    };
+    pendingSave.current = save;
+    const timer = setTimeout(save, 900);
+    return () => {
+      clearTimeout(timer);
+      if (pendingSave.current === save) pendingSave.current = null;
+    };
   }, [template]);
 
   const { errors, warnings, checklist } = useMemo(() => {
@@ -415,7 +450,7 @@ export default function ReceiptDesigner() {
       const res = await fetch("/api/settings/receipt-template", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, branch: scopeRef.current }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Something went wrong.");
@@ -433,13 +468,16 @@ export default function ReceiptDesigner() {
       setEnabled(true);
       setPublished(template);
       setSaveState("saved");
-      setMessage({ kind: "ok", text: "Done. New receipts and reprints now use this design." });
+      setOwnRow(true);
+      if (scope) setBranchDesigns((list) => [...list.filter((b) => b.storeId !== scope), { storeId: scope, enabled: true, hasDraft: false, hasDesign: true }]);
+      else setMainEnabled(true);
+      setMessage({ kind: "ok", text: scope ? `Done. New receipts and reprints at ${scopeName} now use this design.` : "Done. New receipts and reprints now use this design." });
       void refreshVersions();
     });
 
   const refreshVersions = async () => {
     try {
-      const res = await fetch("/api/settings/receipt-template");
+      const res = await fetch(`/api/settings/receipt-template${scopeRef.current ? `?branch=${encodeURIComponent(scopeRef.current)}` : ""}`);
       const data = await res.json();
       if (res.ok) setVersions(data.versions ?? []);
     } catch {
@@ -499,15 +537,50 @@ export default function ReceiptDesigner() {
   };
 
   const revert = () =>
+    setAsk(
+      scope
+        ? {
+            title: `Stop printing ${scopeName}'s own design?`,
+            body: <p>{scopeName} prints {mainEnabled ? "the main design" : "the standard Nookly receipt"} again. This branch&apos;s design is kept, and you can use it again any time.</p>,
+            confirmLabel: "Yes, stop it",
+            tone: "amber",
+            run: () =>
+              act("revert", { action: "revert" }, () => {
+                setEnabled(false);
+                setBranchDesigns((list) => list.map((b) => (b.storeId === scope ? { ...b, enabled: false } : b)));
+                setMessage({ kind: "ok", text: `${scopeName} is back to ${mainEnabled ? "the main design" : "the standard Nookly receipt"}.` });
+              }),
+          }
+        : {
+            title: "Go back to the standard Nookly receipt?",
+            body: (
+              <p>
+                New receipts and reprints print the standard receipt again{branchDesigns.some((b) => b.enabled) ? " (branches with their own design in use keep it)" : ""}. Your design is kept, and you can use it
+                again any time.
+              </p>
+            ),
+            confirmLabel: "Yes, use the standard receipt",
+            tone: "amber",
+            run: () =>
+              act("revert", { action: "revert" }, () => {
+                setEnabled(false);
+                setMainEnabled(false);
+                setMessage({ kind: "ok", text: "Receipts are back to the standard Nookly receipt." });
+              }),
+          }
+    );
+
+  const removeBranchDesign = () =>
     setAsk({
-      title: "Go back to the standard Nookly receipt?",
-      body: <p>New receipts and reprints print the standard receipt again. Your design is kept, and you can use it again any time.</p>,
-      confirmLabel: "Yes, use the standard receipt",
+      title: `Delete ${scopeName}'s own design?`,
+      body: <p>{scopeName} goes back to printing {mainEnabled ? "the main design" : "the standard Nookly receipt"}, like the other branches. Its past versions stay in Version history.</p>,
+      confirmLabel: "Yes, delete it",
       tone: "amber",
       run: () =>
-        act("revert", { action: "revert" }, () => {
-          setEnabled(false);
-          setMessage({ kind: "ok", text: "Receipts are back to the standard Nookly receipt." });
+        act("removeBranchDesign", { action: "removeBranchDesign" }, () => {
+          setBranchDesigns((list) => list.filter((b) => b.storeId !== scope));
+          void loadDesign(scope, sampleKind);
+          setMessage({ kind: "ok", text: `${scopeName} uses the main design again.` });
         }),
     });
 
@@ -524,9 +597,9 @@ export default function ReceiptDesigner() {
       loaded.current = false;
       history.current = { past: [], future: [], lastAt: 0 };
       syncSteps();
-      setTemplate(published ?? buildPreset("classic", settings!));
-      setSaveState(published ? "saved" : "unsaved");
       setSelectedId(null);
+      // Back to the design in use (or, for a branch without one, the main design).
+      void loadDesign(scope, sampleKind);
     });
 
   // From the gallery, where "Use this look" is the confirmation (and Undo brings the old one back).
@@ -680,6 +753,8 @@ export default function ReceiptDesigner() {
   }
 
   const selected = template.blocks.find((b) => b.id === selectedId) ?? null;
+  const scopeName = branches.find((b) => b.id === scope)?.name ?? "this branch";
+  const ownDesignOf = (id: string) => branchDesigns.find((b) => b.storeId === id);
   const btn = "inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:border-zinc-300 disabled:opacity-50";
 
   return (
@@ -695,11 +770,39 @@ export default function ReceiptDesigner() {
           </Link>
           <div className="mr-auto flex items-center gap-2">
             <h1 className="text-base font-semibold text-zinc-900">Receipt designer</h1>
+            {branches.length > 1 && (
+              <select
+                aria-label="Design for"
+                className="h-7 max-w-48 rounded-full border border-zinc-200 bg-white px-2 text-xs font-semibold text-zinc-700"
+                value={scope ?? ""}
+                onChange={(e) => void loadDesign(e.target.value || null, sampleKind)}
+                title="Each branch can have its own design; the others print the main one"
+              >
+                <option value="">All branches (main design)</option>
+                {branches.map((b) => {
+                  const own = ownDesignOf(b.id);
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                      {own?.enabled ? " · own design" : own ? " · own design (draft)" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
             <span
               className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${enabled ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}
-              title={enabled ? "Receipts print with your design" : "Receipts print with the standard Nookly receipt"}
+              title={enabled ? "Receipts print with this design" : "Receipts don't print with this design"}
             >
-              {enabled ? "Your design is on" : "Standard receipt"}
+              {scope
+                ? enabled
+                  ? "This branch's design is on"
+                  : mainEnabled
+                    ? "Prints the main design"
+                    : "Standard receipt"
+                : enabled
+                  ? "Your design is on"
+                  : "Standard receipt"}
             </span>
             <span className="whitespace-nowrap text-[11px] text-zinc-400">
               {saveState === "saving" ? "Saving…" : saveState === "error" ? "Not saved" : saveState === "unsaved" ? "Draft saved" : "In use"}
@@ -797,7 +900,7 @@ export default function ReceiptDesigner() {
                   }}
                 />
               </label>
-              {(published && saveState !== "saved") || enabled ? <div className="my-1 border-t border-zinc-100" /> : null}
+              {(published && saveState !== "saved") || enabled || (scope && ownRow) ? <div className="my-1 border-t border-zinc-100" /> : null}
               {published && saveState !== "saved" && (
                 <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50" onClick={discard} disabled={busy !== null}>
                   <Trash2 className="h-3.5 w-3.5" /> Discard changes since last use
@@ -805,7 +908,12 @@ export default function ReceiptDesigner() {
               )}
               {enabled && (
                 <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50" onClick={revert} disabled={busy !== null}>
-                  <RotateCcw className="h-3.5 w-3.5" /> Go back to the standard Nookly receipt
+                  <RotateCcw className="h-3.5 w-3.5" /> {scope ? `Stop printing ${scopeName}'s own design` : "Go back to the standard Nookly receipt"}
+                </button>
+              )}
+              {scope && ownRow && (
+                <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50" onClick={removeBranchDesign} disabled={busy !== null}>
+                  <Trash2 className="h-3.5 w-3.5" /> Delete {scopeName}&apos;s own design
                 </button>
               )}
             </div>
@@ -821,6 +929,21 @@ export default function ReceiptDesigner() {
           </button>
         </header>
 
+        {scope && (
+          <div className="border-b border-sky-200 bg-sky-50 px-4 py-2 text-xs text-sky-900">
+            {ownRow ? (
+              <>
+                You&apos;re designing <strong>{scopeName}</strong>&apos;s own receipt. Only sales at {scopeName} print it
+                {enabled ? "." : ` once you press "Use this design"; until then it prints ${mainEnabled ? "the main design" : "the standard receipt"}.`}
+              </>
+            ) : (
+              <>
+                <strong>{scopeName}</strong> prints {mainEnabled ? "the main design" : "the standard receipt"}, like the other branches. Shown here is the main design: change anything
+                to start a design just for {scopeName}. Nothing changes at the counter until you press &quot;Use this design&quot;.
+              </>
+            )}
+          </div>
+        )}
         {(message || errors.length > 0 || warnings.length > 0) && (
           <div className="space-y-1 border-b border-zinc-200 bg-white px-4 py-2 text-xs">
             {message && <p className={message.kind === "ok" ? "text-emerald-700" : "text-red-600"}>{message.text}</p>}
@@ -1217,7 +1340,9 @@ export default function ReceiptDesigner() {
           }}
         >
           <p>
-            From now on, every new receipt and reprint{branches.length > 1 ? " at all your branches" : ""} prints with this design (
+            From now on, every new receipt and reprint
+            {scope ? ` at ${scopeName}` : branchDesigns.some((b) => b.enabled) ? " at your branches without their own design" : branches.length > 1 ? " at all your branches" : ""} prints with
+            this design (
             {template.paperWidth}mm, {template.printMode === "TEXT" ? "text mode" : "image mode"}). The amounts the POS charges don&apos;t change.
           </p>
           {checklist.some((c) => !c.done) ? (

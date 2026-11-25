@@ -7,6 +7,7 @@ import { upgradeMessage } from "@/lib/plan-gating";
 import { getReceiptSettings } from "@/lib/receipt-settings";
 import { sanitizeTemplate, designWarnings } from "@/lib/receipt-designer/validate";
 import type { Template } from "@/lib/receipt-designer/types";
+import { branchOf, designStore, type DesignRow } from "@/lib/receipt-designer/design-store";
 
 // Settings › Receipt designer. Owner only, and only when the plan includes it.
 async function gate(request: NextRequest) {
@@ -20,17 +21,36 @@ async function gate(request: NextRequest) {
 const fromRow = (row: { version: number; paperWidth: number; printMode: string; theme: unknown; blocks: unknown }) =>
   sanitizeTemplate({ version: row.version, paperWidth: row.paperWidth, printMode: row.printMode, theme: row.theme, blocks: row.blocks }).template;
 
+const publishedOf = (row: DesignRow) => (row && Array.isArray(row.blocks) && row.blocks.length > 0 ? fromRow(row) : null);
+const draftOf = (row: DesignRow) =>
+  row?.draftBlocks != null
+    ? fromRow({
+        version: row.version,
+        paperWidth: row.draftPaperWidth ?? row.paperWidth,
+        printMode: row.draftPrintMode ?? row.printMode,
+        theme: row.draftTheme ?? row.theme,
+        blocks: row.draftBlocks,
+      })
+    : null;
+
 export async function GET(request: NextRequest) {
   const g = await gate(request);
   if (g.error) return g.error;
   if (!g.planHasIt) return NextResponse.json({ planHasIt: false });
+  const tenantId = g.session.tenantId;
+  // ?branch=<id>: that branch's own design; otherwise the workspace design.
+  const branch = await branchOf(tenantId, new URL(request.url).searchParams.get("branch"));
+  if (branch === "invalid") return NextResponse.json({ error: "That branch wasn't found." }, { status: 404 });
+  const storeId = branch?.id ?? null;
 
-  const [row, settings, branches, versions] = await Promise.all([
-    prisma.receiptTemplate.findUnique({ where: { tenantId: g.session.tenantId } }),
-    getReceiptSettings(g.session.tenantId),
-    prisma.store.findMany({ where: { tenantId: g.session.tenantId, isActive: true }, orderBy: [{ isMainBranch: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
+  const [row, mainRow, branchRows, settings, branches, versions] = await Promise.all([
+    designStore(tenantId, storeId).find(),
+    storeId ? prisma.receiptTemplate.findUnique({ where: { tenantId } }) : null,
+    prisma.receiptBranchTemplate.findMany({ where: { tenantId }, select: { storeId: true, enabled: true, draftBlocks: true, blocks: true } }),
+    getReceiptSettings(tenantId),
+    prisma.store.findMany({ where: { tenantId, isActive: true }, orderBy: [{ isMainBranch: "desc" }, { name: "asc" }], select: { id: true, name: true, isMainBranch: true } }),
     prisma.receiptTemplateVersion.findMany({
-      where: { tenantId: g.session.tenantId },
+      where: { tenantId, storeId },
       orderBy: { publishedAt: "desc" },
       take: VERSIONS_KEPT,
       select: { id: true, publishedAt: true, publishedByUserId: true, paperWidth: true, printMode: true, blocks: true },
@@ -44,23 +64,25 @@ export async function GET(request: NextRequest) {
       })
     ).map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()])
   );
-  const published = row && Array.isArray(row.blocks) && row.blocks.length > 0 ? fromRow(row) : null;
-  const draft =
-    row?.draftBlocks != null
-      ? fromRow({
-          version: row.version,
-          paperWidth: row.draftPaperWidth ?? row.paperWidth,
-          printMode: row.draftPrintMode ?? row.printMode,
-          theme: row.draftTheme ?? row.theme,
-          blocks: row.draftBlocks,
-        })
-      : null;
+  const published = publishedOf(row);
+  const draft = draftOf(row);
 
   return NextResponse.json({
     planHasIt: true,
+    branch, // null = the workspace design
     enabled: Boolean(row?.enabled),
     published,
     draft,
+    // For a branch without its own design yet: the workspace design, to start from.
+    mainDesign: storeId && !row ? draftOf(mainRow) ?? publishedOf(mainRow) : null,
+    mainEnabled: storeId ? Boolean(mainRow?.enabled) : Boolean(row?.enabled),
+    // Which branches have a design of their own.
+    branchDesigns: branchRows.map((b) => ({
+      storeId: b.storeId,
+      enabled: b.enabled,
+      hasDraft: b.draftBlocks != null,
+      hasDesign: Array.isArray(b.blocks) && b.blocks.length > 0,
+    })),
     settings,
     branches,
     versions: versions.map((v) => ({
@@ -83,7 +105,8 @@ type Body =
   | { action: "publish"; template: unknown }
   | { action: "revert" }
   | { action: "discardDraft" }
-  | { action: "setLogo"; logoUrl: string | null };
+  | { action: "setLogo"; logoUrl: string | null }
+  | { action: "removeBranchDesign" };
 
 export async function PUT(request: NextRequest) {
   const g = await gate(request);
@@ -92,8 +115,13 @@ export async function PUT(request: NextRequest) {
   const tenantId = g.session.tenantId;
   const userId = g.session.userId;
 
-  const body = (await request.json().catch(() => null)) as Body | null;
+  const body = (await request.json().catch(() => null)) as (Body & { branch?: unknown }) | null;
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  // `branch`: work on that branch's own design instead of the workspace design.
+  const branch = await branchOf(tenantId, body.branch);
+  if (branch === "invalid") return NextResponse.json({ error: "That branch wasn't found." }, { status: 404 });
+  const storeId = branch?.id ?? null;
+  const store = designStore(tenantId, storeId);
 
   const json = (t: Template) => ({
     theme: t.theme as unknown as Prisma.InputJsonValue,
@@ -105,11 +133,7 @@ export async function PUT(request: NextRequest) {
       // Drafts are kept even with errors, so work isn't lost; publishing checks them.
       const { template, errors } = sanitizeTemplate(body.template);
       const { theme, blocks } = json(template);
-      await prisma.receiptTemplate.upsert({
-        where: { tenantId },
-        update: { draftBlocks: blocks, draftTheme: theme, draftPaperWidth: template.paperWidth, draftPrintMode: template.printMode, updatedByUserId: userId },
-        create: { tenantId, draftBlocks: blocks, draftTheme: theme, draftPaperWidth: template.paperWidth, draftPrintMode: template.printMode, updatedByUserId: userId },
-      });
+      await store.upsert({ draftBlocks: blocks, draftTheme: theme, draftPaperWidth: template.paperWidth, draftPrintMode: template.printMode, updatedByUserId: userId });
       return NextResponse.json({ ok: true, errors, warnings: designWarnings(template) });
     }
 
@@ -133,13 +157,13 @@ export async function PUT(request: NextRequest) {
         updatedByUserId: userId,
       };
       await prisma.$transaction(async (tx) => {
-        await tx.receiptTemplate.upsert({ where: { tenantId }, update: data, create: { tenantId, ...data } });
-        // Keep this design in Version history, and only the newest few.
+        await store.upsert(data, tx);
+        // Keep this design in Version history, and only the newest few (per design).
         await tx.receiptTemplateVersion.create({
-          data: { tenantId, paperWidth: template.paperWidth, printMode: template.printMode, theme, blocks, version: template.version, publishedByUserId: userId },
+          data: { tenantId, storeId, paperWidth: template.paperWidth, printMode: template.printMode, theme, blocks, version: template.version, publishedByUserId: userId },
         });
         const old = await tx.receiptTemplateVersion.findMany({
-          where: { tenantId },
+          where: { tenantId, storeId },
           orderBy: { publishedAt: "desc" },
           skip: VERSIONS_KEPT,
           select: { id: true },
@@ -151,14 +175,18 @@ export async function PUT(request: NextRequest) {
 
     case "revert":
       // Back to the standard receipt; the design is kept for later.
-      await prisma.receiptTemplate.updateMany({ where: { tenantId }, data: { enabled: false, updatedByUserId: userId } });
+      // For a branch: it prints the workspace design (or the standard receipt) again.
+      await store.update({ enabled: false, updatedByUserId: userId });
       return NextResponse.json({ ok: true, enabled: false });
 
     case "discardDraft":
-      await prisma.receiptTemplate.updateMany({
-        where: { tenantId },
-        data: { draftBlocks: Prisma.DbNull, draftTheme: Prisma.DbNull, draftPaperWidth: null, draftPrintMode: null },
-      });
+      await store.update({ draftBlocks: Prisma.DbNull, draftTheme: Prisma.DbNull, draftPaperWidth: null, draftPrintMode: null });
+      return NextResponse.json({ ok: true });
+
+    case "removeBranchDesign":
+      // The branch goes back to the workspace design. Its past versions stay in history.
+      if (!storeId) return NextResponse.json({ error: "Pick a branch first." }, { status: 400 });
+      await prisma.receiptBranchTemplate.deleteMany({ where: { tenantId, storeId } });
       return NextResponse.json({ ok: true });
 
     case "setLogo": {

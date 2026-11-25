@@ -4,6 +4,12 @@ import type { ReceiptBatch, ReceiptData } from "@/types/receipt";
 import { returnParts } from "@/lib/return-parts";
 
 const toNumber = (value: unknown) => Number(value ?? 0);
+// Receipt settings describe the main branch; another branch prints its own name and address.
+export const branchStore = <T extends { addressLine1: string; addressLine2?: string | null }>(settings: T, store: { name: string; address: string | null; city: string | null }): T => {
+  const branchAddress = [store.address, store.city].filter(Boolean).join(", ");
+  return { ...settings, addressLine1: branchAddress || settings.addressLine1, addressLine2: store.name };
+};
+
 export const buildReceiptDataForSale = async (saleId: string, tenantId: string): Promise<ReceiptData | null> => {
   const sale = await prisma.sale.findFirst({
     where: { id: saleId, tenantId },
@@ -83,10 +89,7 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
   const settings = await getReceiptSettings(tenantId);
   // Receipt settings are per workspace and describe the main branch. A sale at
   // any other branch prints that branch's own name and address instead.
-  const branchAddress = [sale.store.address, sale.store.city].filter(Boolean).join(", ");
-  const store = sale.store.isMainBranch
-    ? settings
-    : { ...settings, addressLine1: branchAddress || settings.addressLine1, addressLine2: sale.store.name };
+  const store = sale.store.isMainBranch ? settings : branchStore(settings, sale.store);
 
   // VAT-exclusive base BEFORE discount, computed exactly from the persisted
   // breakdown rather than reverse-engineered from the post-discount figure.

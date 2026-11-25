@@ -127,6 +127,7 @@ model Tenant {
   loyaltyTransactions     LoyaltyTransaction[]
   receiptTemplate         ReceiptTemplate?
   receiptTemplateVersions ReceiptTemplateVersion[]
+  receiptBranchTemplates  ReceiptBranchTemplate[]
   scheduledReports        ScheduledReportDelivery[]
   apiKeys                 ApiKey[]
   importBatches           ImportBatch[]
@@ -342,6 +343,7 @@ model Store {
   heldCarts        HeldCart[]
   supplierReturns  SupplierReturn[]
   prescriptions    Prescription[]
+  receiptTemplate  ReceiptBranchTemplate?
 
   @@unique([tenantId, code])
   @@map("stores")
@@ -1186,11 +1188,39 @@ model ReceiptTemplate {
   @@map("receipt_templates")
 }
 
+// A branch's own receipt design (Settings › Receipt designer › Design for:
+// <branch>). Same fields as ReceiptTemplate. While enabled, sales at that
+// branch print it; branches without one print the workspace design.
+model ReceiptBranchTemplate {
+  id              String   @id @default(cuid())
+  tenantId        String
+  storeId         String   @unique
+  enabled         Boolean  @default(false)
+  paperWidth      Int      @default(58)
+  printMode       String   @default("TEXT")
+  theme           Json     @default("{}")
+  blocks          Json     @default("[]")
+  draftBlocks     Json?
+  draftTheme      Json?
+  draftPaperWidth Int?
+  draftPrintMode  String?
+  version         Int      @default(1)
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, storeId])
+  @@map("receipt_branch_templates")
+}
+
 // Every design the owner put into use ("Use this design"), newest first; the
 // designer lists the last 30 and can restore one as the draft.
 model ReceiptTemplateVersion {
   id                String   @id @default(cuid())
   tenantId          String
+  storeId           String? // a branch's own design; null = the workspace design
   paperWidth        Int
   printMode         String
   theme             Json
@@ -1201,6 +1231,7 @@ model ReceiptTemplateVersion {
   tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, publishedAt])
+  @@index([tenantId, storeId, publishedAt])
   @@map("receipt_template_versions")
 }
 

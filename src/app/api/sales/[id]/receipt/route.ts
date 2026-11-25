@@ -15,13 +15,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   // one the POS prints right after checkout — always matches.)
   const visible = await prisma.sale.findFirst({
     where: { id, tenantId: session.tenantId, ...(await saleVisibilityWhere(session)) },
-    select: { id: true },
+    select: { id: true, storeId: true },
   });
   if (!visible) return NextResponse.json({ error: "Sale not found." }, { status: 404 });
 
+  // The sale's branch decides the design: its own, if it has one in use.
   const [receiptData, designer] = await Promise.all([
     buildReceiptDataForSale(id, session.tenantId),
-    getActiveReceiptTemplate(session.tenantId),
+    getActiveReceiptTemplate(session.tenantId, visible.storeId),
   ]);
   if (!receiptData) return NextResponse.json({ error: "Sale not found." }, { status: 404 });
 

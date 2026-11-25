@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { getSubscriptionWithPlan } from "@/lib/request-cache";
 import { getReceiptSettings } from "@/lib/receipt-settings";
-import { buildReceiptDataForSale } from "@/lib/receipt-data";
+import { branchStore, buildReceiptDataForSale } from "@/lib/receipt-data";
 import { sampleReceipt, type SampleKind } from "@/lib/receipt-designer/samples";
 import { getPricingRules } from "@/lib/pricing-settings";
 
@@ -15,11 +15,14 @@ export async function GET(request: NextRequest) {
   const subscription = await getSubscriptionWithPlan(session.tenantId);
   if (!subscription?.plan.featureReceiptDesigner) return NextResponse.json({ error: "Not included in your plan." }, { status: 403 });
 
-  const kind = new URL(request.url).searchParams.get("kind") ?? "regular";
+  const params = new URL(request.url).searchParams;
+  const kind = params.get("kind") ?? "regular";
+  // ?branch=<id>: as a sale at that branch (its name and address), for its own design.
+  const branchId = params.get("branch");
 
   if (kind === "recent") {
     const latest = await prisma.sale.findFirst({
-      where: { tenantId: session.tenantId, status: "COMPLETED", originalSaleId: null },
+      where: { tenantId: session.tenantId, status: "COMPLETED", originalSaleId: null, ...(branchId ? { storeId: branchId } : {}) },
       orderBy: { saleDate: "desc" },
       select: { id: true },
     });
@@ -33,19 +36,27 @@ export async function GET(request: NextRequest) {
     discount = await prisma.discount.findFirst({ where: { id: kind.slice("discount:".length), tenantId: session.tenantId } });
     if (!discount) return NextResponse.json({ error: "That discount wasn't found." }, { status: 404 });
   } else if (!["regular", "scpwd", "points", "ewallet", "rx", "return", "voided"].includes(kind)) return NextResponse.json({ error: "Unknown sample." }, { status: 400 });
-  const [store, user, branch, pricing] = await Promise.all([
+  const [settings, user, branch, pricing] = await Promise.all([
     getReceiptSettings(session.tenantId),
     prisma.user.findUnique({ where: { id: session.userId }, select: { firstName: true, lastName: true } }),
-    session.storeId ? prisma.store.findUnique({ where: { id: session.storeId }, select: { name: true } }) : null,
+    branchId || session.storeId
+      ? prisma.store.findFirst({
+          where: { id: branchId ?? session.storeId!, tenantId: session.tenantId },
+          select: { id: true, name: true, address: true, city: true, isMainBranch: true },
+        })
+      : null,
     getPricingRules(session.tenantId),
   ]);
+  if (branchId && !branch) return NextResponse.json({ error: "That branch wasn't found." }, { status: 404 });
+  // Like a real sale's receipt: another branch prints its own name and address.
+  const store = branch && !branch.isMainBranch ? branchStore(settings, branch) : settings;
   return NextResponse.json(
     sampleReceipt(
       discount ? "discount" : (kind as SampleKind),
       store,
       user ?? { firstName: "Cashier", lastName: "" },
       branch?.name ?? null,
-      session.storeId ?? null,
+      branch?.id ?? session.storeId ?? null,
       pricing,
       discount
         ? {
