@@ -46,7 +46,7 @@ export default function QuickBar({
 
   return (
     <div
-      className={`rd-quickbar absolute left-1/2 z-30 -translate-x-1/2 cursor-default ${placement === "above" ? "bottom-full mb-2" : "top-full mt-2"}`}
+      className={`rd-quickbar absolute left-1/2 z-30 w-max max-w-[92vw] -translate-x-1/2 cursor-default ${placement === "above" ? "bottom-full mb-2" : "top-full mt-2"}`}
       // Clicks and keys here are for the toolbar, not for dragging or selecting the part.
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
@@ -54,7 +54,8 @@ export default function QuickBar({
       onDoubleClick={(e) => e.stopPropagation()}
     >
       <div className="flex flex-col items-center gap-1">
-        <div className="flex items-center gap-0.5 whitespace-nowrap rounded-xl border border-zinc-200 bg-white p-1 font-sans shadow-lg">
+        {/* Wraps onto a second row when the receipt is narrower than the toolbar (phones). */}
+        <div className="flex w-max max-w-[min(100%,92vw)] flex-wrap items-center justify-center gap-0.5 rounded-xl border border-zinc-200 bg-white p-1 font-sans shadow-lg">
           <span className="max-w-[9rem] truncate px-1.5 text-[11px] font-semibold text-emerald-700">{partName(block, lineId)}</span>
           {sep}
           {canEdit && (

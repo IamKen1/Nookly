@@ -97,7 +97,7 @@ function TileCard({ tile, preview, onAdd }: { tile: Tile; preview: string[]; onA
       onClick={onAdd}
       {...attributes}
       {...listeners}
-      className={`group block w-full touch-none rounded-xl border-2 p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md active:scale-[.98] ${c.tile} ${isDragging ? "opacity-40" : ""}`}
+      className={`group block w-full touch-manipulation rounded-xl border-2 p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md active:scale-[.98] ${c.tile} ${isDragging ? "opacity-40" : ""}`}
     >
       <div className="flex items-center gap-1.5">
         <span className="text-sm leading-none">{cat.emoji}</span>

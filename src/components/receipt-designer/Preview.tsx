@@ -56,7 +56,7 @@ function Piece({ seg, index, selected, children }: { seg: Segment; index: number
       {...attributes}
       {...listeners}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={`rd-piece relative cursor-grab touch-none select-none rounded-sm outline-offset-1 ${isDragging ? "z-10 bg-white opacity-90 shadow-lg outline outline-2 outline-emerald-400" : ""} ${
+      className={`rd-piece relative cursor-grab touch-manipulation select-none rounded-sm outline-offset-1 ${isDragging ? "z-10 bg-white opacity-90 shadow-lg outline outline-2 outline-emerald-400" : ""} ${
         selected ? "rd-selected" : ""
       }`}
     >
