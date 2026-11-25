@@ -109,6 +109,7 @@ const DETAIL_NAMES: Record<SaleDetailField["key"], string> = {
 interface Ctx {
   sample?: ReceiptData | null; // the preview sale, for live formula results
   branches: { id: string; name: string }[];
+  focusLineId?: string | null;
 }
 
 export default function Inspector({
@@ -118,6 +119,7 @@ export default function Inspector({
   onBreakApart,
   sample = null,
   branches = [],
+  focusLineId = null,
 }: {
   block: Block;
   printMode: PrintMode;
@@ -125,8 +127,9 @@ export default function Inspector({
   onBreakApart?: () => void;
   sample?: ReceiptData | null;
   branches?: { id: string; name: string }[];
+  focusLineId?: string | null; // a totals line clicked on the preview
 }) {
-  const ctx: Ctx = { sample, branches };
+  const ctx: Ctx = { sample, branches, focusLineId };
   const set = (patch: Partial<Block>) => onChange({ ...block, ...patch } as Block);
 
   return (
@@ -531,8 +534,14 @@ function lineTitle(l: TotalsLine) {
 }
 
 function TotalsEditor({ lines, printMode, onChange, ctx }: { lines: TotalsLine[]; printMode: PrintMode; onChange: (l: TotalsLine[]) => void; ctx: Ctx }) {
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(ctx.focusLineId ?? null);
   const [adding, setAdding] = useState("");
+  // A line clicked on the preview opens here.
+  const [focused, setFocused] = useState(ctx.focusLineId ?? null);
+  if ((ctx.focusLineId ?? null) !== focused) {
+    setFocused(ctx.focusLineId ?? null);
+    if (ctx.focusLineId) setOpen(ctx.focusLineId);
+  }
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   const onDragEnd = (e: DragEndEvent) => {

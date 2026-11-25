@@ -392,22 +392,64 @@ function designTexts(t: Template): string[] {
   return out.filter(Boolean);
 }
 
-// Advice shown in the designer. Owners decide; nothing here blocks saving.
-export function designWarnings(t: Template): string[] {
-  const warnings: string[] = [];
+// What every receipt should have, as a checklist the designer shows with
+// progress. Owners decide; nothing here blocks saving. `fix`: the tile that adds it.
+export interface CheckItem {
+  key: string;
+  label: string;
+  done: boolean;
+  locked?: boolean; // always done, can't be removed
+  warning: string; // shown when it's not done
+  fix?: string;
+}
+
+export function designChecklist(t: Template): CheckItem[] {
   const visible = t.blocks.filter((b) => b.visible);
   const lines = visible.flatMap((b) => (b.type === "totals" ? b.lines : []));
-  // A value counts whether it's a line in a group or its own element.
+  // A value counts as a line in a group, its own element, a column of a row, or a {token} in text.
+  const texts = visible.flatMap((b) => (b.type === "text" || b.type === "title" ? [b.text] : []));
   const hasLine = (key: string) =>
-    lines.some((l) => l.kind === "value" && l.key === key) || visible.some((b) => b.type === "field" && b.key === key);
+    lines.some((l) => l.kind === "value" && l.key === key) ||
+    visible.some((b) => (b.type === "field" && b.key === key) || (b.type === "row" && b.cells.some((c) => c.kind === "field" && c.key === key))) ||
+    texts.some((s) => s.includes(`{${key}}`));
   const hasComputation = lines.some((l) => l.kind === "computation");
-  if (!hasLine("totalDue")) warnings.push("There's no Total amount due line. Customers won't see what they paid.");
-  if (!hasComputation && !hasLine("discount")) warnings.push("SC/PWD sales won't show the discount. The law expects it on the receipt.");
-  if (!hasComputation && !hasLine("vatExemptSales") && !hasLine("vatRemoved"))
-    warnings.push("SC/PWD sales won't show the VAT exemption. The law expects it on the receipt.");
-  if (!visible.some((b) => b.type === "scPwd") && !hasLine("discountHolder") && !hasLine("discountIdNumber")) warnings.push("There's no SC/PWD info block, so SC/PWD receipts won't have the name, ID and signature lines.");
-  if (!visible.some((b) => b.type === "saleDetails" && b.fields.some((f) => f.key === "receiptNo" && f.visible)) && !hasLine("receiptNo"))
-    warnings.push("The AR number isn't shown. It's needed to look up the sale for returns and reprints.");
+  return [
+    { key: "total", label: "Total amount due", done: hasLine("totalDue"), warning: "There's no Total amount due line. Customers won't see what they paid.", fix: "totalDue" },
+    { key: "discount", label: "SC/PWD discount", done: hasComputation || hasLine("discount"), warning: "SC/PWD sales won't show the discount. The law expects it on the receipt.", fix: "discount" },
+    {
+      key: "vatExempt",
+      label: "VAT exemption (SC/PWD)",
+      done: hasComputation || hasLine("vatExemptSales") || hasLine("vatRemoved"),
+      warning: "SC/PWD sales won't show the VAT exemption. The law expects it on the receipt.",
+      fix: "vatRemoved",
+    },
+    {
+      key: "scInfo",
+      label: "SC/PWD name, ID & signature",
+      done: visible.some((b) => b.type === "scPwd") || hasLine("discountHolder") || hasLine("discountIdNumber"),
+      warning: "There's no SC/PWD info block, so SC/PWD receipts won't have the name, ID and signature lines.",
+      fix: "scPwd",
+    },
+    {
+      key: "receiptNo",
+      label: "AR number",
+      done: visible.some((b) => b.type === "saleDetails" && b.fields.some((f) => f.key === "receiptNo" && f.visible)) || hasLine("receiptNo"),
+      warning: "The AR number isn't shown. It's needed to look up the sale for returns and reprints.",
+      fix: "receiptNo",
+    },
+    { key: "notice", label: "Not-BIR-accredited notice", done: true, locked: true, warning: "" },
+  ];
+}
+
+// Advice shown in the designer. Owners decide; nothing here blocks saving.
+export function designWarnings(t: Template): string[] {
+  return [...designChecklist(t).filter((c) => !c.done).map((c) => c.warning), ...designNotes(t)];
+}
+
+// Advice that isn't a checklist item.
+export function designNotes(t: Template): string[] {
+  const warnings: string[] = [];
+  const visible = t.blocks.filter((b) => b.visible);
   if (t.printMode === "IMAGE") warnings.push("Image mode prints slower, especially over Bluetooth (several seconds per receipt).");
   // A formula dressed up as the total could show the customer a different amount than they paid.
   for (const f of designFormulas({ ...t, blocks: visible })) {

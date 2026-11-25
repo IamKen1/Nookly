@@ -10,7 +10,8 @@ import { DEFAULT_FORMAT, moneyFormatter } from "./format";
 
 // A receipt as styled rows, before it's fitted to a paper width. Both the
 // thermal output (textmode.ts) and the HTML output are made from these.
-export type Row = RowBody & { blockId?: string }; // blockId: which block it came from (designer preview)
+// blockId: which block it came from; lineId: which totals line (designer preview).
+export type Row = RowBody & { blockId?: string; lineId?: string };
 
 type RowBody =
   | { kind: "text"; text: string; align: Align; style: ResolvedStyle }
@@ -261,7 +262,7 @@ function blockRows(
     }
 
     case "totals":
-      return block.lines.filter((line) => conditionHolds(line.showWhen, data)).flatMap((line) => totalsLineRows(line, data, base, at, fx));
+      return block.lines.filter((line) => conditionHolds(line.showWhen, data)).flatMap((line) => totalsLineRows(line, data, base, at, fx).map((r) => ({ ...r, lineId: line.id })));
 
     case "scPwd": {
       if (!isSeniorOrPwd(data.discountType) || !(data.discountAmount && data.discountAmount > 0)) return [];

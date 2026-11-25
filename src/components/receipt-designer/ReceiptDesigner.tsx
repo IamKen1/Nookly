@@ -8,7 +8,6 @@ import {
   KeyboardSensor,
   PointerSensor,
   closestCenter,
-  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
@@ -26,20 +25,22 @@ import {
   GripVertical,
   ImagePlus,
   Loader2,
+  MoreHorizontal,
   Printer,
   Redo2,
   RotateCcw,
+  Sparkles,
   Trash2,
   Undo2,
   Upload,
 } from "lucide-react";
 import type { ReceiptData, ReceiptStoreSettings } from "@/types/receipt";
-import type { Block, BlockType, Template } from "@/lib/receipt-designer/types";
+import type { Block, Template } from "@/lib/receipt-designer/types";
 import { BLOCK_LABELS, breakApart, newBlock, newField } from "@/lib/receipt-designer/blocks";
 import { FIELDS_BY_NAME, TOTALS_FIELDS } from "@/lib/receipt-designer/totals";
 import { PRESETS, buildPreset } from "@/lib/receipt-designer/presets";
 import { SAMPLE_KINDS } from "@/lib/receipt-designer/samples";
-import { designWarnings, sanitizeTemplate } from "@/lib/receipt-designer/validate";
+import { designChecklist, designNotes, sanitizeTemplate } from "@/lib/receipt-designer/validate";
 import { printDesignedReceipt } from "@/lib/printer/print-receipt";
 import { ensurePrinter } from "@/lib/printer/store";
 import { DEFAULT_CALIBRATION, readCalibration, writeCalibration, type Calibration } from "@/lib/printer/calibration";
@@ -48,6 +49,12 @@ import Inspector from "./Inspector";
 import Preview, { PREVIEW_PREFIX } from "./Preview";
 import StyleEditor from "./StyleEditor";
 import { ValueFormatEditor } from "./ValueFormatEditor";
+import QuickBar, { type BlockAction } from "./QuickBar";
+import Tiles from "./Tiles";
+import Checklist from "./Checklist";
+import Wizard, { Confetti } from "./Wizard";
+import { TILES_BY_ID, makeTile, type Tile } from "@/lib/receipt-designer/tiles";
+import type { Part } from "@/lib/receipt-designer/quick";
 import { DEFAULT_FORMAT } from "@/lib/receipt-designer/format";
 
 type SaveState = "saved" | "saving" | "unsaved" | "error";
@@ -66,37 +73,17 @@ interface VersionRow {
 
 const uid = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `b${Date.now()}${Math.random().toString(36).slice(2)}`);
 
-// What can be added to the receipt. Elements are single things (any value from
-// the sale, text, logo, QR…); groups are shortcuts that can be broken apart.
+// Advanced pieces not among the tiles: any single value, side-by-side rows.
 interface PaletteEntry {
   id: string;
   label: string;
   make: () => Block;
 }
-const block = (type: BlockType, label = BLOCK_LABELS[type]): PaletteEntry => ({ id: `block:${type}`, label, make: () => newBlock(type, uid()) });
-const ELEMENTS: PaletteEntry[] = [
+const ADVANCED: PaletteEntry[] = [
   ...FIELDS_BY_NAME.map((k) => ({ id: `field:${k}`, label: TOTALS_FIELDS[k].name, make: () => newField(k, {}, uid()) })),
-  block("text"),
-  block("logo"),
-  block("qr"),
-  block("barcode", "Barcode (AR number)"),
-  block("rule"),
-  block("row", "Row: values side by side"),
-  block("formula", "Formula: your own computation"),
-  block("storeInfo"),
-  block("title"),
-  block("items", "Items list"),
-  block("scPwd"),
-  block("remarks"),
-  block("footer"),
-  {
-    id: "computation",
-    label: "Standard computation (step by step)",
-    make: (): Block => ({ ...(newBlock("totals", uid()) as Extract<Block, { type: "totals" }>), lines: [{ id: uid(), kind: "computation" as const, style: {} }] }),
-  },
+  { id: "block:row", label: "Row: values side by side", make: () => newBlock("row", uid()) },
+  { id: "block:totals", label: "Totals group (pick the lines)", make: () => newBlock("totals", uid()) },
 ].sort((a, b) => a.label.localeCompare(b.label));
-const GROUPS: PaletteEntry[] = [block("totals", "Totals"), block("saleDetails"), block("payment"), block("loyalty")];
-const ENTRIES = new Map([...ELEMENTS, ...GROUPS].map((e) => [e.id, e]));
 
 // Gives a block (and its totals lines) fresh ids, for duplicates and presets.
 const withFreshIds = (b: Block): Block =>
@@ -130,7 +117,11 @@ export default function ReceiptDesigner() {
   const [settings, setSettings] = useState<ReceiptStoreSettings | null>(null);
   const [template, setTemplate] = useState<Template | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The selected part: a block, or one line of a Totals block.
+  const [selectedPart, setSelectedPart] = useState<Part | null>(null);
+  const selectedId = selectedPart?.blockId ?? null;
+  const setSelectedId = (id: string | null) => setSelectedPart(id ? { blockId: id, lineId: null } : null);
+  const inspectorRef = useRef<HTMLElement>(null);
   const [sampleKind, setSampleKind] = useState("regular");
   const [sample, setSample] = useState<ReceiptData | null>(null);
   const [sampleError, setSampleError] = useState<string | null>(null);
@@ -138,6 +129,10 @@ export default function ReceiptDesigner() {
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [dragType, setDragType] = useState<string | null>(null); // label of what's being dragged in
   const [paletteSearch, setPaletteSearch] = useState("");
+  const [leftTab, setLeftTab] = useState<"add" | "layers">("add");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  const moreRef = useRef<HTMLDetailsElement>(null);
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
   const [versions, setVersions] = useState<VersionRow[]>([]);
   const [calibration, setCalibration] = useState<Calibration>(DEFAULT_CALIBRATION);
@@ -175,6 +170,8 @@ export default function ReceiptDesigner() {
         setCalibration(readCalibration());
         setTemplate(data.draft ?? data.published ?? buildPreset("classic", data.settings));
         setSaveState(data.draft || !data.published ? "unsaved" : "saved");
+        // First visit: start with the guided setup.
+        if (!data.draft && !data.published) setWizardOpen(true);
         void loadSampleRef.current("regular");
       } catch (e) {
         setLoadError((e as Error).message);
@@ -225,9 +222,9 @@ export default function ReceiptDesigner() {
     return () => clearTimeout(timer);
   }, [template]);
 
-  const { errors, warnings } = useMemo(() => {
-    if (!template) return { errors: [], warnings: [] };
-    return { errors: sanitizeTemplate(template).errors, warnings: designWarnings(template) };
+  const { errors, warnings, checklist } = useMemo(() => {
+    if (!template) return { errors: [], warnings: [], checklist: [] };
+    return { errors: sanitizeTemplate(template).errors, warnings: designNotes(template), checklist: designChecklist(template) };
   }, [template]);
 
   const change = (t: Template, { coalesce = true }: { coalesce?: boolean } = {}) => {
@@ -291,15 +288,67 @@ export default function ReceiptDesigner() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const updateBlock = (b: Block) => template && change({ ...template, blocks: template.blocks.map((x) => (x.id === b.id ? b : x)) });
-  const insertBlock = (make: () => Block, index?: number) => {
+
+  // The quick toolbar's actions, on a block or on one totals line.
+  const partAction = (action: BlockAction) => {
+    if (!template || !selectedPart) return;
+    const i = template.blocks.findIndex((x) => x.id === selectedPart.blockId);
+    const b = template.blocks[i];
+    if (!b) return;
+    if (action === "more") {
+      inspectorRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      inspectorRef.current?.animate([{ background: "#ecfdf5" }, { background: "#ffffff" }], { duration: 900 });
+      return;
+    }
+    const lineId = selectedPart.lineId;
+    if (lineId && b.type === "totals") {
+      const li = b.lines.findIndex((l) => l.id === lineId);
+      if (li < 0) return;
+      let lines = [...b.lines];
+      if (action === "up" && li > 0) lines = arrayMove(lines, li, li - 1);
+      else if (action === "down" && li < lines.length - 1) lines = arrayMove(lines, li, li + 1);
+      else if (action === "duplicate") {
+        const copy = { ...lines[li], id: uid() };
+        lines.splice(li + 1, 0, copy);
+        setSelectedPart({ blockId: b.id, lineId: copy.id });
+      } else if (action === "delete") {
+        lines.splice(li, 1);
+        setSelectedPart({ blockId: b.id, lineId: null });
+      }
+      // A group whose last line goes is removed too.
+      if (lines.length === 0) {
+        change({ ...template, blocks: template.blocks.filter((x) => x.id !== b.id) });
+        return;
+      }
+      updateBlock({ ...b, lines });
+      return;
+    }
+    const blocks = [...template.blocks];
+    if (action === "up" && i > 0) change({ ...template, blocks: arrayMove(blocks, i, i - 1) });
+    else if (action === "down" && i < blocks.length - 1) change({ ...template, blocks: arrayMove(blocks, i, i + 1) });
+    else if (action === "duplicate") {
+      const copy = withFreshIds(b);
+      blocks.splice(i + 1, 0, copy);
+      change({ ...template, blocks });
+      setSelectedId(copy.id);
+    } else if (action === "delete") {
+      blocks.splice(i, 1);
+      change({ ...template, blocks });
+      setSelectedId(null);
+    }
+  };
+  // Adds parts below the selected one (or at `index`), and selects the first.
+  const insertBlock = (make: () => Block | Block[], index?: number) => {
     if (!template) return;
-    const b = make();
+    const added = [make()].flat();
+    if (added.length === 0) return;
     const at = index ?? (selectedId ? template.blocks.findIndex((x) => x.id === selectedId) + 1 : template.blocks.length);
     const blocks = [...template.blocks];
-    blocks.splice(at < 0 ? blocks.length : at, 0, b);
-    change({ ...template, blocks });
-    setSelectedId(b.id);
+    blocks.splice(at < 0 ? blocks.length : at, 0, ...added);
+    change({ ...template, blocks }, { coalesce: false });
+    setSelectedId(added[0].id);
   };
+  const addTile = (tile: Tile, index?: number) => insertBlock(() => makeTile(tile, uid), index);
 
   // ---------- actions ----------
   const act = async (name: string, body: object, after: (data: Record<string, unknown>) => void) => {
@@ -455,7 +504,7 @@ export default function ReceiptDesigner() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const onDragStart = (e: DragStartEvent) => {
     const id = String(e.active.id);
-    setDragType(id.startsWith("new:") ? ENTRIES.get(id.slice(4))?.label ?? null : null);
+    setDragType(id.startsWith("new:") ? TILES_BY_ID.get(id.slice(4))?.label ?? null : null);
   };
   const onDragEnd = (e: DragEndEvent) => {
     setDragType(null);
@@ -465,10 +514,10 @@ export default function ReceiptDesigner() {
     const activeId = unprefix(String(e.active.id));
     const overId = unprefix(String(e.over.id));
     if (activeId.startsWith("new:")) {
-      const entry = ENTRIES.get(activeId.slice(4));
-      if (!entry) return;
+      const tile = TILES_BY_ID.get(activeId.slice(4));
+      if (!tile) return;
       const index = overId === "layers-end" ? template.blocks.length : template.blocks.findIndex((b) => b.id === overId);
-      insertBlock(entry.make, index < 0 ? template.blocks.length : index);
+      addTile(tile, index < 0 ? template.blocks.length : index);
       return;
     }
     if (activeId === overId || overId === "layers-end") return;
@@ -510,23 +559,35 @@ export default function ReceiptDesigner() {
           </Link>
           <div className="mr-auto flex items-center gap-2">
             <h1 className="text-base font-semibold text-zinc-900">Receipt designer</h1>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${enabled ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}>
-              {enabled ? "Receipts use your design" : "Receipts use the standard Nookly receipt"}
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${enabled ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"}`}
+              title={enabled ? "Receipts print with your design" : "Receipts print with the standard Nookly receipt"}
+            >
+              {enabled ? "Your design is on" : "Standard receipt"}
             </span>
-            <span className="text-[11px] text-zinc-400">
-              {saveState === "saving" ? "Saving draft…" : saveState === "error" ? "Draft not saved" : saveState === "unsaved" ? "Draft saved, not in use yet" : "In use"}
+            <span className="whitespace-nowrap text-[11px] text-zinc-400">
+              {saveState === "saving" ? "Saving…" : saveState === "error" ? "Not saved" : saveState === "unsaved" ? "Draft saved" : "In use"}
             </span>
+            <Checklist
+              items={checklist}
+              onFix={(id) => {
+                const tile = TILES_BY_ID.get(id);
+                if (!tile) return;
+                // Totals go just above the payment part; the rest at the end.
+                const pay = template.blocks.findIndex((b) => b.type === "payment" || (b.type === "field" && (b.key === "cash" || b.key === "change")));
+                addTile(tile, tile.category === "totals" && pay >= 0 ? pay : id === "receiptNo" ? 1 : undefined);
+              }}
+            />
           </div>
 
-          <select className="h-8 w-44 rounded-full border border-zinc-200 bg-white px-3 text-xs" value="" onChange={(e) => applyPreset(e.target.value)}>
-            <option value="">Start from a preset…</option>
-            {PRESETS.map((p) => (
-              <option key={p.key} value={p.key} title={p.description}>
-                {p.label}: {p.description}
-              </option>
-            ))}
-          </select>
-          <select className="h-8 w-44 rounded-full border border-zinc-200 bg-white px-3 text-xs" value={sampleKind}
+          <button
+            type="button"
+            onClick={() => setWizardOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-emerald-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:from-emerald-600 hover:to-teal-600"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Guided setup
+          </button>
+          <select className="h-8 w-48 rounded-full border border-zinc-200 bg-white px-3 text-xs" value={sampleKind}
             onChange={(e) => {
               setSampleKind(e.target.value);
               void loadSample(e.target.value);
@@ -550,16 +611,39 @@ export default function ReceiptDesigner() {
           <button type="button" className={btn} onClick={testPrint} disabled={!sample || busy !== null}>
             {busy === "print" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} Test print
           </button>
-          {published && saveState !== "saved" && (
-            <button type="button" className={btn} onClick={discard} disabled={busy !== null}>
-              <Trash2 className="h-3.5 w-3.5" /> Discard changes
-            </button>
-          )}
-          {enabled && (
-            <button type="button" className={btn} onClick={revert} disabled={busy !== null}>
-              <RotateCcw className="h-3.5 w-3.5" /> Use Nookly receipt
-            </button>
-          )}
+          <details className="relative" ref={moreRef}>
+            <summary className={`${btn} cursor-pointer list-none`}>
+              <MoreHorizontal className="h-3.5 w-3.5" /> More
+            </summary>
+            <div className="absolute right-0 top-full z-50 mt-2 w-72 space-y-1 rounded-xl border border-zinc-200 bg-white p-2 shadow-xl">
+              <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Start over from a ready-made look</p>
+              {PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => {
+                    moreRef.current?.removeAttribute("open");
+                    applyPreset(p.key);
+                  }}
+                  className="block w-full rounded-lg px-2 py-1.5 text-left hover:bg-zinc-50"
+                >
+                  <span className="block text-xs font-semibold text-zinc-800">{p.label}</span>
+                  <span className="block text-[11px] leading-snug text-zinc-500">{p.description}</span>
+                </button>
+              ))}
+              {(published && saveState !== "saved") || enabled ? <div className="my-1 border-t border-zinc-100" /> : null}
+              {published && saveState !== "saved" && (
+                <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50" onClick={discard} disabled={busy !== null}>
+                  <Trash2 className="h-3.5 w-3.5" /> Discard changes since last use
+                </button>
+              )}
+              {enabled && (
+                <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50" onClick={revert} disabled={busy !== null}>
+                  <RotateCcw className="h-3.5 w-3.5" /> Go back to the standard Nookly receipt
+                </button>
+              )}
+            </div>
+          </details>
           <button
             type="button"
             onClick={publish}
@@ -590,27 +674,50 @@ export default function ReceiptDesigner() {
         <div className="flex min-h-0 flex-1">
           {/* left: palette + layers */}
           <aside className="flex w-64 shrink-0 flex-col border-r border-zinc-200 bg-white">
-            <div className="border-b border-zinc-100 p-3">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Add anything (click or drag)</p>
-              <input
-                value={paletteSearch}
-                onChange={(e) => setPaletteSearch(e.target.value)}
-                placeholder="Search: subtotal, total items, date…"
-                className="mb-2 h-8 w-full rounded-md border border-zinc-200 px-2 text-xs outline-none focus:border-emerald-500"
-              />
-              <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
-                {ELEMENTS.filter((e) => e.label.toLowerCase().includes(paletteSearch.trim().toLowerCase())).map((e) => (
-                  <PaletteItem key={e.id} entry={e} onAdd={() => insertBlock(e.make)} />
-                ))}
-              </div>
-              <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Group shortcuts</p>
-              <div className="grid grid-cols-2 gap-1.5">
-                {GROUPS.map((e) => (
-                  <PaletteItem key={e.id} entry={e} onAdd={() => insertBlock(e.make)} />
-                ))}
-              </div>
+            <div className="flex border-b border-zinc-100 text-xs font-semibold">
+              {(
+                [
+                  ["add", "Add pieces"],
+                  ["layers", `On the receipt (${template.blocks.length})`],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setLeftTab(k)}
+                  className={`flex-1 border-b-2 px-2 py-2 ${leftTab === k ? "border-emerald-600 text-emerald-700" : "border-transparent text-zinc-500 hover:text-zinc-800"}`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {leftTab === "add" && (
+              <div className="flex min-h-0 flex-1 flex-col p-3">
+                <Tiles template={template} sample={sample} onAdd={(t) => addTile(t)} />
+                <details className="mt-2 rounded-lg border border-zinc-200 p-2">
+                  <summary className="cursor-pointer text-[11px] font-semibold text-zinc-600">Advanced: any single value</summary>
+                  <input
+                    value={paletteSearch}
+                    onChange={(e) => setPaletteSearch(e.target.value)}
+                    placeholder="Search values…"
+                    className="my-2 h-7 w-full rounded-md border border-zinc-200 px-2 text-xs outline-none focus:border-emerald-500"
+                  />
+                  <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                    {ADVANCED.filter((e) => e.label.toLowerCase().includes(paletteSearch.trim().toLowerCase())).map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => insertBlock(e.make)}
+                        className="block w-full truncate rounded-md border border-zinc-200 px-2 py-1 text-left text-[11px] text-zinc-700 hover:border-emerald-300 hover:bg-emerald-50"
+                      >
+                        {e.label}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            )}
+            <div className={`min-h-0 flex-1 overflow-y-auto p-3 ${leftTab === "layers" ? "" : "hidden"}`}>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">On the receipt (top to bottom)</p>
               <SortableContext items={template.blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
                 <ul className="space-y-1">
@@ -645,18 +752,39 @@ export default function ReceiptDesigner() {
           <main className="min-w-0 flex-1 overflow-auto px-6 py-8" onClick={(e) => e.target === e.currentTarget && setSelectedId(null)}>
             {sampleError && <p className="mb-3 text-center text-xs text-amber-700">{sampleError}</p>}
             {sample ? (
-              <Preview template={template} data={sample} selectedId={selectedId} onSelect={setSelectedId} override={calibration.cols[template.paperWidth]} />
+              <Preview
+                template={template}
+                data={sample}
+                selected={selectedPart}
+                onSelect={setSelectedPart}
+                onBlockChange={updateBlock}
+                override={calibration.cols[template.paperWidth]}
+                toolbar={(edit, placement) =>
+                  selected && (
+                    <QuickBar
+                      block={selected}
+                      lineId={selectedPart?.lineId ?? null}
+                      printMode={template.printMode}
+                      onChange={updateBlock}
+                      onAction={partAction}
+                      onEditText={edit}
+                      placement={placement}
+                    />
+                  )
+                }
+              />
             ) : (
               <p className="text-center text-sm text-zinc-400">Loading the sample sale…</p>
             )}
           </main>
 
           {/* right: inspector */}
-          <aside className="w-80 shrink-0 overflow-y-auto border-l border-zinc-200 bg-white p-4">
+          <aside ref={inspectorRef} className="w-80 shrink-0 overflow-y-auto border-l border-zinc-200 bg-white p-4">
             {selected ? (
               <Inspector
                 key={selected.id}
                 block={selected}
+                focusLineId={selectedPart?.lineId ?? null}
                 printMode={template.printMode}
                 onChange={updateBlock}
                 sample={sample}
@@ -829,25 +957,25 @@ export default function ReceiptDesigner() {
           </aside>
         </div>
       </div>
+      {wizardOpen && (
+        <Wizard
+          settings={settings}
+          sample={sample}
+          paperWidth={template.paperWidth}
+          onClose={() => setWizardOpen(false)}
+          onFinish={(t) => {
+            change({ ...t, blocks: t.blocks.map(withFreshIds) }, { coalesce: false });
+            setWizardOpen(false);
+            setSelectedId(null);
+            setMessage({ kind: "ok", text: "Your receipt is ready! Click any part of it to change it, or add pieces from the left. Undo is always there." });
+            setCelebrate(true);
+            setTimeout(() => setCelebrate(false), 3200);
+          }}
+        />
+      )}
+      {celebrate && <Confetti />}
       <DragOverlay>{dragType ? <div className="rounded-md border border-emerald-400 bg-white px-3 py-1.5 text-xs font-semibold shadow-lg">{dragType}</div> : null}</DragOverlay>
     </DndContext>
-  );
-}
-
-function PaletteItem({ entry, onAdd }: { entry: PaletteEntry; onAdd: () => void }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `new:${entry.id}` });
-  return (
-    <button
-      ref={setNodeRef}
-      type="button"
-      onClick={onAdd}
-      {...attributes}
-      {...listeners}
-      className={`block w-full touch-none truncate rounded-md border px-2 py-1.5 text-left text-xs font-medium ${isDragging ? "border-emerald-400 opacity-50" : "border-zinc-200 text-zinc-700 hover:border-emerald-300 hover:bg-emerald-50"}`}
-      title={entry.label}
-    >
-      {entry.label}
-    </button>
   );
 }
 

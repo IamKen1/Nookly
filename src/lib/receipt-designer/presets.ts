@@ -87,7 +87,7 @@ const SC_ONLY = { saleTypes: ["scpwd" as const] };
 const blank = (): TotalsLine => ({ id: newId("t"), kind: "rule", char: " " });
 
 // One line of the VAT summary: indented label, VAT letter, amount.
-const summaryRow = (label: string, letter: string, value: { key: TotalsKey } | { expr: string }) =>
+export const summaryRow = (label: string, letter: string, value: { key: TotalsKey } | { expr: string }) =>
   make("row", {
     gap: 0,
     cells: [
@@ -100,8 +100,18 @@ const summaryRow = (label: string, letter: string, value: { key: TotalsKey } | {
     ],
   });
 
-function register(): Block[] {
-  const items = make("items", {
+// The VAT summary at the bottom of a register receipt.
+export const vatSummary = (): Block[] => [
+  summaryRow("VATable", "(T)", { key: "vatableSales" }),
+  summaryRow("VAT-Exempt Sale", "(X)", { expr: "vatExempt + nonVatGross" }),
+  summaryRow("Zero-Rated Sale", "(Z)", { key: "zeroRatedSales" }),
+  summaryRow("VAT - 12%", "", { key: "vatAmount" }),
+  summaryRow("Amount Due", "", { key: "totalDue" }),
+];
+
+// Item lines: name … amount+letter, then barcode and qty @ price.
+export const registerItems = () =>
+  make("items", {
     header: false,
     showItemCount: false,
     nameStyle: {},
@@ -117,6 +127,9 @@ function register(): Block[] {
       ],
     },
   });
+
+function register(): Block[] {
+  const items = registerItems();
   const sc = <T extends BlockType>(type: T, changes: Partial<Extract<Block, { type: T }>>) => make(type, { showWhen: SC_ONLY, ...changes });
 
   return [
@@ -165,11 +178,7 @@ function register(): Block[] {
     sc("text", { text: "ADDRESS   : __________________", align: "left" }),
     sc("text", { text: "TIN NO    : __________________", align: "left" }),
     rule(),
-    summaryRow("VATable", "(T)", { key: "vatableSales" }),
-    summaryRow("VAT-Exempt Sale", "(X)", { expr: "vatExempt + nonVatGross" }),
-    summaryRow("Zero-Rated Sale", "(Z)", { key: "zeroRatedSales" }),
-    summaryRow("VAT - 12%", "", { key: "vatAmount" }),
-    summaryRow("Amount Due", "", { key: "totalDue" }),
+    ...vatSummary(),
     make("footer", { noticeFirst: false, ruleBefore: "-", ruleAfter: "-" }),
     make("field", { key: "receiptNo", label: "AR #", layout: "inline", align: "left", spaceBefore: 1 }),
     make("text", { text: "{date} {time} {cashier}", align: "left", style: { uppercase: true } }),
