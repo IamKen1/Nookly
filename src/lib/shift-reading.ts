@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { moneyReceived, paymentParts } from "@/lib/payment-methods";
+import { priceAdjustments, type PriceAdjustments } from "@/lib/price-adjustments";
 
 export interface ShiftReading {
   id: string;
@@ -16,6 +17,8 @@ export interface ShiftReading {
   discountAmount: number;
   taxAmount: number;
   netSales: number;
+  // Owner's price formula and cash rounding, already inside netSales.
+  priceAdjustments: PriceAdjustments;
   paymentMethods: { method: string; salesCount: number; totalAmount: number }[];
   returnsCount: number;
   returnsAmount: number;
@@ -117,6 +120,7 @@ export async function computeShiftReading(shiftId: string): Promise<ShiftReading
     discountAmount,
     taxAmount,
     netSales,
+    priceAdjustments: priceAdjustments(sales),
     paymentMethods: Array.from(byMethod.entries()).map(([method, v]) => ({ method, ...v })),
     returnsCount: returns.length,
     returnsAmount: returns.reduce((sum, s) => sum + Number(s.totalAmount), 0),

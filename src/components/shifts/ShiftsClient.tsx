@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { peso, formatDateTime } from "@/lib/format";
 import { isCompleteDate } from "@/lib/date-input";
 import ShiftReportsTrends from "./ShiftReportsTrends";
+import PriceAdjustmentRows from "./PriceAdjustmentRows";
+import type { PriceAdjustments } from "@/lib/price-adjustments";
 import { SortableTh, useTableSort } from "@/components/app/SortableHeader";
 
 interface DailyClosing {
@@ -13,6 +15,7 @@ interface DailyClosing {
   discountAmount: number;
   taxAmount: number;
   netSales: number;
+  priceAdjustments?: PriceAdjustments;
   paymentMethods: { method: string; salesCount: number; totalAmount: number }[];
   returnsCount: number;
   returnsAmount: number;
@@ -136,6 +139,7 @@ function DailyClosingView() {
               <h3 className="text-sm font-semibold text-zinc-900">Adjustments</h3>
               <div className="mt-3 space-y-2 text-sm text-zinc-600">
                 <div className="flex justify-between"><span>Discounts given</span><span>-{peso(data.discountAmount)}</span></div>
+                <PriceAdjustmentRows value={data.priceAdjustments} />
                 <div className="flex justify-between"><span>VAT collected</span><span>{peso(data.taxAmount)}</span></div>
                 <div className="flex justify-between"><span>Returns ({data.returnsCount})</span><span>{peso(data.returnsAmount)}</span></div>
                 <div className="flex justify-between"><span>Voided sales</span><span>{data.voidedCount}</span></div>

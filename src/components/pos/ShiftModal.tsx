@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { X, Wallet, Clock, Loader2, Plus } from "lucide-react";
 import { peso, formatDateTime } from "@/lib/format";
+import PriceAdjustmentRows from "@/components/shifts/PriceAdjustmentRows";
+import type { PriceAdjustments } from "@/lib/price-adjustments";
 
 interface ShiftReading {
   id: string;
@@ -14,6 +16,7 @@ interface ShiftReading {
   discountAmount: number;
   taxAmount: number;
   netSales: number;
+  priceAdjustments?: PriceAdjustments;
   paymentMethods: { method: string; salesCount: number; totalAmount: number }[];
   returnsCount: number;
   returnsAmount: number;
@@ -295,6 +298,7 @@ export default function ShiftModal({
                   <div className="flex justify-between"><span>Sales</span><span>{reading?.salesCount ?? 0}</span></div>
                   <div className="flex justify-between"><span>Gross sales</span><span>{peso(reading?.grossSales ?? 0)}</span></div>
                   <div className="flex justify-between"><span>Discounts</span><span>-{peso(reading?.discountAmount ?? 0)}</span></div>
+                  <PriceAdjustmentRows value={reading?.priceAdjustments} />
                   <div className="flex justify-between font-medium"><span>Net sales</span><span>{peso(reading?.netSales ?? 0)}</span></div>
                   {(reading?.paymentMethods.length ?? 0) > 0 && (
                     <div className="mt-2 space-y-0.5 border-t pt-2 text-xs text-gray-500">

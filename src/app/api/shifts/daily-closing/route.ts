@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
 import { paymentParts } from "@/lib/payment-methods";
+import { priceAdjustments } from "@/lib/price-adjustments";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -78,6 +79,7 @@ export async function GET(request: NextRequest) {
     discountAmount,
     taxAmount,
     netSales,
+    priceAdjustments: priceAdjustments(sales),
     paymentMethods: Array.from(byMethod.entries()).map(([method, v]) => ({ method, ...v })),
     returnsCount: returns.length,
     returnsAmount: returns.reduce((sum, s) => sum + Number(s.totalAmount), 0),
