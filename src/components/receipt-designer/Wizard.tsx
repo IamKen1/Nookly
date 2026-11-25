@@ -14,7 +14,7 @@ import {
   type WizardAnswers,
 } from "@/lib/receipt-designer/wizard";
 import { DATE_FORMATS, NAME_FORMATS, TIME_FORMATS } from "@/lib/receipt-designer/format";
-import { ROUNDING_STEPS } from "@/lib/pricing";
+import { ROUNDING_STEPS, type RuleWhen } from "@/lib/pricing";
 import { exampleCheckouts } from "@/lib/receipt-designer/samples";
 import type { DiscountDTO } from "@/lib/discounts";
 import Preview from "./Preview";
@@ -112,11 +112,11 @@ export default function Wizard({
   const sample = useMemo(() => (rawSample ? { ...rawSample, date: new Date(rawSample.date) } : null), [rawSample]);
 
   // Cash rounding is a POS setting: unchanged unless the owner picks something here.
-  const { data: pos } = useSWR<{ pricing: { roundingStep: number | null; ruleEnabled: boolean; ruleLabel: string; ruleExpr: string } }>("/api/settings/pos-changes");
+  const { data: pos } = useSWR<{ pricing: { roundingStep: number | null; ruleEnabled: boolean; ruleLabel: string; ruleExpr: string; ruleWhen?: RuleWhen } }>("/api/settings/pos-changes");
   const currentStep = pos?.pricing.roundingStep ?? null;
   const [rounding, setRounding] = useState<"keep" | number | null>("keep");
   const roundingChanges = rounding !== "keep" && rounding !== currentStep;
-  const currentRule = pos?.pricing.ruleEnabled ? { label: pos.pricing.ruleLabel, expr: pos.pricing.ruleExpr } : null;
+  const currentRule = pos?.pricing.ruleEnabled ? { label: pos.pricing.ruleLabel, expr: pos.pricing.ruleExpr, when: pos.pricing.ruleWhen } : null;
   const peso = (n: number) => `₱${n.toFixed(2)}`;
 
   return (

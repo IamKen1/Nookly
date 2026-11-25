@@ -13,7 +13,39 @@ import { computeFormula, formulaVariables, FormulaError } from "@/lib/receipt-de
 
 export interface PricingRules {
   roundingStep: number | null; // ₱0.25 / ₱0.50 / ₱1.00; null = off
-  rule: { label: string; expr: string } | null; // null = off
+  rule: { label: string; expr: string; when?: RuleWhen } | null; // null = off
+}
+
+// When the formula applies. Absent = every sale (except SC/PWD, always).
+export interface RuleWhen {
+  payment: "any" | "CASH" | "E_WALLET";
+  minTotal: number | null; // computed total at least
+  maxTotal: number | null; // at most
+}
+
+export const ANY_SALE: RuleWhen = { payment: "any", minTotal: null, maxTotal: null };
+
+const peso = (n: number) => `₱${n.toFixed(2)}`;
+
+// "e-wallet sales of ₱1000.00 or more", or "" for every sale.
+export function describeWhen(w: RuleWhen | undefined): string {
+  if (!w) return "";
+  const kind = w.payment === "CASH" ? "cash sales" : w.payment === "E_WALLET" ? "e-wallet sales" : "sales";
+  const min = w.minTotal != null ? peso(w.minTotal) : null;
+  const max = w.maxTotal != null ? peso(w.maxTotal) : null;
+  const range = min && max ? `from ${min} to ${max}` : min ? `of ${min} or more` : max ? `up to ${max}` : "";
+  if (!range && w.payment === "any") return "";
+  return range ? `${kind} ${range}` : kind;
+}
+
+// Why the formula doesn't apply to this sale, or null when it does.
+function whenMisses(w: RuleWhen | undefined, paymentMethod: string, computed: number): string | null {
+  if (!w) return null;
+  const miss =
+    (w.payment !== "any" && w.payment !== paymentMethod) ||
+    (w.minTotal != null && computed < w.minTotal - 0.005) ||
+    (w.maxTotal != null && computed > w.maxTotal + 0.005);
+  return miss ? `Only on ${describeWhen(w)}.` : null;
 }
 
 export const NO_PRICING: PricingRules = { roundingStep: null, rule: null };
@@ -109,7 +141,9 @@ export function applyPricing(totals: VatCalculationResult, ctx: PricingContext, 
 
   // 1. the owner's formula
   if (rules.rule && rules.rule.expr.trim()) {
+    const misses = whenMisses(rules.rule.when, ctx.paymentMethod, computed);
     if (ctx.exemptSale) ruleSkipped = "SC/PWD and VAT-exempt discounts always use the standard computation.";
+    else if (misses) ruleSkipped = misses;
     else if (ruleError(rules.rule.expr)) ruleSkipped = "The formula can't be used.";
     else {
       const v = computeFormula(rules.rule.expr, formulaSale(t, ctx.items));

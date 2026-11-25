@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { calculateVatInclusiveTotals } from "@/lib/vat-calculations";
-import { applyPricing, NO_PRICING, ruleError, type PricingRules } from "./pricing";
+import { applyPricing, NO_PRICING, ruleError, type PricingRules, type RuleWhen } from "./pricing";
 import { buildComputationLines, generateReceiptHTML, generateThermalReceiptText } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 
@@ -150,6 +150,30 @@ test("default workspaces: receipts print exactly as before, with the new fields 
     assert.equal(generateThermalReceiptText(after), generateThermalReceiptText(before));
     assert.equal(generateReceiptHTML(after, { autoPrint: false }), generateReceiptHTML(before, { autoPrint: false }));
   }
+});
+
+test("formula conditions: payment method and total range", () => {
+  const t = calculateVatInclusiveTotals({ vatableTotal: 1000, nonVatableTotal: 0 });
+  const small = calculateVatInclusiveTotals({ vatableTotal: 500, nonVatableTotal: 0 });
+  const rule = (when?: RuleWhen): PricingRules => ({ roundingStep: null, rule: { label: "Fee", expr: "total + 10", when } });
+  const at = (totals: typeof t, paymentMethod: string, r: PricingRules) => applyPricing(totals, { exemptSale: false, paymentMethod, items: [{ quantity: 1 }] }, r);
+
+  const wallet = rule({ payment: "E_WALLET", minTotal: null, maxTotal: null });
+  assert.equal(at(t, "E_WALLET", wallet).totals.finalTotal, 1010);
+  assert.equal(at(t, "CASH", wallet).totals.finalTotal, 1000);
+  assert.match(at(t, "CASH", wallet).ruleSkipped ?? "", /e-wallet sales/);
+
+  const big = rule({ payment: "any", minTotal: 800, maxTotal: null });
+  assert.equal(at(t, "CASH", big).totals.finalTotal, 1010);
+  assert.equal(at(small, "CASH", big).totals.finalTotal, 500);
+  assert.match(at(small, "CASH", big).ruleSkipped ?? "", /₱800\.00 or more/);
+
+  const band = rule({ payment: "CASH", minTotal: 100, maxTotal: 600 });
+  assert.equal(at(small, "CASH", band).totals.finalTotal, 510);
+  assert.equal(at(t, "CASH", band).totals.finalTotal, 1000, "above the range");
+  assert.equal(at(small, "E_WALLET", band).totals.finalTotal, 500, "wrong method");
+  assert.equal(at(t, "CASH", rule({ payment: "any", minTotal: 1000, maxTotal: 1000 })).totals.finalTotal, 1010, "edges count");
+  assert.equal(at(t, "CASH", rule()).totals.finalTotal, 1010, "no condition: every sale");
 });
 
 test("formula may only use values known before payment", () => {

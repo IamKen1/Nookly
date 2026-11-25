@@ -6,7 +6,7 @@ import { hasFeature, getTenantPlanCode, upgradeMessage } from "@/lib/plan-gating
 import { ensureDefaultDiscounts, serializeDiscount } from "@/lib/discounts";
 import { parseDiscountBody } from "@/lib/discount-input";
 import { discountRateText } from "@/lib/discount-math";
-import { cleanPricingState, describePricingChange, getPricingState, savePricingState, type PricingState } from "@/lib/pricing-settings";
+import { cleanPricingState, describePricingChange, getPricingState, pricingColumns, sameWhen, savePricingState, stateFromJson, type PricingState } from "@/lib/pricing-settings";
 
 // Changes the receipt designer applies to the POS itself (what customers are
 // charged): cash rounding, the owner's price formula, and discount terms.
@@ -25,8 +25,10 @@ async function authorize(request: NextRequest) {
 
 // Field by field: the database stores JSON with its keys in its own order.
 const samePricing = (a: PricingState, b: unknown) => {
-  const o = (b ?? {}) as Partial<PricingState>;
-  return (a.roundingStep ?? null) === (o.roundingStep ?? null) && a.ruleEnabled === o.ruleEnabled && a.ruleLabel === o.ruleLabel && a.ruleExpr === o.ruleExpr;
+  const o = stateFromJson(b);
+  return (
+    (a.roundingStep ?? null) === o.roundingStep && a.ruleEnabled === o.ruleEnabled && a.ruleLabel === o.ruleLabel && a.ruleExpr === o.ruleExpr && sameWhen(a.ruleWhen, o.ruleWhen)
+  );
 };
 const sameDiscount = (a: DiscountTermsSnap, b: unknown) => {
   const o = (b ?? {}) as Partial<DiscountTermsSnap>;
@@ -124,12 +126,8 @@ export async function POST(request: NextRequest) {
       const current = await getPricingState(tenantId);
       if (!samePricing(current, change.after)) return bad("Something changed after this. Undo the newer change first.");
       await prisma.$transaction(async (tx) => {
-        const b = change.before as unknown as PricingState;
-        await tx.pricingSettings.upsert({
-          where: { tenantId },
-          create: { tenantId, roundingStep: b.roundingStep, ruleEnabled: b.ruleEnabled, ruleLabel: b.ruleLabel, ruleExpr: b.ruleExpr },
-          update: { roundingStep: b.roundingStep, ruleEnabled: b.ruleEnabled, ruleLabel: b.ruleLabel, ruleExpr: b.ruleExpr },
-        });
+        const b = stateFromJson(change.before);
+        await tx.pricingSettings.upsert({ where: { tenantId }, create: { tenantId, ...pricingColumns(b) }, update: pricingColumns(b) });
         await tx.posChange.update({ where: { id: change.id }, data: { undoneAt: new Date(), undoneById: session.userId } });
       });
     } else {

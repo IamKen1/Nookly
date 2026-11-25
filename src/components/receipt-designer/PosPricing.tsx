@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { History, Lock, Loader2, Undo2 } from "lucide-react";
 import type { DiscountDTO } from "@/lib/discounts";
 import { discountRateText } from "@/lib/discount-math";
-import { RULE_MAX_CHANGE, ROUNDING_STEPS, ruleError, type PricingRules } from "@/lib/pricing";
+import { ANY_SALE, describeWhen, RULE_MAX_CHANGE, ROUNDING_STEPS, ruleError, type PricingRules, type RuleWhen } from "@/lib/pricing";
 import { exampleCheckouts } from "@/lib/receipt-designer/samples";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -14,6 +14,7 @@ interface PricingState {
   ruleEnabled: boolean;
   ruleLabel: string;
   ruleExpr: string;
+  ruleWhen?: RuleWhen;
 }
 interface HistoryRow {
   id: string;
@@ -31,8 +32,28 @@ interface PosState {
 const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const rulesOf = (p: PricingState): PricingRules => ({
   roundingStep: p.roundingStep,
-  rule: p.ruleEnabled && p.ruleExpr.trim() && !ruleError(p.ruleExpr) ? { label: p.ruleLabel, expr: p.ruleExpr } : null,
+  rule: p.ruleEnabled && p.ruleExpr.trim() && !ruleError(p.ruleExpr) ? { label: p.ruleLabel, expr: p.ruleExpr, when: p.ruleWhen ?? ANY_SALE } : null,
 });
+
+// The "Only on…" inputs as typed (amounts stay text while typing).
+interface WhenDraft {
+  payment: RuleWhen["payment"];
+  min: string;
+  max: string;
+}
+const draftOf = (w: RuleWhen | undefined): WhenDraft => ({
+  payment: w?.payment ?? "any",
+  min: w?.minTotal != null ? String(w.minTotal) : "",
+  max: w?.maxTotal != null ? String(w.maxTotal) : "",
+});
+const amountOf = (s: string) => (s.trim() === "" ? null : Number(s));
+const whenOf = (d: WhenDraft): RuleWhen => ({ payment: d.payment, minTotal: amountOf(d.min), maxTotal: amountOf(d.max) });
+const whenProblem = (d: WhenDraft) => {
+  const w = whenOf(d);
+  if ([w.minTotal, w.maxTotal].some((v) => v !== null && (!Number.isFinite(v) || v < 0))) return "Enter a total from ₱0 up.";
+  if (w.minTotal !== null && w.maxTotal !== null && w.minTotal > w.maxTotal) return "The lowest total is more than the highest.";
+  return null;
+};
 
 // Before → after on example checkouts.
 export function Examples({ rows }: { rows: { label: string; before: number; after: number; note?: string | null }[] }) {
@@ -69,7 +90,7 @@ export function Examples({ rows }: { rows: { label: string; before: number; afte
 
 type Pending =
   | { kind: "rounding"; step: number | null }
-  | { kind: "formulaOn"; label: string; expr: string }
+  | { kind: "formulaOn"; label: string; expr: string; when: WhenDraft }
   | { kind: "formulaOff" }
   | { kind: "discount"; discount: DiscountDTO; next: { kind: string; value: number; maxAmount: number | null; vatExempt: boolean } }
   | { kind: "undo"; row: HistoryRow };
@@ -94,7 +115,7 @@ export default function PosPricing({
   const [draftSeen, setDraftSeen] = useState<typeof formulaDraft>(null);
   if (formulaDraft !== draftSeen) {
     setDraftSeen(formulaDraft);
-    if (formulaDraft) setPending({ kind: "formulaOn", label: formulaDraft.label.replace(/:\s*$/, "") || "Adjustment", expr: formulaDraft.expr });
+    if (formulaDraft) setPending({ kind: "formulaOn", label: formulaDraft.label.replace(/:\s*$/, "") || "Adjustment", expr: formulaDraft.expr, when: draftOf(undefined) });
   }
   const close = () => {
     setPending(null);
@@ -151,15 +172,16 @@ export default function PosPricing({
         </ConfirmDialog>
       );
     } else if (pending.kind === "formulaOn") {
-      const problem = ruleError(pending.expr);
-      const next = { ...current, rule: problem ? null : { label: pending.label || "Adjustment", expr: pending.expr } };
+      const problem = ruleError(pending.expr) ?? whenProblem(pending.when);
+      const next = { ...current, rule: problem ? null : { label: pending.label || "Adjustment", expr: pending.expr, when: whenOf(pending.when) } };
+      const setWhen = (patch: Partial<WhenDraft>) => setPending({ ...pending, when: { ...pending.when, ...patch } });
       dialog = (
         <ConfirmDialog
           {...common}
           title="Charge customers with this formula?"
           confirmLabel="Yes, apply to POS"
           disabled={Boolean(problem)}
-          onConfirm={() => send({ action: "pricing", ruleEnabled: true, ruleLabel: pending.label, ruleExpr: pending.expr })}
+          onConfirm={() => send({ action: "pricing", ruleEnabled: true, ruleLabel: pending.label, ruleExpr: pending.expr, ruleWhen: whenOf(pending.when) })}
         >
           <label className="block">
             <span className="text-xs font-medium text-zinc-700">Name on the receipt</span>
@@ -177,8 +199,28 @@ export default function PosPricing({
               value={pending.expr}
               onChange={(e) => setPending({ ...pending, expr: e.target.value })}
             />
-            {problem && <span className="text-xs text-red-600">{problem}</span>}
           </label>
+          <fieldset className="space-y-1 rounded-lg border border-zinc-200 p-2">
+            <legend className="px-1 text-xs font-medium text-zinc-700">Only on</legend>
+            <select
+              aria-label="Payment"
+              className="h-8 w-full rounded-md border border-zinc-200 px-2 text-sm"
+              value={pending.when.payment}
+              onChange={(e) => setWhen({ payment: e.target.value as WhenDraft["payment"] })}
+            >
+              <option value="any">Every payment method</option>
+              <option value="CASH">Cash sales only</option>
+              <option value="E_WALLET">E-wallet sales only (GCash, Maya…)</option>
+            </select>
+            <div className="flex items-center gap-1.5 text-xs text-zinc-600">
+              <span>Total from ₱</span>
+              <input aria-label="Lowest total" inputMode="decimal" placeholder="any" className="h-8 w-20 rounded-md border border-zinc-200 px-2 text-sm" value={pending.when.min} onChange={(e) => setWhen({ min: e.target.value })} />
+              <span>to ₱</span>
+              <input aria-label="Highest total" inputMode="decimal" placeholder="any" className="h-8 w-20 rounded-md border border-zinc-200 px-2 text-sm" value={pending.when.max} onChange={(e) => setWhen({ max: e.target.value })} />
+            </div>
+            <p className="text-[11px] text-zinc-500">The total here is the standard total, before the formula. Other sales are charged the standard amount.</p>
+          </fieldset>
+          {problem && <p className="text-xs text-red-600">{problem}</p>}
           {!problem && <Examples rows={exampleCheckouts(next).map((e, i) => ({ label: e.label, before: exampleCheckouts(current)[i].charged, after: e.charged, note: e.note }))} />}
           <ul className="ml-4 list-disc space-y-0.5 text-xs text-zinc-600">
             <li>Senior citizen, PWD and other VAT-exempt discounts always use the standard computation, as the law requires.</li>
@@ -248,8 +290,9 @@ export default function PosPricing({
             <p className="font-mono text-[11px] text-zinc-800">
               {p.ruleLabel}: {p.ruleExpr}
             </p>
+            <p className="text-[11px] text-zinc-500">Only on: {describeWhen(p.ruleWhen) || "every sale"} (never SC/PWD)</p>
             <div className="flex gap-2">
-              <button type="button" className="text-[11px] font-semibold text-emerald-700" onClick={() => setPending({ kind: "formulaOn", label: p.ruleLabel, expr: p.ruleExpr })}>
+              <button type="button" className="text-[11px] font-semibold text-emerald-700" onClick={() => setPending({ kind: "formulaOn", label: p.ruleLabel, expr: p.ruleExpr, when: draftOf(p.ruleWhen) })}>
                 Change
               </button>
               <button type="button" className="text-[11px] font-semibold text-red-600" onClick={() => setPending({ kind: "formulaOff" })}>
@@ -260,7 +303,7 @@ export default function PosPricing({
         ) : (
           <p className="mt-0.5 text-[11px] text-zinc-500">
             Off. To use one, select a Formula on the receipt and press <strong>&quot;Charge customers this amount&quot;</strong>, or{" "}
-            <button type="button" className="font-semibold text-emerald-700" onClick={() => setPending({ kind: "formulaOn", label: "Service fee", expr: "total * 1.02" })}>
+            <button type="button" className="font-semibold text-emerald-700" onClick={() => setPending({ kind: "formulaOn", label: "Service fee", expr: "total * 1.02", when: draftOf(undefined) })}>
               start one here
             </button>
             .
