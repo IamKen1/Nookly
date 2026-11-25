@@ -282,7 +282,7 @@ export default function Wizard({
                     <span className="block text-xs text-zinc-500">VATable / non-VAT</span>
                   </Card>
                   <Card on={a.letters === "TX"} onClick={() => set({ letters: "TX" })} title="T / X">
-                    <span className="block text-xs text-zinc-500">Taxable / exempt</span>
+                    <span className="block text-xs text-zinc-500">Taxable / exempt. On Senior/PWD sales the VAT is removed, so every item shows X.</span>
                   </Card>
                   <Card on={a.letters === "none"} onClick={() => set({ letters: "none" })} title="None" />
                 </div>

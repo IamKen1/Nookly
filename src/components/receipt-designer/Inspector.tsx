@@ -312,9 +312,9 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
               <div className="grid grid-cols-3 gap-2">
                 {(
                   [
-                    ["vatable", "VATable"],
-                    ["exempt", "VATable, SC/PWD sale"],
-                    ["nonVat", "Non-VAT item"],
+                    ["vatable", "Item with VAT (regular sale)"],
+                    ["exempt", "Same item on a Senior/PWD sale (VAT removed)"],
+                    ["nonVat", "Non-VAT product (every sale)"],
                   ] as const
                 ).map(([k, label]) => (
                   <label key={k} className="block space-y-0.5">
@@ -328,7 +328,10 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
                   </label>
                 ))}
               </div>
-              <p className="text-[11px] text-zinc-400">E.g. T for VATable and X for VAT-exempt, to match a VAT summary with (T) and (X).</p>
+              <p className="text-[11px] text-zinc-400">
+                On a Senior/PWD sale the VAT is taken off, so items that normally have VAT print the middle letter. Regular sales are not affected. E.g. T, X, X to
+                match a VAT summary with (T) VATable and (X) VAT-exempt.
+              </p>
             </div>
           )}
           <Check checked={block.showItemCount} onChange={(v) => set({ showItemCount: v })} label="Item count line" />
