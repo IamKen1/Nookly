@@ -48,6 +48,8 @@ interface CheckoutModalProps {
   // Loyalty points are on (plan includes it and the owner turned it on): the
   // cashier can attach a customer and let them pay with points.
   loyalty?: { pesosPerPoint: number; pesoValuePerPoint: number } | null;
+  // The owner's POS pricing rules as the POS page loaded them (none = standard computation).
+  initialPricing?: PricingRules;
   onProcessSale: (payload: {
     paymentMethod: string;
     cashReceived?: number;
@@ -98,6 +100,7 @@ export default function CheckoutModal({
   initialRemarks,
   requireStaffCode = false,
   loyalty = null,
+  initialPricing,
   onProcessSale,
 }: CheckoutModalProps) {
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
@@ -150,8 +153,10 @@ export default function CheckoutModal({
   const { data: discounts = [] } = useSWR<DiscountDTO[]>(isOpen ? "/api/discounts?forSale=1" : null);
   // The owner's pricing rules (Receipt designer › Apply to POS), read fresh each
   // time checkout opens so the screen matches what the server will charge.
-  const { data: pricing, error: pricingError } = useSWR<PricingRules>(isOpen ? "/api/pricing" : null, { revalidateOnFocus: true });
-  // Until the rules are in, the screen could show a different total than the server charges.
+  // The page's copy is used at once (so checkout never waits); a fresh copy replaces it in the background.
+  const { data: fetchedPricing, error: pricingError } = useSWR<PricingRules>(isOpen ? "/api/pricing" : null, { revalidateOnFocus: true });
+  const pricing = fetchedPricing ?? initialPricing;
+  // Without any copy yet, the screen could show a different total than the server charges.
   const pricingReady = pricing !== undefined || pricingError !== undefined;
   const discount = discounts.find((d) => d.id === discountId) ?? null;
   const discountInput = discount ? discountCalcInput(discount) : { discountType: "NONE", discountPercent: 0 };

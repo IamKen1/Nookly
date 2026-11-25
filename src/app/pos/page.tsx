@@ -5,6 +5,7 @@ import { getRolePermissions } from "@/lib/permissions";
 import { canManageAllBranches, getBranchContext, rolesThatSendOrders } from "@/lib/branch-scope";
 import PosClient from "@/components/pos/PosClient";
 import { getLoyaltyConfig } from "@/lib/loyalty";
+import { getPricingRules } from "@/lib/pricing-settings";
 
 export default async function PosPage() {
   const session = await requirePagePermission("pos");
@@ -13,7 +14,7 @@ export default async function PosPage() {
   // whether this branch polls for waiting orders.
   const senderRolesP = rolesThatSendOrders(session.tenantId);
   const storeId = session.storeId;
-  const [tenant, categories, permissions, branchContext, pollOrders, senderRoles, branchStaff, loyalty] = await Promise.all([
+  const [tenant, categories, permissions, branchContext, pollOrders, senderRoles, branchStaff, loyalty, pricing] = await Promise.all([
     prisma.tenant.findUnique({
       where: { id: session.tenantId },
       include: { subscription: { include: { plan: true } } },
@@ -35,6 +36,8 @@ export default async function PosPage() {
     senderRolesP,
     storeId ? prisma.user.count({ where: { tenantId: session.tenantId, storeId, isActive: true } }) : 0,
     getLoyaltyConfig(session.tenantId),
+    // Loaded with the page so checkout opens ready (no waiting on a fetch).
+    getPricingRules(session.tenantId),
   ]);
 
   if (!tenant) return null;
@@ -73,6 +76,7 @@ export default async function PosPage() {
       requireStaffCode={requireStaffCode}
       loyalty={loyalty.active ? { pesosPerPoint: loyalty.pesosPerPoint, pesoValuePerPoint: loyalty.pesoValuePerPoint } : null}
       showCustomers={loyalty.planHasIt}
+      pricing={pricing}
       categories={categories.map((c) => ({ id: c.id, name: c.name }))}
     />
   );

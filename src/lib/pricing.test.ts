@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { calculateVatInclusiveTotals } from "@/lib/vat-calculations";
 import { applyPricing, NO_PRICING, ruleError, type PricingRules } from "./pricing";
-import { buildComputationLines } from "@/lib/receipt";
+import { buildComputationLines, generateReceiptHTML, generateThermalReceiptText } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 
 // Deterministic pseudo-random carts.
@@ -130,6 +130,25 @@ test("receipts: an adjusted sale shows the standard steps, then each adjustment,
     assert.deepEqual(lines.slice(0, lines.length - extra), original, `cart ${i}`);
     if (r.roundingAmount) assert.deepEqual(lines.at(-1), { label: "Rounding", amount: r.roundingAmount, kind: "subtract" });
     if (r.adjustmentAmount) assert.ok(lines.some((l) => l.label === "Service fee" && l.amount === r.adjustmentAmount));
+  }
+});
+
+test("default workspaces: receipts print exactly as before, with the new fields missing or zero", () => {
+  const store = { storeName: "Botika", receiptTitle: "AR", addressLine1: "Rizal Ave.", footerMessage: "Salamat!", showVatBreakdown: true, showCashierName: true, showCustomerName: true, includeOrderRemarks: true };
+  for (let i = 0; i < 3_000; i++) {
+    const c = cart();
+    const r = applyPricing(c.totals, { exemptSale: c.exemptSale, paymentMethod: "CASH", items: c.items }, NO_PRICING);
+    const t = r.totals;
+    const before = {
+      saleNumber: "AR-1", date: new Date("2026-11-25T02:00:00Z"), items: [{ name: "Item", quantity: 1, unitPrice: t.subtotal, totalPrice: t.subtotal, isVatable: true }],
+      subtotal: t.subtotal, discountType: c.exemptSale ? "SENIOR" : "NONE", discountAmount: t.discountAmount, taxAmount: t.vatAmount,
+      vatableSales: t.vatableSales, nonVatableSales: t.nonVatableSales, vatableGross: t.vatableGross, nonVatableGross: t.nonVatableGross,
+      vatableDiscountAmount: t.vatableDiscountAmount, nonVatableDiscountAmount: t.nonVatableDiscountAmount, vatRemovedFromVatable: t.vatRemovedFromVatable,
+      totalAmount: t.finalTotal, paymentMethod: "CASH", cashReceived: 1e6, changeGiven: 1e6 - t.finalTotal, cashier: { firstName: "A", lastName: "B" }, store,
+    } as unknown as ReceiptData;
+    const after = { ...before, adjustmentAmount: r.adjustmentAmount, adjustmentLabel: r.adjustmentLabel, roundingAmount: r.roundingAmount, computedParts: r.computedParts };
+    assert.equal(generateThermalReceiptText(after), generateThermalReceiptText(before));
+    assert.equal(generateReceiptHTML(after, { autoPrint: false }), generateReceiptHTML(before, { autoPrint: false }));
   }
 });
 

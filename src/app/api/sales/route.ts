@@ -181,6 +181,10 @@ export async function POST(request: NextRequest) {
     servedById = who.user.id;
   }
 
+  // The owner's pricing rules, read alongside the products so they add no wait.
+  // Never rejects: any problem means "no rules" and the standard computation.
+  const pricingRulesP = getPricingRules(session.tenantId);
+
   const productIds = items.map((item) => item.productId);
   const products = await prisma.product.findMany({
     where: { id: { in: productIds }, tenantId: session.tenantId },
@@ -294,7 +298,7 @@ export async function POST(request: NextRequest) {
   const pricing = applyPricing(
     computedTotals,
     { exemptSale: Boolean(appliedDiscount?.vatExempt), paymentMethod, items },
-    await getPricingRules(session.tenantId)
+    await pricingRulesP
   );
   const vatTotals = pricing.totals;
 

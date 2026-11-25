@@ -5,6 +5,7 @@ import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { PricingRules } from "@/lib/pricing";
 import {
   Search,
   Grid,
@@ -125,6 +126,7 @@ export default function PosClient({
   canRecordPrescriptions = false,
   requireStaffCode = false,
   loyalty = null,
+  pricing,
   showCustomers = false,
 }: {
   categories: Category[];
@@ -146,6 +148,8 @@ export default function PosClient({
   requireStaffCode?: boolean;
   // Loyalty points on (plan includes it and the owner turned it on); null otherwise.
   loyalty?: { pesosPerPoint: number; pesoValuePerPoint: number } | null;
+  // The owner's POS pricing rules as the page loaded them; checkout keeps them fresh.
+  pricing?: PricingRules;
   // The plan includes customer profiles (shows Customers in the menu).
   showCustomers?: boolean;
 }) {
@@ -1143,6 +1147,7 @@ export default function PosClient({
         initialRemarks={activeOrder?.remarks}
         requireStaffCode={requireStaffCode}
         loyalty={loyalty}
+        initialPricing={pricing}
         onProcessSale={handleProcessSale}
       />
 
