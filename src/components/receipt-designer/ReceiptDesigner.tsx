@@ -276,15 +276,22 @@ export default function ReceiptDesigner() {
   // Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z — but typing in a box keeps the box's own undo.
   const undoRef = useRef(undo);
   const redoRef = useRef(redo);
+  const deselectRef = useRef(() => setSelectedPart(null));
   useEffect(() => {
     undoRef.current = undo;
     redoRef.current = redo;
   });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
       const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      const typing = Boolean(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable));
+      // Esc: put the selection down to see the whole receipt.
+      if (e.key === "Escape" && !typing && !document.querySelector('[role="dialog"]')) {
+        deselectRef.current();
+        return;
+      }
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (typing) return;
       const k = e.key.toLowerCase();
       if (k === "z" && !e.shiftKey) {
         e.preventDefault();
@@ -768,7 +775,8 @@ export default function ReceiptDesigner() {
           </aside>
 
           {/* center: preview */}
-          <main className="min-w-0 flex-1 overflow-auto px-6 py-8" onClick={(e) => e.target === e.currentTarget && setSelectedId(null)}>
+          {/* A click anywhere off the receipt (the paper and its toolbar) clears the selection. */}
+          <main className="min-w-0 flex-1 overflow-auto px-6 py-8" onClick={(e) => !(e.target as HTMLElement).closest(".rd-preview") && setSelectedId(null)}>
             {sampleError && <p className="mb-3 text-center text-xs text-amber-700">{sampleError}</p>}
             {sample ? (
               <Preview
