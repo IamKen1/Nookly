@@ -27,6 +27,9 @@ export const TOTALS_FIELDS: Record<TotalsKey, Field> = {
   vatableGross: { name: "VATable items (before discount)", label: "VATable (gross):", format: "money", value: (r) => r.vatableGross ?? 0 },
   nonVatableGross: { name: "Non-VAT items (before discount)", label: "Non-VAT (gross):", format: "money", value: (r) => r.nonVatableGross ?? 0 },
   discount: { name: "Discount", label: "Less: Discount:", format: "money", value: (r) => r.discountAmount ?? 0 },
+  // The discount, split: on items with VAT and on items without (they add up to the discount).
+  vatableDiscount: { name: "Discount on items with VAT", label: "Less: Discount (VATable):", format: "money", value: (r) => r.vatableDiscountAmount ?? 0 },
+  nonVatableDiscount: { name: "Discount on non-VAT items", label: "Less: Discount (non-VAT):", format: "money", value: (r) => r.nonVatableDiscountAmount ?? 0 },
   vatRemoved: { name: "VAT removed (SC/PWD)", label: "Less: VAT (SC/PWD):", format: "money", value: (r) => r.vatRemovedFromVatable ?? 0 },
   totalSavings: {
     name: "Total savings",

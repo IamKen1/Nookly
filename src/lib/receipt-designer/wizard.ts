@@ -1,10 +1,11 @@
 // Guided setup: simple answers → a complete design. The style picked first only
 // sets the starting answers; every later step can change them.
 import type { ReceiptStoreSettings } from "@/types/receipt";
-import type { Block, BlockType, DateFormat, NameFormat, PaperWidth, PrintMode, SaleDetailKey, StoreField, Template, TimeFormat, TotalsLine } from "./types";
+import type { Block, BlockType, DateFormat, NameFormat, PaperWidth, PrintMode, SaleDetailKey, StoreField, Template, TimeFormat, TotalsKey, TotalsLine, VatCodes } from "./types";
 import { TEMPLATE_VERSION } from "./types";
 import { DEFAULT_SALE_DETAILS, DEFAULT_STORE_LABELS, ITEM_FORMATS, newBlock, newField, newId, valueLine } from "./blocks";
 import { DEFAULT_VAT_CODES } from "./format";
+import { computationAsLines, valueLineAsFormula } from "./explain";
 import { REGISTER_LABELS, registerItems, registerScBlocks, registerTotalsLines, vatSummary } from "./presets";
 
 export type WizardStyle = "classic" | "chain" | "register" | "compact" | "promo";
@@ -34,10 +35,13 @@ export interface WizardAnswers {
   items: WizardItems;
   itemCount: WizardCount;
   letters: WizardLetters;
+  codes?: VatCodes; // the letters typed in, instead of the preset's
   // totals & money
   peso: boolean;
   totals: WizardTotals;
   bigTotal: boolean;
+  splitSteps?: boolean; // step by step as separate lines, each changeable
+  formulas?: Partial<Record<TotalsKey, string>>; // a totals line's own computation instead of the saved figure
   // extras
   vatSummary: boolean;
   barcode: boolean;
@@ -153,7 +157,7 @@ const rule = (char: "-" | "=" = "-") => make("rule", { char });
 const lineRule = (char: "-" | "=" = "-"): TotalsLine => ({ id: newId("t"), kind: "rule", char });
 
 function itemsBlock(a: WizardAnswers): Block {
-  const codes = a.letters === "TX" ? { vatable: "T", exempt: "X", nonVat: "X" } : { ...DEFAULT_VAT_CODES };
+  const codes = a.codes ? { ...a.codes } : presetCodes(a.letters);
   if (a.items === "register") {
     const b = registerItems();
     const withCodes = { ...b, vatCodes: codes, showItemCount: a.itemCount === "line" };
@@ -176,7 +180,18 @@ function itemsBlock(a: WizardAnswers): Block {
   return { ...base, itemFormat: fmt };
 }
 
+// The letters each preset prints: [item with VAT, same item on a Senior/PWD sale, non-VAT product].
+export const presetCodes = (letters: WizardLetters): VatCodes => (letters === "TX" ? { vatable: "T", exempt: "X", nonVat: "X" } : { ...DEFAULT_VAT_CODES });
+
+// Value lines whose computation the owner changed in the wizard become formula lines.
+const withFormulas = (lines: TotalsLine[], a: WizardAnswers): TotalsLine[] =>
+  lines.map((l) => (l.kind === "value" && a.formulas?.[l.key] ? valueLineAsFormula(l, a.formulas[l.key]!) : l));
+
 function totalsBlocks(a: WizardAnswers): Block[] {
+  return totalsBlocksStandard(a).map((b) => (b.type === "totals" ? { ...b, lines: withFormulas(b.lines, a) } : b));
+}
+
+function totalsBlocksStandard(a: WizardAnswers): Block[] {
   const big = a.bigTotal ? { bold: true, sizeH: 2 } : { bold: true };
   // The owner's price formula and cash rounding print only on sales they changed.
   const adjustments = [valueLine("adjustment", { label: "{adjustmentLabel}:" }), valueLine("rounding", { label: "Rounding:" })];
@@ -204,7 +219,12 @@ function totalsBlocks(a: WizardAnswers): Block[] {
   }
   return [
     make("totals", {
-      lines: [{ id: newId("t"), kind: "computation", style: {} }, lineRule("="), valueLine("totalDue", { style: big }), lineRule("=")],
+      lines: [
+        ...(a.splitSteps ? computationAsLines() : [{ id: newId("t"), kind: "computation" as const, style: {} }]),
+        lineRule("="),
+        valueLine("totalDue", { style: big }),
+        lineRule("="),
+      ],
     }),
     make("payment", { ruleAfter: "-" }),
   ];

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Explain from "./Explain";
 import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -170,6 +171,7 @@ export default function Inspector({
           </button>
         )}
       </div>
+      <Explain block={block} lineId={focusLineId} sample={sample} onChange={onChange} />
 
       <TypeFields block={block} printMode={printMode} onChange={onChange} ctx={ctx} />
 

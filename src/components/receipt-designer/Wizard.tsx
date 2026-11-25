@@ -11,8 +11,10 @@ import {
   WIZARD_TOTALS,
   answersFor,
   buildFromAnswers,
+  presetCodes,
   type WizardAnswers,
 } from "@/lib/receipt-designer/wizard";
+import { AmountChecks } from "./Explain";
 import { DATE_FORMATS, NAME_FORMATS, TIME_FORMATS } from "@/lib/receipt-designer/format";
 import { ROUNDING_STEPS, type RuleWhen } from "@/lib/pricing";
 import { exampleCheckouts } from "@/lib/receipt-designer/samples";
@@ -278,14 +280,41 @@ export default function Wizard({
                 </div>
                 <Q>The VAT letter after each amount</Q>
                 <div className="grid grid-cols-3 gap-2">
-                  <Card on={a.letters === "VN"} onClick={() => set({ letters: "VN" })} title="V / N">
+                  <Card on={a.letters === "VN"} onClick={() => set({ letters: "VN", codes: undefined })} title="V / N">
                     <span className="block text-xs text-zinc-500">VATable / non-VAT</span>
                   </Card>
-                  <Card on={a.letters === "TX"} onClick={() => set({ letters: "TX" })} title="T / X">
+                  <Card on={a.letters === "TX"} onClick={() => set({ letters: "TX", codes: undefined })} title="T / X">
                     <span className="block text-xs text-zinc-500">Taxable / exempt. On Senior/PWD sales the VAT is removed, so every item shows X.</span>
                   </Card>
-                  <Card on={a.letters === "none"} onClick={() => set({ letters: "none" })} title="None" />
+                  <Card on={a.letters === "none"} onClick={() => set({ letters: "none", codes: undefined })} title="None" />
                 </div>
+                {a.letters !== "none" && (
+                  <div className="mt-2 rounded-xl border-2 border-zinc-100 p-3">
+                    <p className="mb-2 text-xs text-zinc-600">Or type your own letters. On a Senior/PWD sale the VAT is taken off, so items that normally have VAT print the middle letter.</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ["vatable", "Item with VAT (regular sale)"],
+                          ["exempt", "Same item on a Senior/PWD sale (VAT removed)"],
+                          ["nonVat", "Non-VAT product (every sale)"],
+                        ] as const
+                      ).map(([k, label]) => {
+                        const codes = a.codes ?? presetCodes(a.letters);
+                        return (
+                          <label key={k} className="block">
+                            <span className="block text-[11px] leading-tight text-zinc-500">{label}</span>
+                            <input
+                              className="mt-1 h-10 w-full rounded-xl border-2 border-zinc-200 text-center font-mono text-sm outline-none focus:border-emerald-500"
+                              maxLength={3}
+                              value={codes[k]}
+                              onChange={(e) => set({ codes: { ...codes, [k]: e.target.value } })}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <Q>Item count</Q>
                 <div className="grid grid-cols-3 gap-2">
                   <Card on={a.itemCount === "line"} onClick={() => set({ itemCount: "line" })} title="Total Items: 42" />
@@ -319,6 +348,26 @@ export default function Wizard({
                     <Toggle on={a.bigTotal} onChange={(v) => set({ bigTotal: v })} title="Big total" description="The amount due twice as tall" />
                   </div>
                 )}
+                {a.totals === "steps" && (
+                  <div className="mt-3">
+                    <Toggle
+                      on={Boolean(a.splitSteps)}
+                      onChange={(v) => set({ splitSteps: v })}
+                      title="Each step as its own line"
+                      description="Same figures; later you can click any step and change how it's computed"
+                    />
+                  </div>
+                )}
+                <Q>Check every amount</Q>
+                <p className="mb-2 text-xs text-zinc-500">
+                  Tap a line to see exactly how it&apos;s computed with the sale in the preview. Switch the preview above the receipt to a Senior citizen sale to check that too.
+                </p>
+                <AmountChecks
+                  lines={buildFromAnswers({ ...a, formulas: {} }, settings).blocks.flatMap((b) => (b.type === "totals" ? b.lines : []))}
+                  sample={sample}
+                  formulas={a.formulas ?? {}}
+                  onFormulas={(formulas) => set({ formulas })}
+                />
                 <p className="mt-3 text-xs text-zinc-500">Senior citizen and PWD sales always show the VAT exemption, discount, name, ID and signature lines, as the law requires.</p>
               </>
             )}

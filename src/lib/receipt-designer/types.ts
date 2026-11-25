@@ -169,6 +169,8 @@ export type TotalsKey =
   | "itemCount"
   | "quantity"
   | "discount"
+  | "vatableDiscount"
+  | "nonVatableDiscount"
   | "vatRemoved"
   | "totalSavings"
   | "vatableSales"

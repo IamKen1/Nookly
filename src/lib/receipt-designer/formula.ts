@@ -24,11 +24,13 @@ type Node =
   | { t: "call"; fn: string; args: Node[] };
 
 // Short names owners type, each mapped to a value from the sale.
-export const FORMULA_VARIABLES: Record<string, { key: TotalsKey; name: string }> = {
+// zero: counts as 0 on sales without it (instead of the formula having no answer),
+// for amounts that are simply nothing when they don't apply.
+export const FORMULA_VARIABLES: Record<string, { key: TotalsKey; name: string; zero?: boolean }> = {
   subtotal: { key: "grossTotal", name: "Subtotal (before discount)" },
   total: { key: "totalDue", name: "Total amount due" },
-  adjustment: { key: "adjustment", name: "Price adjustment (your formula)" },
-  rounding: { key: "rounding", name: "Cash rounding" },
+  adjustment: { key: "adjustment", name: "Price adjustment (your formula)", zero: true },
+  rounding: { key: "rounding", name: "Cash rounding", zero: true },
   vat: { key: "vatAmount", name: "12% VAT" },
   vatableSales: { key: "vatableSales", name: "VATable sales" },
   vatExempt: { key: "vatExemptSales", name: "VAT-exempt sales" },
@@ -37,6 +39,8 @@ export const FORMULA_VARIABLES: Record<string, { key: TotalsKey; name: string }>
   vatableGross: { key: "vatableGross", name: "VATable items (before discount)" },
   nonVatGross: { key: "nonVatableGross", name: "Non-VAT items (before discount)" },
   discount: { key: "discount", name: "Discount" },
+  vatableDiscount: { key: "vatableDiscount", name: "Discount on items with VAT" },
+  nonVatDiscount: { key: "nonVatableDiscount", name: "Discount on non-VAT items" },
   vatRemoved: { key: "vatRemoved", name: "VAT removed (SC/PWD)" },
   savings: { key: "totalSavings", name: "Total savings" },
   pieces: { key: "quantity", name: "Total items (pieces)" },
@@ -51,6 +55,7 @@ export const FORMULA_VARIABLES: Record<string, { key: TotalsKey; name: string }>
 
 const FUNCTIONS: Record<string, { min: number; max: number; help: string }> = {
   round: { min: 1, max: 2, help: "round(x, decimals)" },
+  cents: { min: 1, max: 1, help: "cents(x): to centavos exactly like the checkout" },
   floor: { min: 1, max: 1, help: "floor(x)" },
   ceil: { min: 1, max: 1, help: "ceil(x)" },
   abs: { min: 1, max: 1, help: "abs(x)" },
@@ -194,8 +199,9 @@ export function evaluateFormula(tree: Node, data: ReceiptData): number | null {
       case "num":
         return n.v;
       case "var": {
-        const v = TOTALS_FIELDS[FORMULA_VARIABLES[n.name].key].value(data);
-        return typeof v === "number" ? v : null;
+        const def = FORMULA_VARIABLES[n.name];
+        const v = TOTALS_FIELDS[def.key].value(data);
+        return typeof v === "number" ? v : def.zero ? 0 : null;
       }
       case "un": {
         const a = ev(n.a);
@@ -250,6 +256,8 @@ export function evaluateFormula(tree: Node, data: ReceiptData): number | null {
             const f = 10 ** d;
             return Math.round((v[0] + Math.sign(v[0]) * 1e-9) * f) / f;
           }
+          // The checkout's own rounding (vat-calculations.ts), so a formula can match a saved figure to the centavo.
+          case "cents": return Number(v[0].toFixed(2));
           case "floor": return Math.floor(v[0] + 1e-9);
           case "ceil": return Math.ceil(v[0] - 1e-9);
           case "abs": return Math.abs(v[0]);
