@@ -6,7 +6,7 @@ import type { Align, Block, Condition, FieldLayout, FormulaFormat, ItemCell, Res
 import { resolveStyle } from "./style";
 import { TOTALS_FIELDS, fillLabel } from "./totals";
 import { computeFormula, formatFormula } from "./formula";
-import { DEFAULT_FORMAT, moneyFormatter } from "./format";
+import { DEFAULT_FORMAT, formatDate, moneyFormatter } from "./format";
 
 // A receipt as styled rows, before it's fitted to a paper width. Both the
 // thermal output (textmode.ts) and the HTML output are made from these.
@@ -50,6 +50,10 @@ export function conditionHolds(c: Condition | undefined, data: ReceiptData): boo
       : t === "cash" ? data.paymentMethod === "CASH"
       : t === "ewallet" ? data.paymentMethod === "E_WALLET"
       : t === "customer" ? Boolean(data.customer)
+      : t === "sale" ? !data.receiptKind
+      : t === "return" ? data.receiptKind === "RETURN"
+      : t === "voided" ? data.receiptKind === "VOIDED"
+      : t === "prescription" ? Boolean(data.prescription)
       : Boolean(data.loyalty && (data.loyalty.pointsRedeemed > 0 || data.loyalty.pointsEarned > 0));
     if (!ok) return false;
   }
@@ -72,6 +76,9 @@ const saleIsVatExempt = (data: ReceiptData) =>
 const vatCode = (item: ReceiptData["items"][number], codes: VatCodes, exemptSale: boolean) =>
   item.isVatable ? (exemptSale ? codes.exempt : codes.vatable) : codes.nonVat;
 
+// An expiry date (YYYY-MM-DD) in the design's date format.
+const expiryText = (day: string, fx: Fx) => formatDate(new Date(`${day}T12:00:00+08:00`), fx.vf.date);
+
 function itemCellText(cell: ItemCell, item: ReceiptData["items"][number], code: string, fx: Fx): string {
   switch (cell.field) {
     case "name": return item.name;
@@ -84,6 +91,10 @@ function itemCellText(cell: ItemCell, item: ReceiptData["items"][number], code: 
     case "totalVat": return `${fx.money(item.totalPrice)}${code}`;
     case "qtyXPrice": return `${item.quantity} x ${fx.money(item.unitPrice)}`;
     case "qtyAtPrice": return `${item.quantity} @ ${fx.money(item.unitPrice)}`;
+    case "dosage": return item.dosage?.trim() ?? "";
+    case "lot": return (item.batches ?? []).map((b) => b.lot).join(", ");
+    case "expiry": return (item.batches ?? []).map((b) => expiryText(b.expiry, fx)).join(", ");
+    case "lotExpiry": return (item.batches ?? []).map((b) => `${b.lot} exp ${expiryText(b.expiry, fx)}`).join("; ");
     case "text": return cell.text;
   }
 }
@@ -124,11 +135,36 @@ function upper(row: Row): Row {
   }
 }
 
-export function layoutReceipt(template: Template, data: ReceiptData): Row[] {
+// A return row saves only its totals; its VAT split and discount come from the
+// original sale (in the share returned), so every line of a design adds up.
+export const forDesign = (data: ReceiptData): ReceiptData => (data.returnParts ? { ...data, ...data.returnParts } : data);
+
+// Printed above every design on a return or voided sale, so neither can pass
+// for a sale. Not part of the design: owners can't remove it.
+export function kindBanner(data: ReceiptData, theme: Style): Row[] {
+  if (!data.receiptKind) return [];
+  const big = resolveStyle(theme, { bold: true, sizeW: 2, sizeH: 2, fontSize: 16 });
+  const plain = resolveStyle(theme);
+  const out: Row[] =
+    data.receiptKind === "RETURN"
+      ? [
+          { kind: "text", text: "RETURN / REFUND", align: "center", style: big },
+          ...(data.originalSaleNumber ? [{ kind: "text" as const, text: `For ${data.originalSaleNumber}`, align: "center" as const, style: plain }] : []),
+        ]
+      : [
+          { kind: "text", text: "*** VOIDED ***", align: "center", style: big },
+          { kind: "text", text: "This sale was cancelled.", align: "center", style: plain },
+        ];
+  out.push({ kind: "rule", char: "=", style: plain });
+  return out;
+}
+
+export function layoutReceipt(template: Template, sale: ReceiptData): Row[] {
+  const data = forDesign(sale);
   const theme = template.theme.style;
   const vf: ValueFormat = { ...DEFAULT_FORMAT, ...template.theme.format };
   const fx: Fx = { vf, money: moneyFormatter(vf), cur: (s) => (vf.currency === "none" ? s.replace(/₱/g, "") : s) };
-  const rows: Row[] = [];
+  const rows: Row[] = kindBanner(data, theme).map(upper);
   let noticePrinted = false;
 
   for (const block of template.blocks) {
@@ -225,7 +261,10 @@ function blockRows(
           for (const line of fmt.lines) {
             const code = vatCode(item, block.vatCodes, exemptSale);
             const cells = line.cells.map((c) => ({ text: itemCellText(c, item, code, fx), width: c.width, align: c.align }));
-            if (cells.every((c) => c.text === "")) continue; // e.g. a generic-name line for an item without one
+            // Nothing to show for this item (a generic-name line for an item without one,
+            // "Lot:" on an item without batches): skip the line, labels and all.
+            if (line.cells.every((c, i) => cells[i].text === "" || c.field === "text") && line.cells.some((c) => c.field !== "text")) continue;
+            if (cells.every((c) => c.text === "")) continue;
             out.push(
               cells.length === 1
                 ? { kind: "text", text: cells[0].text, align: cells[0].align, style: at(line.style) }

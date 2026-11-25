@@ -511,18 +511,6 @@ export async function POST(request: NextRequest) {
       await applyPoints(tx, { ...pointsBase, type: "EARN", points: pointsEarned });
     }
 
-    await tx.saleItem.createMany({
-      data: items.map((item) => ({
-        saleId: created.id,
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.price,
-        totalPrice: item.price * item.quantity,
-        // The product's cost now (it follows the latest delivery), kept for profit reports.
-        unitCost: productMap.get(item.productId)!.costPrice,
-      })),
-    });
-
     // The check above can pass for two cashiers selling the last piece at once,
     // so the stock only comes down if it's still there. If it isn't, the whole
     // sale rolls back. Going in one fixed order keeps two sales of the same
@@ -537,31 +525,51 @@ export async function POST(request: NextRequest) {
 
     // Read now that this sale holds the stock rows, so a sale of the same product
     // has finished or is waiting, and both can't draw on the same batch quantity.
-    const batchesByProduct = new Map<string, { id: string; quantity: number }[]>();
+    const batchesByProduct = new Map<string, { id: string; quantity: number; batchNumber: string; expirationDate: Date }[]>();
     for (const batch of await tx.productBatch.findMany({
       where: { productId: { in: productIds }, quantity: { gt: 0 }, ...batchWhere },
       orderBy: [{ expirationDate: "asc" }, { receivedDate: "asc" }],
-      select: { id: true, productId: true, quantity: true },
+      select: { id: true, productId: true, quantity: true, batchNumber: true, expirationDate: true },
     })) {
       const list = batchesByProduct.get(batch.productId) ?? [];
       list.push(batch);
       batchesByProduct.set(batch.productId, list);
     }
 
+    // The lots each item came from, saved with it for receipts (lot / expiry).
+    const takenFrom: { lot: string; expiry: string; quantity: number }[][] = [];
     for (const item of items) {
       // FEFO consumption: draw down whichever batches exist for this product,
       // soonest-to-expire first, so older stock doesn't sit unsold until it expires.
       // Products with no tracked batches (most of the catalog, unless stock was
       // received via "Receive batch") are unaffected — only the aggregate above applies.
       let remaining = item.quantity;
+      const taken: { lot: string; expiry: string; quantity: number }[] = [];
       const batches = batchesByProduct.get(item.productId) ?? [];
       for (const batch of batches) {
         if (remaining <= 0) break;
+        if (batch.quantity <= 0) continue;
         const consume = Math.min(batch.quantity, remaining);
         await tx.productBatch.update({ where: { id: batch.id }, data: { quantity: { decrement: consume } } });
+        batch.quantity -= consume; // the same product on another line takes from what's left
         remaining -= consume;
+        taken.push({ lot: batch.batchNumber, expiry: batch.expirationDate.toISOString().slice(0, 10), quantity: consume });
       }
+      takenFrom.push(taken);
     }
+
+    await tx.saleItem.createMany({
+      data: items.map((item, i) => ({
+        saleId: created.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.price,
+        totalPrice: item.price * item.quantity,
+        // The product's cost now (it follows the latest delivery), kept for profit reports.
+        unitCost: productMap.get(item.productId)!.costPrice,
+        ...(takenFrom[i].length > 0 ? { batches: takenFrom[i] } : {}),
+      })),
+    });
 
     await tx.stockMovement.createMany({
       data: items.map((item) => ({

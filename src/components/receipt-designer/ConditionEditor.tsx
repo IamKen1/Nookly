@@ -10,6 +10,10 @@ const SALE_TYPES: { key: SaleType; label: string }[] = [
   { key: "ewallet", label: "Paid by e-wallet" },
   { key: "customer", label: "Has a customer" },
   { key: "points", label: "Has loyalty points" },
+  { key: "prescription", label: "Has a prescription" },
+  { key: "sale", label: "A sale (not a return or void)" },
+  { key: "return", label: "A return / refund" },
+  { key: "voided", label: "A voided sale" },
 ];
 
 const input = "h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 outline-none focus:border-emerald-500";

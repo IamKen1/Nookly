@@ -53,9 +53,9 @@ export function sanitizeStyle(v: unknown): Style {
   return s;
 }
 
-const SALE_TYPES: SaleType[] = ["scpwd", "discount", "noDiscount", "cash", "ewallet", "customer", "points"];
+const SALE_TYPES: SaleType[] = ["scpwd", "discount", "noDiscount", "cash", "ewallet", "customer", "points", "sale", "return", "voided", "prescription"];
 const FORMATS: FormulaFormat[] = ["money", "number", "percent", "int"];
-const ITEM_FIELDS: ItemField[] = ["name", "generic", "barcode", "qty", "unitPrice", "total", "vat", "totalVat", "qtyXPrice", "qtyAtPrice", "text"];
+const ITEM_FIELDS: ItemField[] = ["name", "generic", "barcode", "qty", "unitPrice", "total", "vat", "totalVat", "qtyXPrice", "qtyAtPrice", "dosage", "lot", "expiry", "lotExpiry", "text"];
 
 function sanitizeFormat(v: unknown): ValueFormat | undefined {
   if (!isObj(v)) return undefined;

@@ -109,6 +109,15 @@ export const TOTALS_FIELDS: Record<TotalsKey, Field> = {
     value: (r) => (r.loyalty && r.loyalty.pointsEarned > 0 ? r.loyalty.pointsEarned : null),
   },
   pointsBalance: { name: "Points balance", label: "Points balance:", format: "int", value: (r) => r.loyalty?.balanceAfter ?? null },
+
+  // returns
+  originalReceiptNo: { name: "Original AR number (returns)", label: "Return for:", format: "text", value: (r) => r.originalSaleNumber || null },
+
+  // prescription
+  rxNumber: { name: "Prescription (Rx) number", label: "Rx No:", format: "text", value: (r) => r.prescription?.number || null },
+  doctor: { name: "Doctor", label: "Doctor:", format: "text", value: (r) => r.prescription?.doctorName || null },
+  doctorLicense: { name: "Doctor's PRC license no.", label: "PRC No:", format: "text", value: (r) => r.prescription?.doctorLicense || null },
+  rxInstructions: { name: "Prescription directions", label: "Directions:", format: "text", value: (r) => r.prescription?.instructions?.trim() || null },
 };
 
 export const TOTALS_KEYS = Object.keys(TOTALS_FIELDS) as TotalsKey[];

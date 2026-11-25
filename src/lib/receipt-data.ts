@@ -1,15 +1,32 @@
 import { prisma } from "@/lib/prisma";
 import { getReceiptSettings } from "@/lib/receipt-settings";
-import type { ReceiptData } from "@/types/receipt";
+import type { ReceiptBatch, ReceiptData } from "@/types/receipt";
+import { returnParts } from "@/lib/return-parts";
 
 const toNumber = (value: unknown) => Number(value ?? 0);
-
 export const buildReceiptDataForSale = async (saleId: string, tenantId: string): Promise<ReceiptData | null> => {
   const sale = await prisma.sale.findFirst({
     where: { id: saleId, tenantId },
     select: {
       id: true,
       storeId: true,
+      status: true,
+      // A return's VAT split and discount come from its original sale (see returnParts).
+      originalSale: {
+        select: {
+          saleNumber: true, subtotal: true, totalAmount: true, vatableSales: true, nonVatableSales: true, vatableGross: true, nonVatableGross: true,
+          vatableDiscountAmount: true, nonVatableDiscountAmount: true, vatRemovedFromVatable: true,
+          discountType: true, discountName: true, discountRate: true, discountVatExempt: true,
+        },
+      },
+      prescription: {
+        select: {
+          prescriptionNumber: true,
+          instructions: true,
+          doctor: { select: { firstName: true, lastName: true, licenseNumber: true } },
+          items: { select: { productId: true, instructions: true } },
+        },
+      },
       saleNumber: true,
       saleDate: true,
       subtotal: true,
@@ -50,6 +67,8 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
       store: { select: { name: true, address: true, city: true, isMainBranch: true } },
       items: {
         select: {
+          productId: true,
+          batches: true,
           quantity: true,
           unitPrice: true,
           totalPrice: true,
@@ -88,6 +107,8 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
       isVatable: item.product.isVatable ?? true,
       genericName: item.product.genericName ?? null,
       barcode: item.product.barcode ?? null,
+      dosage: sale.prescription?.items.find((p) => p.productId === item.productId)?.instructions ?? null,
+      ...(Array.isArray(item.batches) && item.batches.length > 0 ? { batches: item.batches as unknown as ReceiptBatch[] } : {}),
     })),
     branchName: sale.store.name,
     storeId: sale.storeId,
@@ -138,5 +159,17 @@ export const buildReceiptDataForSale = async (saleId: string, tenantId: string):
     cashier: { firstName: (sale.servedBy ?? sale.user).firstName, lastName: (sale.servedBy ?? sale.user).lastName },
     store,
     ...(vatExemptSales !== undefined ? { vatExemptSales } : {}),
+    // Receipt designer only (the standard receipt ignores these).
+    receiptKind: sale.status === "CANCELLED" ? "VOIDED" : sale.originalSale ? "RETURN" : null,
+    originalSaleNumber: sale.originalSale?.saleNumber ?? null,
+    returnParts: sale.originalSale ? returnParts(sale, sale.originalSale) : null,
+    prescription: sale.prescription
+      ? {
+          number: sale.prescription.prescriptionNumber,
+          doctorName: `${sale.prescription.doctor.firstName} ${sale.prescription.doctor.lastName}`.trim(),
+          doctorLicense: sale.prescription.doctor.licenseNumber ?? null,
+          instructions: sale.prescription.instructions ?? null,
+        }
+      : null,
   };
 };

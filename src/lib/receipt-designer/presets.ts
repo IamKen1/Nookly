@@ -149,7 +149,7 @@ export const registerTotalsLines = (): TotalsLine[] => [
         valueLine("totalDue", { label: "TOTAL AMOUNT" }),
         blank(),
         valueLine("totalDue", { label: "TOTAL" }),
-        { id: newId("t"), kind: "heading", text: "AMOUNT TENDERED", align: "left", style: {} },
+        { id: newId("t"), kind: "heading", text: "AMOUNT TENDERED", align: "left", style: {}, showWhen: { saleTypes: ["sale"] } },
         valueLine("cash", { label: "CASH" }),
         { ...valueLine("ewalletRef", { label: "{paymentMethod} REF" }), showWhen: { saleTypes: ["ewallet"] } },
         blank(),

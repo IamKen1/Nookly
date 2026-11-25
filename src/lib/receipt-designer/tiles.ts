@@ -1,7 +1,7 @@
 // The pieces owners drag onto the receipt, grouped by what they're about.
 // A tile can add several parts at once (e.g. the VAT summary).
 import type { Block, BlockType, TotalsKey, TotalsLine } from "./types";
-import { ITEM_FORMATS, newBlock, newField, newId, valueLine } from "./blocks";
+import { ITEM_FORMATS, newBlock, newField, newId, newItemCell, valueLine } from "./blocks";
 import { TOTALS_FIELDS } from "./totals";
 import { registerItems, vatSummary } from "./presets";
 
@@ -47,12 +47,35 @@ export const TILES: Tile[] = [
   { id: "cashier", category: "sale", label: "Cashier", make: field("cashier") },
   { id: "customer", category: "sale", label: "Customer", hint: "When the sale has a customer", make: field("customer") },
   { id: "branch", category: "sale", label: "Branch", make: field("branch") },
+  {
+    id: "rx",
+    category: "sale",
+    label: "Prescription: Rx no., doctor, PRC no.",
+    hint: "On sales with a prescription",
+    make: () => (["rxNumber", "doctor", "doctorLicense"] as const).map((k) => newField(k, { layout: "inline", showWhen: { saleTypes: ["prescription"] } })),
+  },
+  { id: "rxDirections", category: "sale", label: "Prescription directions", hint: "On sales with a prescription", make: field("rxInstructions", { layout: "inline" }) },
+  { id: "returnFor", category: "sale", label: "Return for AR no.", hint: "On returns", make: field("originalReceiptNo", { layout: "inline" }) },
   { id: "txnLine", category: "sale", label: "One line: AR no. · date · time · cashier", make: one("text", { text: "#{receiptNo}  {date} {time} {cashier}", align: "left" }) },
 
   // items
   { id: "items", category: "items", label: "Item list (standard)", make: one("items") },
   ...ITEM_FORMATS.map((f) => ({ id: `items-${f.key}`, category: "items" as const, label: `Item list: ${f.label.split(":")[0].toLowerCase()}`, make: one("items", { itemFormat: f.make() }) })),
   { id: "items-register", category: "items", label: "Item list: barcode & qty @ price", make: () => [registerItems()] },
+  {
+    id: "lotLine",
+    category: "items",
+    label: "Add lot & expiry under each item",
+    hint: "Adds an item list; items without batches skip the line",
+    make: one("items", {
+      itemFormat: {
+        lines: [
+          ...ITEM_FORMATS[0].make().lines,
+          { id: newId("l"), style: { font: "B" }, cells: [newItemCell("text", { text: "  Lot", width: 18 }), newItemCell("lotExpiry")] },
+        ],
+      },
+    }),
+  },
   { id: "itemCount", category: "items", label: "** 20 item(s) **", make: one("text", { text: "** {quantity} item(s) **" }) },
   { id: "pieces", category: "items", label: "Total pieces", make: field("quantity", { label: "Total Items:", layout: "inline" }) },
 

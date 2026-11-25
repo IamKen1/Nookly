@@ -8,7 +8,7 @@ import { DEFAULT_VAT_CODES } from "./format";
 import { REGISTER_LABELS, registerItems, registerScBlocks, registerTotalsLines, vatSummary } from "./presets";
 
 export type WizardStyle = "classic" | "chain" | "register" | "compact" | "promo";
-export type WizardItems = "standard" | "twoLine" | "oneLine" | "table" | "register";
+export type WizardItems = "standard" | "twoLine" | "oneLine" | "table" | "register" | "pharmacy";
 export type WizardTotals = "steps" | "simple" | "register";
 export type WizardCount = "none" | "line" | "stars";
 export type WizardLetters = "VN" | "TX" | "none";
@@ -59,6 +59,11 @@ export const WIZARD_ITEMS: { key: WizardItems; label: string; example: string }[
   { key: "oneLine", label: "All on one line", example: "2  Biogesic 500mg   ₱13.00" },
   { key: "table", label: "Table with columns", example: "ITEM       QTY PRICE AMOUNT\nBiogesic     2  6.50  13.00" },
   { key: "register", label: "Barcode and qty @ price", example: "BIOGESIC 500MG       13.00T\n    4800010012345  2 @ 6.50" },
+  {
+    key: "pharmacy",
+    label: "With lot, expiry and directions",
+    example: "Losartan 50mg\n30 x ₱12.00    ₱360.00 V\n  Lot  LS0921 exp 12/15/2026\n  Sig: 1 tablet once a day",
+  },
 ];
 
 export const WIZARD_TOTALS: { key: WizardTotals; label: string; example: string }[] = [

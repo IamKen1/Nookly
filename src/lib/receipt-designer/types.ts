@@ -66,7 +66,10 @@ export interface Theme {
 }
 
 // "Show only when…": every condition set must hold for the element to print.
-export type SaleType = "scpwd" | "discount" | "noDiscount" | "cash" | "ewallet" | "customer" | "points";
+export type SaleType =
+  | "scpwd" | "discount" | "noDiscount" | "cash" | "ewallet" | "customer" | "points"
+  | "sale" | "return" | "voided" // a regular sale, a RET- return, a voided sale
+  | "prescription"; // dispensed against a prescription
 export interface Condition {
   saleTypes?: SaleType[];
   minTotal?: number | null; // total amount due at least
@@ -118,6 +121,10 @@ export type ItemField =
   | "totalVat" // amount with the VAT code right after it: 312.50X
   | "qtyXPrice"
   | "qtyAtPrice" // 10 @ 31.25
+  | "dosage" // the prescription's directions for the item
+  | "lot" // lot / batch number(s) the item was taken from
+  | "expiry" // their expiry date(s)
+  | "lotExpiry" // A123 exp 03/31/2027
   | "text";
 
 // The letter printed for each item's VAT status (items block, "V / N" columns).
@@ -190,7 +197,12 @@ export type TotalsKey =
   | "discountHolder"
   | "discountIdNumber"
   | "pointsEarned"
-  | "pointsBalance";
+  | "pointsBalance"
+  | "originalReceiptNo"
+  | "rxNumber"
+  | "doctor"
+  | "doctorLicense"
+  | "rxInstructions";
 export type FieldKey = TotalsKey;
 
 // How one value sits on its line:

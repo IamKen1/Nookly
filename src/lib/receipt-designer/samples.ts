@@ -1,23 +1,33 @@
 import type { ReceiptData, ReceiptItem, ReceiptStoreSettings } from "@/types/receipt";
 import { calculateVatInclusiveTotals } from "@/lib/vat-calculations";
 import { applyPricing, NO_PRICING, type PricingRules } from "@/lib/pricing";
+import { returnParts } from "@/lib/return-parts";
 import { discountCalcInput, discountRateText, type DiscountTerms as Terms } from "@/lib/discount-math";
 
 type DiscountTerms = Terms & { asksForId?: boolean };
 
-export type SampleKind = "regular" | "scpwd" | "points" | "ewallet" | "discount";
+export type SampleKind = "regular" | "scpwd" | "points" | "ewallet" | "discount" | "rx" | "return" | "voided";
 
 export const SAMPLE_KINDS: { key: SampleKind | "recent"; label: string }[] = [
   { key: "regular", label: "Regular sale" },
   { key: "scpwd", label: "Senior citizen" },
   { key: "points", label: "With loyalty points" },
   { key: "ewallet", label: "E-wallet" },
+  { key: "rx", label: "With a prescription" },
+  { key: "return", label: "Return / refund" },
+  { key: "voided", label: "Voided sale" },
   { key: "recent", label: "Your latest sale" },
 ];
 
 const ITEMS: ReceiptItem[] = [
-  { name: "Biogesic 500mg Tablet", genericName: "Paracetamol", barcode: "4800010012345", quantity: 2, unitPrice: 6.5, totalPrice: 13, isVatable: true },
-  { name: "Losartan 50mg Tablet", genericName: "Losartan Potassium", barcode: "4800020067890", quantity: 30, unitPrice: 12, totalPrice: 360, isVatable: true },
+  {
+    name: "Biogesic 500mg Tablet", genericName: "Paracetamol", barcode: "4800010012345", quantity: 2, unitPrice: 6.5, totalPrice: 13, isVatable: true,
+    batches: [{ lot: "BG24117", expiry: "2027-03-31", quantity: 2 }],
+  },
+  {
+    name: "Losartan 50mg Tablet", genericName: "Losartan Potassium", barcode: "4800020067890", quantity: 30, unitPrice: 12, totalPrice: 360, isVatable: true,
+    batches: [{ lot: "LS0921", expiry: "2026-12-15", quantity: 20 }, { lot: "LS1003", expiry: "2027-06-30", quantity: 10 }],
+  },
   { name: "Ascorbic Acid 500mg Capsule", genericName: "Vitamin C", barcode: "4800030011223", quantity: 10, unitPrice: 3.25, totalPrice: 32.5, isVatable: false },
 ];
 
@@ -57,9 +67,60 @@ export function exampleCheckouts(
   });
 }
 
+const RX_DOSAGE: Record<string, string> = {
+  "Losartan 50mg Tablet": "1 tablet once a day in the morning",
+  "Biogesic 500mg Tablet": "1 tablet every 6 hours as needed for fever",
+};
+
+// A made-up sale for the designer's preview. "return" is two Biogesic brought
+// back from the regular sale; "voided" is the regular sale, cancelled.
+export function sampleReceipt(
+  kind: SampleKind,
+  store: ReceiptStoreSettings,
+  cashier: { firstName: string; lastName: string },
+  branchName: string | null,
+  storeId: string | null = null,
+  pricing: PricingRules = NO_PRICING,
+  discount: DiscountTerms | null = null
+): ReceiptData {
+  const base = saleSample(kind === "return" || kind === "voided" || kind === "rx" ? "regular" : kind, store, cashier, branchName, storeId, pricing, discount);
+  if (kind === "voided") return { ...base, receiptKind: "VOIDED" };
+  if (kind === "rx") {
+    return {
+      ...base,
+      items: base.items.map((i) => ({ ...i, dosage: RX_DOSAGE[i.name] ?? null })),
+      prescription: { number: "RX-2026-00042", doctorName: "Maria Santos, MD", doctorLicense: "0123456", instructions: "Maintenance for blood pressure." },
+    };
+  }
+  if (kind !== "return") return base;
+  const item = base.items[0];
+  const subtotal = -item.totalPrice;
+  const share = subtotal / base.subtotal;
+  const ret = { subtotal, taxAmount: Math.round(base.taxAmount * share * 100) / 100, totalAmount: Math.round(base.totalAmount * share * 100) / 100 };
+  return {
+    ...base,
+    saleNumber: "RET-SAMPLE-0001",
+    items: [{ ...item, totalPrice: -item.totalPrice, batches: undefined }],
+    ...ret,
+    discountAmount: 0,
+    vatableSales: 0,
+    nonVatableSales: 0,
+    adjustmentAmount: 0,
+    roundingAmount: 0,
+    computedParts: null,
+    cashReceived: undefined,
+    changeGiven: undefined,
+    loyalty: undefined,
+    orderRemarks: `Return for ${base.saleNumber}: wrong item`,
+    receiptKind: "RETURN",
+    originalSaleNumber: base.saleNumber,
+    returnParts: returnParts(ret, base),
+  };
+}
+
 // A made-up sale for the designer's preview, computed with the same VAT and
 // discount math as real checkouts so every totals line shows a real figure.
-export function sampleReceipt(
+function saleSample(
   kind: SampleKind,
   store: ReceiptStoreSettings,
   cashier: { firstName: string; lastName: string },

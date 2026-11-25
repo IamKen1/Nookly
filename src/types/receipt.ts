@@ -25,6 +25,33 @@ export interface ReceiptItem {
   isVatable: boolean;
   genericName?: string | null; // receipt designer only
   barcode?: string | null; // receipt designer only
+  // Receipt designer only: the prescription's directions for this item, and
+  // the lots it was taken from (soonest-to-expire first) when batches are tracked.
+  dosage?: string | null;
+  batches?: ReceiptBatch[];
+}
+
+export interface ReceiptBatch {
+  lot: string;
+  expiry: string; // YYYY-MM-DD
+  quantity: number;
+}
+
+// Receipt designer only: the VAT split of a return, taken from the original
+// sale in the same share as what was returned (return rows don't save it).
+export interface ReturnParts {
+  vatableSales: number;
+  nonVatableSales: number;
+  vatableGross: number;
+  nonVatableGross: number;
+  vatableDiscountAmount: number;
+  nonVatableDiscountAmount: number;
+  vatRemovedFromVatable: number;
+  vatExemptSales?: number;
+  discountType: string;
+  discountName: string | null;
+  discountRate: string | null;
+  discountVatExempt: boolean;
 }
 
 export interface ReceiptData {
@@ -78,6 +105,12 @@ export interface ReceiptData {
   cashier: { firstName: string; lastName: string };
   orderRemarks?: string | null;
   store: ReceiptStoreSettings;
+  // Receipt designer only. A return (RET-) or a voided sale; absent on sales.
+  receiptKind?: "RETURN" | "VOIDED" | null;
+  originalSaleNumber?: string | null; // the sale a return was made from
+  returnParts?: ReturnParts | null;
+  // Receipt designer only: the prescription the sale was dispensed against.
+  prescription?: { number: string; doctorName: string; doctorLicense: string | null; instructions: string | null } | null;
 }
 
 export const splitReceiptLines = (...values: Array<string | null | undefined>) =>

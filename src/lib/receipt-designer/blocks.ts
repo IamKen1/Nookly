@@ -69,7 +69,7 @@ export const newItemCell = (field: ItemField, overrides: Partial<ItemCell> = {})
   text: "",
   title: ITEM_FIELD_TITLES[field],
   width: 0,
-  align: field === "name" || field === "generic" || field === "barcode" || field === "text" ? "left" : "right",
+  align: ["name", "generic", "barcode", "text", "dosage", "lot", "expiry", "lotExpiry"].includes(field) ? "left" : "right",
   ...overrides,
 });
 
@@ -84,6 +84,10 @@ export const ITEM_FIELD_NAMES: Record<ItemField, string> = {
   totalVat: "Line total + VAT code (312.50X)",
   qtyXPrice: "Qty × price (2 x ₱6.50)",
   qtyAtPrice: "Qty @ price (2 @ ₱6.50)",
+  dosage: "Dosage / directions (Rx)",
+  lot: "Lot / batch no.",
+  expiry: "Expiry date",
+  lotExpiry: "Lot + expiry (A123 exp 03/31/2027)",
   text: "Text",
 };
 const ITEM_FIELD_TITLES: Record<ItemField, string> = {
@@ -97,6 +101,10 @@ const ITEM_FIELD_TITLES: Record<ItemField, string> = {
   totalVat: "AMOUNT",
   qtyXPrice: "QTY x PRICE",
   qtyAtPrice: "QTY @ PRICE",
+  dosage: "DIRECTIONS",
+  lot: "LOT",
+  expiry: "EXP",
+  lotExpiry: "LOT / EXP",
   text: "",
 };
 
@@ -138,6 +146,19 @@ export const ITEM_FORMATS: { key: string; label: string; make: () => ItemFormat 
           style: {},
           cells: [newItemCell("name"), newItemCell("qty"), newItemCell("unitPrice"), newItemCell("total")],
         },
+      ],
+    }),
+  },
+  {
+    key: "pharmacy",
+    label: "Pharmacy: name, qty × price … amount, lot & expiry, directions",
+    make: () => ({
+      // The lot and directions lines print only for items that have them.
+      lines: [
+        { id: newId("l"), style: { bold: true }, cells: [newItemCell("name")] },
+        { id: newId("l"), style: {}, cells: [newItemCell("qtyXPrice"), newItemCell("total"), newItemCell("vat", { width: 6 })] },
+        { id: newId("l"), style: { font: "B" }, cells: [newItemCell("text", { text: "  Lot", width: 18 }), newItemCell("lotExpiry")] },
+        { id: newId("l"), style: { font: "B" }, cells: [newItemCell("text", { text: "  Sig:", width: 18 }), newItemCell("dosage")] },
       ],
     }),
   },

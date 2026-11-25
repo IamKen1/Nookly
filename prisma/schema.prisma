@@ -1028,6 +1028,9 @@ model SaleItem {
   returnedQuantity Int      @default(0)
   // Cost per unit when sold, so profit reports stay right after cost changes. Null on older sales.
   unitCost         Decimal? @db.Decimal(10, 2)
+  // The lots this item was taken from (soonest-to-expire first), as
+  // [{ lot, expiry: "YYYY-MM-DD", quantity }]. Null when no batches were tracked.
+  batches          Json?
   saleId           String
   productId        String
   product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)

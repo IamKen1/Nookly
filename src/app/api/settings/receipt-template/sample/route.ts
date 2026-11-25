@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   if (kind.startsWith("discount:")) {
     discount = await prisma.discount.findFirst({ where: { id: kind.slice("discount:".length), tenantId: session.tenantId } });
     if (!discount) return NextResponse.json({ error: "That discount wasn't found." }, { status: 404 });
-  } else if (!["regular", "scpwd", "points", "ewallet"].includes(kind)) return NextResponse.json({ error: "Unknown sample." }, { status: 400 });
+  } else if (!["regular", "scpwd", "points", "ewallet", "rx", "return", "voided"].includes(kind)) return NextResponse.json({ error: "Unknown sample." }, { status: 400 });
   const [store, user, branch, pricing] = await Promise.all([
     getReceiptSettings(session.tenantId),
     prisma.user.findUnique({ where: { id: session.userId }, select: { firstName: true, lastName: true } }),
