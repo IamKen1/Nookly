@@ -6,7 +6,7 @@ import { calculateVatInclusiveTotals } from "@/lib/vat-calculations";
 import { applyPricing, NO_PRICING, type PricingRules } from "@/lib/pricing";
 import { computeFormula } from "./formula";
 import { TOTALS_FIELDS, TOTALS_KEYS } from "./totals";
-import { computationAsLines, explainKey, explainPart, withNumbers } from "./explain";
+import { computationAsLines, explainKey, explainPart, impliedVat, posTargetOf, withNumbers } from "./explain";
 import { buildPreset } from "./presets";
 import { layoutReceipt } from "./layout";
 import { toPrintedLines } from "./textmode";
@@ -43,9 +43,10 @@ function sale(i: number): { r: ReceiptData; adjusted: boolean } {
   const vatableTotal = Number(items.filter((x) => x.isVatable).reduce((s, x) => s + x.totalPrice, 0).toFixed(2));
   const nonVatableTotal = Number(items.filter((x) => !x.isVatable).reduce((s, x) => s + x.totalPrice, 0).toFixed(2));
   const d = DISCOUNTS[i % DISCOUNTS.length] as Record<string, unknown>;
-  const computed = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, ...d });
+  const vatRate = i % 3 === 2 ? 10 : 12; // every third sale at another VAT rate
+  const computed = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, ...d, vatRate });
   const exempt = d.discountType === "SENIOR" || d.discountType === "PWD" || d.vatExempt === true;
-  const rules: PricingRules = i % 5 === 4 ? { roundingStep: 0.25, rule: i % 10 === 9 ? { label: "Fee", expr: "total * 1.03" } : null } : NO_PRICING;
+  const rules: PricingRules = { ...(i % 5 === 4 ? { roundingStep: 0.25, rule: i % 10 === 9 ? { label: "Fee", expr: "total * 1.03" } : null } : NO_PRICING), vatRate };
   const p = applyPricing(computed, { exemptSale: exempt, paymentMethod: "CASH", items }, rules);
   const t = p.totals;
   const hasDiscount = "discountType" in d;
@@ -58,7 +59,7 @@ function sale(i: number): { r: ReceiptData; adjusted: boolean } {
     vatableDiscountAmount: t.vatableDiscountAmount, nonVatableDiscountAmount: t.nonVatableDiscountAmount, vatRemovedFromVatable: t.vatRemovedFromVatable,
     ...(exempt && hasDiscount ? { vatExemptSales: Math.round((t.vatableGross - t.vatRemovedFromVatable) * 100) / 100 } : {}),
     zeroRatedSales: 0, totalAmount: t.finalTotal, adjustmentAmount: p.adjustmentAmount, adjustmentLabel: p.adjustmentLabel, roundingAmount: p.roundingAmount,
-    computedParts: p.computedParts, paymentMethod: "CASH", cashReceived: cash, changeGiven: Math.round((cash - t.finalTotal) * 100) / 100,
+    computedParts: p.computedParts, vatRate, paymentMethod: "CASH", cashReceived: cash, changeGiven: Math.round((cash - t.finalTotal) * 100) / 100,
   };
   return { r, adjusted: p.adjustmentAmount !== 0 || p.roundingAmount !== 0 };
 }
@@ -151,4 +152,31 @@ test("each part of the discount is explained with its own items", () => {
   const steps = explainPart({ ...buildPreset("classic", store, 58).blocks.find((b) => b.type === "totals")! } as Block, null, r)[0].steps;
   assert.ok(steps.some((s) => s.includes("-66.61") && s.includes("20% of 333.04 = 66.61")), steps.join("\n"));
   assert.ok(steps.some((s) => s.includes("-6.50") && s.includes("20% of 32.50 = 6.50")), steps.join("\n"));
+});
+
+test("Apply to the POS too: each changed line goes to its own POS setting", () => {
+  assert.equal(posTargetOf("totalDue"), "formula");
+  assert.equal(posTargetOf(undefined), "formula", "your own formula: the price formula");
+  assert.equal(posTargetOf("discount"), "discount");
+  assert.equal(posTargetOf("vatableDiscount"), "discount");
+  assert.equal(posTargetOf("rounding"), "rounding");
+  for (const k of ["vatAmount", "vatRemoved", "vatExemptSales", "vatableSales"] as const) assert.equal(posTargetOf(k), "vat", k);
+  for (const k of ["grossTotal", "change", "nonVatableSales", "quantity"] as const) assert.equal(posTargetOf(k), null, `${k} follows`);
+});
+
+test("a changed VAT line tells the POS the rate it means", () => {
+  const regular = sampleReceipt("regular", store, { firstName: "A", lastName: "B" }, null);
+  const sc = sampleReceipt("scpwd", store, { firstName: "A", lastName: "B" }, null);
+  const at10 = (expr: string, r: ReceiptData) => computeFormula(expr, r);
+  // 10% instead of 12%, typed into each VAT line.
+  assert.equal(impliedVat("vatAmount", at10("cents(vatableGross * (10 / 110))", regular), regular).rate, 10);
+  assert.equal(impliedVat("vatableSales", at10("vatableGross - cents(vatableGross * (10 / 110))", regular), regular).rate, 10);
+  assert.deepEqual(impliedVat("vatRemoved", at10("vatableGross - cents(vatableGross / 1.1)", sc), sc), { rate: 10, seniorVatFirst: true });
+  assert.equal(impliedVat("vatExemptSales", at10("cents(vatableGross / 1.1)", sc), sc).rate, 10);
+  // The standard formulas mean 12%.
+  assert.equal(impliedVat("vatAmount", at10(explainKey("vatAmount", regular).formula!, regular), regular).rate, 12);
+  // No VAT removed on a Senior sale: the VAT-first rule is turned off.
+  assert.deepEqual(impliedVat("vatRemoved", 0, sc), { rate: null, seniorVatFirst: false });
+  // A VAT line on a sale that can't tell: no rate guessed.
+  assert.equal(impliedVat("vatRemoved", 0, regular).rate, null);
 });

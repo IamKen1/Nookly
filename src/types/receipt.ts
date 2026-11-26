@@ -87,6 +87,8 @@ export interface ReceiptData {
   adjustmentAmount?: number;
   adjustmentLabel?: string | null;
   roundingAmount?: number;
+  // The VAT rate the sale was computed with (%); absent = 12.
+  vatRate?: number;
   // On adjusted sales: the standard computation's parts before the adjustments.
   computedParts?: { vatableSales: number; vatAmount: number; nonVatableSales: number; finalTotal: number } | null;
   paymentMethod: string;

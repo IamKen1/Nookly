@@ -60,6 +60,7 @@ import Checklist from "./Checklist";
 import Wizard, { Confetti } from "./Wizard";
 import ConfirmDialog from "./ConfirmDialog";
 import PosPricing from "./PosPricing";
+import type { PosRequest } from "./Explain";
 import Gallery from "./Gallery";
 import { designFile, designFileName, readDesignFile } from "@/lib/receipt-designer/share";
 import useSWR, { mutate as mutateSWR } from "swr";
@@ -156,7 +157,8 @@ export default function ReceiptDesigner() {
   const { data: allDiscounts } = useSWR<DiscountDTO[]>("/api/discounts");
   const ownDiscounts = (allDiscounts ?? []).filter((d) => !d.isSystem && d.isActive);
   // A formula on the receipt the owner wants the POS to charge ("Apply to POS").
-  const [posFormula, setPosFormula] = useState<{ label: string; expr: string } | null>(null);
+  // A change on the receipt the owner wants at the POS too ("Apply to the POS too…").
+  const [posRequest, setPosRequest] = useState<PosRequest | null>(null);
   const [branches, setBranches] = useState<{ id: string; name: string; isMainBranch?: boolean }[]>([]);
   // Which design is open: null = the workspace design (every branch), or one branch's own.
   const [scope, setScope] = useState<string | null>(null);
@@ -1099,8 +1101,13 @@ export default function ReceiptDesigner() {
                 focusLineId={selectedPart?.lineId ?? null}
                 onChargeFormula={(f) => {
                   // The POS panel lives under Receipt settings; show it with the formula ready to confirm.
-                  setPosFormula(f);
+                  setPosRequest({ kind: "formula", ...f });
                   setSelectedId(null);
+                }}
+                onApplyToPos={(r) => {
+                  setPosRequest(r);
+                  setSelectedId(null);
+                  setSheet("settings");
                 }}
                 printMode={template.printMode}
                 onChange={updateBlock}
@@ -1191,7 +1198,7 @@ export default function ReceiptDesigner() {
 
                 <ValueFormatEditor value={{ ...DEFAULT_FORMAT, ...template.theme.format }} onChange={(format) => change({ ...template, theme: { ...template.theme, format } })} />
 
-                <PosPricing formulaDraft={posFormula} onFormulaDraftDone={() => setPosFormula(null)} onApplied={() => void loadSample(sampleKind)} />
+                <PosPricing request={posRequest} onRequestDone={() => setPosRequest(null)} onApplied={() => void loadSample(sampleKind)} />
 
                 <div className="space-y-2 border-t border-zinc-100 pt-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Printer on this device</p>

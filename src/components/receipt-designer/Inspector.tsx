@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Explain from "./Explain";
+import Explain, { type PosRequest } from "./Explain";
 import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -140,6 +140,7 @@ export default function Inspector({
   branches = [],
   focusLineId = null,
   onChargeFormula,
+  onApplyToPos,
 }: {
   block: Block;
   printMode: PrintMode;
@@ -149,6 +150,7 @@ export default function Inspector({
   branches?: { id: string; name: string }[];
   focusLineId?: string | null; // a totals line clicked on the preview
   onChargeFormula?: (f: { label: string; expr: string }) => void; // "Apply to POS"
+  onApplyToPos?: (r: PosRequest) => void; // a changed line's "Apply to the POS too?"
 }) {
   const ctx: Ctx = { sample, branches, focusLineId, onChargeFormula };
   const set = (patch: Partial<Block>) => onChange({ ...block, ...patch } as Block);
@@ -171,7 +173,7 @@ export default function Inspector({
           </button>
         )}
       </div>
-      <Explain block={block} lineId={focusLineId} sample={sample} onChange={onChange} />
+      <Explain block={block} lineId={focusLineId} sample={sample} onChange={onChange} onApplyToPos={onApplyToPos} />
 
       <TypeFields block={block} printMode={printMode} onChange={onChange} ctx={ctx} />
 
@@ -377,7 +379,8 @@ function TypeFields({ block, printMode, onChange, ctx }: { block: Block; printMo
             value={{ label: block.label, expr: block.expr, format: block.format, decimals: block.decimals, layout: block.layout, minus: block.minus, hideWhenZero: block.hideWhenZero }}
             onChange={(patch) => set(patch as Partial<Block>)}
           />
-          {block.format === "money" && <ChargeButton label={block.label} expr={block.expr} ctx={ctx} />}
+          {/* A formula made from a value has its own "Apply to the POS too?" above. */}
+          {block.format === "money" && !block.replaces && <ChargeButton label={block.label} expr={block.expr} ctx={ctx} />}
         </div>
       );
 
@@ -703,7 +706,7 @@ function TotalsLineRow({
                 onChange={(patch) => onChange(patch as Partial<TotalsLine>)}
               />
               <StyleEditor compact value={line.style} onChange={(style) => onChange({ style })} printMode={printMode} />
-              {line.format === "money" && <ChargeButton label={line.label} expr={line.expr} ctx={ctx} />}
+              {line.format === "money" && !line.replaces && <ChargeButton label={line.label} expr={line.expr} ctx={ctx} />}
             </>
           )}
           {line.kind === "rule" && <RuleSelect value={line.char} onChange={(v) => onChange({ char: v ?? "-" })} />}

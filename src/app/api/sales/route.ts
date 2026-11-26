@@ -3,7 +3,7 @@ import { E_WALLET_PROVIDERS, normalizeReference } from "@/lib/payment-methods";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/session";
 import { calculateVatInclusiveTotals, type DiscountType } from "@/lib/vat-calculations";
-import { applyPricing } from "@/lib/pricing";
+import { applyPricing, vatOptions } from "@/lib/pricing";
 import { getPricingRules } from "@/lib/pricing-settings";
 import { discountCalcInput, discountRateText, ensureDefaultDiscounts, isDiscountAvailable } from "@/lib/discounts";
 import { getTenantPlanCode, hasFeature } from "@/lib/plan-gating";
@@ -288,18 +288,17 @@ export async function POST(request: NextRequest) {
     : null;
   const normalizedDiscountType: DiscountType = appliedDiscount?.code ?? "NONE";
 
+  // The owner's pricing rules (VAT, formula, cash rounding). With none set,
+  // the standard computation passes through untouched.
+  const pricingRules = await pricingRulesP;
+  const vat = vatOptions(pricingRules, appliedDiscount);
   const computedTotals = calculateVatInclusiveTotals({
     vatableTotal: vatableSubtotal,
     nonVatableTotal: nonVatableSubtotal,
-    ...(appliedDiscount ? discountCalcInput(appliedDiscount) : { discountType: "NONE", discountPercent: 0 }),
+    ...(appliedDiscount ? { ...discountCalcInput(appliedDiscount), vatExempt: vat.vatExempt } : { discountType: "NONE", discountPercent: 0 }),
+    vatRate: vat.vatRate,
   });
-  // The owner's pricing rules (formula, cash rounding). With none set, the
-  // computed totals pass through untouched.
-  const pricing = applyPricing(
-    computedTotals,
-    { exemptSale: Boolean(appliedDiscount?.vatExempt), paymentMethod, items },
-    await pricingRulesP
-  );
+  const pricing = applyPricing(computedTotals, { exemptSale: vat.vatExempt, paymentMethod, items }, pricingRules);
   const vatTotals = pricing.totals;
 
   const totalAmount = vatTotals.finalTotal;
@@ -471,7 +470,8 @@ export async function POST(request: NextRequest) {
         discountId: discount?.id ?? null,
         discountName: appliedDiscount?.name ?? null,
         discountRate: appliedDiscount ? discountRateText(appliedDiscount) : null,
-        discountVatExempt: appliedDiscount?.vatExempt ?? false,
+        discountVatExempt: vat.vatExempt,
+        vatRate: vat.vatRate,
         vatableGross: vatTotals.vatableGross,
         nonVatableGross: vatTotals.nonVatableGross,
         vatableDiscountAmount: vatTotals.vatableDiscountAmount,
@@ -652,7 +652,7 @@ export async function POST(request: NextRequest) {
       let vatExemptSales: number | undefined;
       if (completeSale.discountVatExempt) {
         const vatableTotal = Number(completeSale.vatableSales) + Number(completeSale.discountAmount);
-        vatExemptSales = Number((vatableTotal / 1.12).toFixed(2));
+        vatExemptSales = Number((vatableTotal / (1 + Number(completeSale.vatRate) / 100)).toFixed(2));
       }
 
       await notifySaleCreated({

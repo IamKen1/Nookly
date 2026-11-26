@@ -27,7 +27,8 @@ async function authorize(request: NextRequest) {
 const samePricing = (a: PricingState, b: unknown) => {
   const o = stateFromJson(b);
   return (
-    (a.roundingStep ?? null) === o.roundingStep && a.ruleEnabled === o.ruleEnabled && a.ruleLabel === o.ruleLabel && a.ruleExpr === o.ruleExpr && sameWhen(a.ruleWhen, o.ruleWhen)
+    (a.roundingStep ?? null) === o.roundingStep && a.ruleEnabled === o.ruleEnabled && a.ruleLabel === o.ruleLabel && a.ruleExpr === o.ruleExpr && sameWhen(a.ruleWhen, o.ruleWhen) &&
+    (a.vatRate ?? null) === o.vatRate && a.seniorVatFirst === o.seniorVatFirst
   );
 };
 const sameDiscount = (a: DiscountTermsSnap, b: unknown) => {

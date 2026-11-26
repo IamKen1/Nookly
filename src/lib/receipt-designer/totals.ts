@@ -42,6 +42,7 @@ export const TOTALS_FIELDS: Record<TotalsKey, Field> = {
   zeroRatedSales: { name: "Zero-rated sales", label: "Zero-Rated Sales:", format: "money", value: (r) => r.zeroRatedSales ?? 0 },
   nonVatableSales: { name: "Non-VAT sales", label: "Non-VAT Sales:", format: "money", value: (r) => r.nonVatableSales ?? 0 },
   vatAmount: { name: "12% VAT", label: "12% VAT:", format: "money", value: (r) => r.taxAmount },
+  vatRate: { name: "VAT rate (%)", label: "VAT rate:", format: "int", value: (r) => r.vatRate ?? 12 },
   totalDue: { name: "Total amount due", label: "TOTAL AMOUNT DUE:", format: "money", value: (r) => r.totalAmount },
   // Only on sales where the owner's POS pricing rules changed the total.
   adjustment: {

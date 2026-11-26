@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { X, CreditCard, Calculator, KeyRound, Send } from "lucide-react";
 import { calculateVatInclusiveTotals, getComputationLines } from "@/lib/vat-calculations";
-import { applyPricing, NO_PRICING, type PricingRules } from "@/lib/pricing";
+import { applyPricing, NO_PRICING, vatOptions, type PricingRules } from "@/lib/pricing";
 import { discountCalcInput, discountDisplay } from "@/lib/discount-math";
 import type { DiscountDTO } from "@/lib/discounts";
 import { peso } from "@/lib/format";
@@ -163,12 +163,19 @@ export default function CheckoutModal({
   const discountType = discountInput.discountType;
   const isScPwd = discountType === "SENIOR" || discountType === "PWD";
 
-  const computed = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, ...discountInput });
-  // The owner's pricing rules (formula, cash rounding), exactly as the server applies them.
-  const priced = applyPricing(computed, { exemptSale: Boolean(discount?.vatExempt), paymentMethod, items: cart }, pricing ?? NO_PRICING);
+  // The owner's pricing rules (VAT, formula, cash rounding), exactly as the server applies them.
+  const vat = vatOptions(pricing ?? NO_PRICING, discount);
+  const computed = calculateVatInclusiveTotals({ vatableTotal, nonVatableTotal, ...discountInput, ...(discount ? { vatExempt: vat.vatExempt } : {}), vatRate: vat.vatRate });
+  const priced = applyPricing(computed, { exemptSale: vat.vatExempt, paymentMethod, items: cart }, pricing ?? NO_PRICING);
   const totals = priced.totals;
   const finalTotal = totals.finalTotal;
-  const computationLines = getComputationLines(computed, discountType, discountInput.discountPercent, discount ? discountDisplay(discount) : undefined).flatMap((l) =>
+  const vatLabel = vat.vatRate !== 12 ? { vatRate: vat.vatRate } : {};
+  const computationLines = getComputationLines(
+    computed,
+    discountType,
+    discountInput.discountPercent,
+    discount ? { ...discountDisplay(discount), vatExempt: vat.vatExempt, ...vatLabel } : vatLabel.vatRate ? vatLabel : undefined
+  ).flatMap((l) =>
     l.kind === "total"
       ? [
           ...(priced.adjustmentAmount ? [{ label: priced.adjustmentLabel ?? "Adjustment", amount: priced.adjustmentAmount, kind: "subtract" as const }] : []),
@@ -374,7 +381,7 @@ export default function CheckoutModal({
                 </div>
                 {totals.vatRemovedFromVatable > 0 && (
                   <div className="flex justify-between text-sm text-gray-600">
-                    <span>Less: 12% VAT ({isScPwd ? "SC/PWD exemption" : "VAT exemption"}):</span>
+                    <span>Less: {vat.vatRate}% VAT ({isScPwd ? "SC/PWD exemption" : "VAT exemption"}):</span>
                     <span>-{peso(totals.vatRemovedFromVatable)}</span>
                   </div>
                 )}

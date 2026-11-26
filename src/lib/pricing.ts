@@ -8,12 +8,25 @@
 // recomputed, so vatableSales + vatAmount + nonVatableSales = charged total
 // holds for every sale, and reports, shift cash and returns stay consistent.
 import type { ReceiptData } from "@/types/receipt";
-import type { VatCalculationResult } from "@/lib/vat-calculations";
+import { STANDARD_VAT_RATE, type VatCalculationResult } from "@/lib/vat-calculations";
 import { computeFormula, formulaVariables, FormulaError } from "@/lib/receipt-designer/formula";
 
 export interface PricingRules {
   roundingStep: number | null; // ₱0.25 / ₱0.50 / ₱1.00; null = off
   rule: { label: string; expr: string; when?: RuleWhen } | null; // null = off
+  // VAT: the rate in % (null/absent = the standard 12%), and whether Senior/PWD
+  // discounts take the VAT off first (absent = yes, as the law requires).
+  vatRate?: number | null;
+  seniorVatFirst?: boolean;
+}
+
+// How checkout computes VAT for a sale under the owner's settings: the rate,
+// and whether this sale's discount takes the VAT off first (SC/PWD unless
+// the owner turned that off; other discounts as set in Settings › Discounts).
+export function vatOptions(rules: PricingRules, discount: { code: string; vatExempt: boolean } | null) {
+  const scPwd = discount?.code === "SENIOR" || discount?.code === "PWD";
+  const vatExempt = discount ? (scPwd && rules.seniorVatFirst === false ? false : discount.vatExempt) : false;
+  return { vatRate: rules.vatRate ?? STANDARD_VAT_RATE, vatExempt };
 }
 
 // When the formula applies. Absent = every sale (except SC/PWD, always).
@@ -112,7 +125,7 @@ function formulaSale(t: VatCalculationResult, items: { quantity: number }[]): Re
 }
 
 // Moves the total by `delta`, split over the VATable and non-VAT parts by size.
-function shift(t: VatCalculationResult, delta: number, exemptSale: boolean): VatCalculationResult {
+function shift(t: VatCalculationResult, delta: number, exemptSale: boolean, vatRate: number): VatCalculationResult {
   if (Math.abs(delta) < 0.005) return t;
   // The VATable part as charged: VAT-inclusive on regular sales, VAT-exempt on SC/PWD.
   const vatablePart = exemptSale ? t.vatableSales : money(t.vatableSales + t.vatAmount);
@@ -127,7 +140,7 @@ function shift(t: VatCalculationResult, delta: number, exemptSale: boolean): Vat
     vatAmount = t.vatAmount;
   } else {
     const inclusive = money(vatablePart + toVatable);
-    vatAmount = money(inclusive * (12 / 112));
+    vatAmount = money(inclusive * (vatRate / (100 + vatRate))); // 12 / 112 at the standard rate
     vatableSales = money(inclusive - vatAmount);
   }
   return { ...t, vatableSales, vatAmount, nonVatableSales, finalTotal: money(vatableSales + vatAmount + nonVatableSales) };
@@ -151,7 +164,7 @@ export function applyPricing(totals: VatCalculationResult, ctx: PricingContext, 
       else if (Math.abs(v - computed) > computed * RULE_MAX_CHANGE + 0.005)
         ruleSkipped = `The formula's ₱${v.toFixed(2)} is more than ${RULE_MAX_CHANGE * 100}% away from the computed ₱${computed.toFixed(2)}.`;
       else {
-        t = shift(t, money(v - computed), ctx.exemptSale);
+        t = shift(t, money(v - computed), ctx.exemptSale, rules.vatRate ?? STANDARD_VAT_RATE);
         adjustmentAmount = money(t.finalTotal - computed);
       }
     }
@@ -166,7 +179,7 @@ export function applyPricing(totals: VatCalculationResult, ctx: PricingContext, 
     const down = Math.floor(cents / stepCents) * stepCents;
     if (down > 0 && down < cents) {
       const before = t.finalTotal;
-      t = shift(t, money((down - cents) / 100), ctx.exemptSale);
+      t = shift(t, money((down - cents) / 100), ctx.exemptSale, rules.vatRate ?? STANDARD_VAT_RATE);
       roundingAmount = money(t.finalTotal - before);
     }
   }

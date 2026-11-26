@@ -32,6 +32,7 @@ export const FORMULA_VARIABLES: Record<string, { key: TotalsKey; name: string; z
   adjustment: { key: "adjustment", name: "Price adjustment (your formula)", zero: true },
   rounding: { key: "rounding", name: "Cash rounding", zero: true },
   vat: { key: "vatAmount", name: "12% VAT" },
+  vatRate: { key: "vatRate", name: "VAT rate (%), 12 unless you changed it" },
   vatableSales: { key: "vatableSales", name: "VATable sales" },
   vatExempt: { key: "vatExemptSales", name: "VAT-exempt sales" },
   zeroRated: { key: "zeroRatedSales", name: "Zero-rated sales" },

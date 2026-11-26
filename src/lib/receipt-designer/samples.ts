@@ -1,6 +1,6 @@
 import type { ReceiptData, ReceiptItem, ReceiptStoreSettings } from "@/types/receipt";
 import { calculateVatInclusiveTotals } from "@/lib/vat-calculations";
-import { applyPricing, NO_PRICING, type PricingRules } from "@/lib/pricing";
+import { applyPricing, NO_PRICING, vatOptions, type PricingRules } from "@/lib/pricing";
 import { returnParts } from "@/lib/return-parts";
 import { discountCalcInput, discountRateText, type DiscountTerms as Terms } from "@/lib/discount-math";
 
@@ -60,8 +60,10 @@ export function exampleCheckouts(
       : c.sc
       ? { discountType: "SENIOR", discountPercent: 20 }
       : {};
-    const computed = calculateVatInclusiveTotals({ vatableTotal: c.vatableTotal, nonVatableTotal: c.nonVatableTotal, ...input });
-    const exemptSale = Boolean(c.sc || discount?.vatExempt);
+    // Under the owner's VAT settings, like a real checkout.
+    const vat = vatOptions(rules, discount ? { code: discount.code, vatExempt: discount.vatExempt } : c.sc ? { code: "SENIOR", vatExempt: true } : null);
+    const computed = calculateVatInclusiveTotals({ vatableTotal: c.vatableTotal, nonVatableTotal: c.nonVatableTotal, ...input, ...("discountType" in input ? { vatExempt: vat.vatExempt } : {}), vatRate: vat.vatRate });
+    const exemptSale = vat.vatExempt;
     const priced = applyPricing(computed, { exemptSale, paymentMethod: c.method, items: ITEMS }, rules);
     return { label: c.label, gross: computed.subtotal, computed: computed.finalTotal, charged: priced.totals.finalTotal, note: priced.ruleSkipped, discountAmount: computed.discountAmount };
   });
@@ -133,12 +135,15 @@ function saleSample(
   const nonVatableTotal = ITEMS.filter((i) => !i.isVatable).reduce((s, i) => s + i.totalPrice, 0);
   const own = kind === "discount" && discount ? discount : null;
   const sc = kind === "scpwd";
+  const vat = vatOptions(pricing, sc ? { code: "SENIOR", vatExempt: true } : own ? { code: own.code, vatExempt: own.vatExempt } : null);
   const computed = calculateVatInclusiveTotals({
     vatableTotal,
     nonVatableTotal,
     ...(sc ? { discountType: "SENIOR", discountPercent: 20 } : own ? discountCalcInput(own) : {}),
+    ...(sc || own ? { vatExempt: vat.vatExempt } : {}),
+    vatRate: vat.vatRate,
   });
-  const exempt = sc || Boolean(own?.vatExempt);
+  const exempt = vat.vatExempt;
   const priced = applyPricing(computed, { exemptSale: exempt, paymentMethod: kind === "ewallet" ? "E_WALLET" : "CASH", items: ITEMS }, pricing);
   const t = priced.totals;
   const total = t.finalTotal;
@@ -175,6 +180,7 @@ function saleSample(
     adjustmentLabel: priced.adjustmentLabel,
     roundingAmount: priced.roundingAmount,
     computedParts: priced.computedParts,
+    ...(vat.vatRate !== 12 ? { vatRate: vat.vatRate } : {}),
     paymentMethod: kind === "ewallet" ? "E_WALLET" : "CASH",
     paymentProvider: kind === "ewallet" ? "GCash" : null,
     paymentReference: kind === "ewallet" ? "1234 567 890123" : null,

@@ -178,6 +178,7 @@ export type TotalsKey =
   | "zeroRatedSales"
   | "nonVatableSales"
   | "vatAmount"
+  | "vatRate"
   | "totalDue"
   | "adjustment"
   | "rounding"
@@ -225,6 +226,7 @@ type TotalsLineBody =
       hideWhenZero: boolean;
       layout?: FieldLayout;
       align?: Align;
+      replaces?: TotalsKey; // made from this value ("Change how it's computed")
     }
   | {
       id: string;
@@ -278,6 +280,7 @@ export type Block =
       layout: FieldLayout;
       minus: boolean;
       hideWhenZero: boolean;
+      replaces?: TotalsKey; // made from this value ("Change how it's computed")
     })
   // One value, anywhere on the receipt.
   | (BlockBase & {

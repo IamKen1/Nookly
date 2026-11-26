@@ -27,10 +27,12 @@ export const buildComputationLines = (r: ReceiptData): ComputationLine[] => {
   const savedPercent = r.discountRate && /^[\d.]+%$/.test(r.discountRate) ? parseFloat(r.discountRate) : null;
   const discountPercent = savedPercent ?? DISCOUNT_PERCENT[discountType] ?? 0;
   const isBuiltIn = discountType in DISCOUNT_PERCENT;
+  // The VAT rate the sale was made with (absent on every sale at the standard 12%).
+  const rate = r.vatRate !== undefined && r.vatRate !== 12 ? { vatRate: r.vatRate } : {};
   const display =
     r.discountName && (!isBuiltIn || savedPercent === null)
-      ? { label: r.discountName, rate: r.discountRate ?? undefined, vatExempt: r.discountVatExempt }
-      : { vatExempt: r.discountVatExempt ?? isSeniorOrPwd(discountType) };
+      ? { label: r.discountName, rate: r.discountRate ?? undefined, vatExempt: r.discountVatExempt, ...rate }
+      : { vatExempt: r.discountVatExempt ?? isSeniorOrPwd(discountType), ...rate };
   const result: VatCalculationResult = {
     subtotal: r.subtotal,
     vatableSales: r.vatableSales ?? 0,

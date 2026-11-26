@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { History, Lock, Loader2, Undo2 } from "lucide-react";
 import type { DiscountDTO } from "@/lib/discounts";
@@ -8,6 +8,7 @@ import { discountRateText } from "@/lib/discount-math";
 import { ANY_SALE, describeWhen, RULE_MAX_CHANGE, ROUNDING_STEPS, ruleError, type PricingRules, type RuleWhen } from "@/lib/pricing";
 import { exampleCheckouts } from "@/lib/receipt-designer/samples";
 import ConfirmDialog from "./ConfirmDialog";
+import type { PosRequest } from "./Explain";
 
 interface PricingState {
   roundingStep: number | null;
@@ -15,6 +16,8 @@ interface PricingState {
   ruleLabel: string;
   ruleExpr: string;
   ruleWhen?: RuleWhen;
+  vatRate?: number | null; // null = the standard 12%
+  seniorVatFirst?: boolean;
 }
 interface HistoryRow {
   id: string;
@@ -33,6 +36,8 @@ const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDig
 const rulesOf = (p: PricingState): PricingRules => ({
   roundingStep: p.roundingStep,
   rule: p.ruleEnabled && p.ruleExpr.trim() && !ruleError(p.ruleExpr) ? { label: p.ruleLabel, expr: p.ruleExpr, when: p.ruleWhen ?? ANY_SALE } : null,
+  vatRate: p.vatRate ?? null,
+  seniorVatFirst: p.seniorVatFirst ?? true,
 });
 
 // The "Only on…" inputs as typed (amounts stay text while typing).
@@ -93,16 +98,17 @@ type Pending =
   | { kind: "formulaOn"; label: string; expr: string; when: WhenDraft }
   | { kind: "formulaOff" }
   | { kind: "discount"; discount: DiscountDTO; next: { kind: string; value: number; maxAmount: number | null; vatExempt: boolean } }
-  | { kind: "undo"; row: HistoryRow };
+  | { kind: "undo"; row: HistoryRow }
+  | { kind: "vat"; rate: string; seniorVatFirst: boolean; from: string | null; understood: boolean };
 
 // "What the POS charges": the parts of the receipt that also change real sales.
 export default function PosPricing({
-  formulaDraft,
-  onFormulaDraftDone,
+  request,
+  onRequestDone,
   onApplied,
 }: {
-  formulaDraft: { label: string; expr: string } | null; // "Charge customers this amount" from a formula on the receipt
-  onFormulaDraftDone: () => void;
+  request: PosRequest | null; // a change on the receipt the owner wants at the POS too
+  onRequestDone: () => void;
   onApplied: () => void; // refresh the preview sale
 }) {
   const { data, error: loadError, mutate } = useSWR<PosState>("/api/settings/pos-changes");
@@ -111,15 +117,31 @@ export default function PosPricing({
   const [busy, setBusy] = useState(false);
   const [edits, setEdits] = useState<Record<string, { kind: string; value: string; maxAmount: string; vatExempt: boolean }>>({});
 
-  // A formula sent from the receipt opens straight into its confirmation.
-  const [draftSeen, setDraftSeen] = useState<typeof formulaDraft>(null);
-  if (formulaDraft !== draftSeen) {
-    setDraftSeen(formulaDraft);
-    if (formulaDraft) setPending({ kind: "formulaOn", label: formulaDraft.label.replace(/:\s*$/, "") || "Adjustment", expr: formulaDraft.expr, when: draftOf(undefined) });
+  // A change sent from the receipt opens straight into its confirmation, or
+  // points at the setting it belongs to (discounts, cash rounding).
+  const [requestSeen, setRequestSeen] = useState<PosRequest | null>(null);
+  const [focus, setFocus] = useState<"discounts" | "rounding" | null>(null);
+  if (request !== requestSeen) {
+    setRequestSeen(request);
+    if (request?.kind === "formula") setPending({ kind: "formulaOn", label: request.label.replace(/:\s*$/, "") || "Adjustment", expr: request.expr, when: draftOf(undefined) });
+    else if (request?.kind === "vat")
+      setPending({
+        kind: "vat",
+        rate: request.rate !== null ? String(request.rate) : String(data?.pricing.vatRate ?? 12),
+        seniorVatFirst: request.seniorVatFirst ?? data?.pricing.seniorVatFirst ?? true,
+        from: request.label,
+        understood: false,
+      });
+    else if (request?.kind === "discount" || request?.kind === "rounding") setFocus(request.kind === "discount" ? "discounts" : "rounding");
   }
+  const discountsRef = useRef<HTMLDivElement>(null);
+  const roundingRef = useRef<HTMLLabelElement>(null);
+  useEffect(() => {
+    (focus === "discounts" ? discountsRef : roundingRef).current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focus]);
   const close = () => {
     setPending(null);
-    if (formulaDraft) onFormulaDraftDone();
+    if (request) onRequestDone();
   };
 
   const send = async (body: object) => {
@@ -236,6 +258,59 @@ export default function PosPricing({
           <p>New sales go back to the standard computation{p.roundingStep ? " (cash rounding stays on)" : ""}.</p>
         </ConfirmDialog>
       );
+    } else if (pending.kind === "vat") {
+      const rate = Number(pending.rate);
+      const badRate = pending.rate.trim() === "" || !Number.isFinite(rate) || rate < 0 || rate > 30;
+      const next = { ...current, vatRate: badRate ? current.vatRate : rate === 12 ? null : rate, seniorVatFirst: pending.seniorVatFirst };
+      const standard = (badRate || rate === 12) && pending.seniorVatFirst;
+      dialog = (
+        <ConfirmDialog
+          {...common}
+          title="Change the VAT the POS charges?"
+          confirmLabel={standard ? "Yes, apply to POS" : "I understand, apply to POS"}
+          disabled={badRate || (!standard && !pending.understood)}
+          onConfirm={() => send({ action: "pricing", vatRate: rate, seniorVatFirst: pending.seniorVatFirst })}
+        >
+          {pending.from && <p className="text-xs text-zinc-500">From your change to &quot;{pending.from}&quot; on the receipt.</p>}
+          <label className="block">
+            <span className="text-xs font-medium text-zinc-700">VAT rate (%)</span>
+            <input
+              inputMode="decimal"
+              className={`mt-0.5 h-8 w-24 rounded-md border px-2 text-sm ${badRate ? "border-red-400" : "border-zinc-200"}`}
+              value={pending.rate}
+              onChange={(e) => setPending({ ...pending, rate: e.target.value, understood: false })}
+            />
+            <span className="ml-2 text-xs text-zinc-500">The law: 12%</span>
+            {badRate && <span className="block text-xs text-red-600">Enter 0 to 30.</span>}
+          </label>
+          <label className="flex items-start gap-2 text-sm text-zinc-700">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-emerald-600"
+              checked={pending.seniorVatFirst}
+              onChange={(e) => setPending({ ...pending, seniorVatFirst: e.target.checked, understood: false })}
+            />
+            <span>Senior/PWD: take the VAT off before the 20% discount (the law requires this)</span>
+          </label>
+          {!badRate && <Examples rows={exampleCheckouts(next).map((e, i) => ({ label: e.label, before: exampleCheckouts(current)[i].charged, after: e.charged }))} />}
+          {!standard && (
+            <div className="space-y-1.5 rounded-lg border-2 border-red-300 bg-red-50 p-2.5 text-xs text-red-900">
+              <p className="font-semibold">⚠️ This goes against the law.</p>
+              <p>
+                The 12% VAT rate (National Internal Revenue Code) and taking the VAT off before the Senior Citizen / PWD discount (RA 9994 and RA 10754) are set by
+                law. With this change, what customers pay, your receipts and your sales reports (including the VAT you report to the BIR) will no longer follow
+                it. Senior citizens and PWDs may be overcharged.
+              </p>
+              <p>You are responsible for this change. Talk to your accountant first.</p>
+              <label className="flex items-start gap-2 font-semibold">
+                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-red-600" checked={pending.understood} onChange={(e) => setPending({ ...pending, understood: e.target.checked })} />
+                <span>I understand and take responsibility</span>
+              </label>
+            </div>
+          )}
+          <p className="text-xs text-zinc-500">New sales only. Old sales and their reprints keep the VAT they were made with. You can undo this any time.</p>
+        </ConfirmDialog>
+      );
     } else if (pending.kind === "discount") {
       const before = exampleCheckouts(current, { code: pending.discount.name, kind: pending.discount.kind, value: pending.discount.value, maxAmount: pending.discount.maxAmount, vatExempt: pending.discount.vatExempt })[0];
       const after = exampleCheckouts(current, { code: pending.discount.name, ...pending.next })[0];
@@ -269,8 +344,26 @@ export default function PosPricing({
       </div>
       {error && <p className="text-[11px] text-red-600">{error}</p>}
 
+      {/* VAT */}
+      <div className={`rounded-lg border bg-white p-2 ${current.vatRate != null || current.seniorVatFirst === false ? "border-red-300" : "border-zinc-200"}`}>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-zinc-700">VAT</p>
+          <button
+            type="button"
+            className="text-[11px] font-semibold text-emerald-700"
+            onClick={() => setPending({ kind: "vat", rate: String(p.vatRate ?? 12), seniorVatFirst: p.seniorVatFirst ?? true, from: null, understood: false })}
+          >
+            Change
+          </button>
+        </div>
+        <p className="text-[11px] text-zinc-500">
+          {p.vatRate ?? 12}% {p.vatRate == null ? "(the law)" : <strong className="text-red-700">(not the legal 12%)</strong>} · Senior/PWD:{" "}
+          {p.seniorVatFirst === false ? <strong className="text-red-700">VAT not taken off first</strong> : "VAT taken off first (the law)"}
+        </p>
+      </div>
+
       {/* rounding */}
-      <label className="flex items-center justify-between gap-2">
+      <label ref={roundingRef} className={`flex items-center justify-between gap-2 rounded-md ${focus === "rounding" ? "ring-2 ring-amber-400 ring-offset-2" : ""}`}>
         <span className="text-xs text-zinc-700">Cash rounding (down)</span>
         <select className={input} value={p.roundingStep ?? ""} onChange={(e) => setPending({ kind: "rounding", step: e.target.value ? Number(e.target.value) : null })}>
           <option value="">Off: exact amount</option>
@@ -312,11 +405,13 @@ export default function PosPricing({
       </div>
 
       {/* discounts */}
-      <div className="space-y-1.5">
+      <div ref={discountsRef} className={`space-y-1.5 rounded-md ${focus === "discounts" ? "ring-2 ring-amber-400 ring-offset-2" : ""}`}>
+        {focus === "discounts" && <p className="text-[11px] font-semibold text-amber-800">Change the discount&apos;s terms here to charge it at the POS too.</p>}
         <p className="text-xs text-zinc-700">Discounts at checkout</p>
         {system.map((d) => (
           <div key={d.id} className="flex items-center gap-1.5 text-[11px] text-zinc-500">
-            <Lock className="h-3 w-3" /> {d.name}: 20%, VAT removed first <span className="text-zinc-400">(set by law)</span>
+            <Lock className="h-3 w-3" /> {d.name}: 20%, {p.seniorVatFirst === false ? <strong className="text-red-700">VAT not taken off first</strong> : "VAT removed first"}{" "}
+            <span className="text-zinc-400">(set by law)</span>
           </div>
         ))}
         {custom.length === 0 && <p className="text-[11px] text-zinc-400">No discounts of your own yet. Add them in Settings › Discounts.</p>}

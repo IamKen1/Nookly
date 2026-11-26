@@ -1,6 +1,6 @@
 import type {
   Align, Block, BlockType, Condition, FieldLayout, FormulaFormat, ItemField, ItemFormat, ItemLine, PaperWidth, PrintMode,
-  RowCell, RuleChar, SaleDetailField, SaleType, Style, Template, Theme, TotalsLine, ValueFormat,
+  RowCell, RuleChar, SaleDetailField, SaleType, Style, Template, Theme, TotalsKey, TotalsLine, ValueFormat,
 } from "./types";
 import { IMAGE_FONTS, TEMPLATE_VERSION } from "./types";
 import { newBlock, newId, newItemCell, newRowCell, DEFAULT_SALE_DETAILS, DEFAULT_STORE_LABELS } from "./blocks";
@@ -150,6 +150,10 @@ function sanitizeTotalsLine(v: unknown): TotalsLine | null {
   return line && isObj(v) ? withCondition(line, v) : line;
 }
 
+// The value a formula was made from ("Change how it's computed"), for "Apply to the POS too?".
+const replacesOf = (v: Record<string, unknown>) =>
+  typeof v.replaces === "string" && Object.hasOwn(TOTALS_FIELDS, v.replaces) ? { replaces: v.replaces as TotalsKey } : {};
+
 function sanitizeTotalsLineBody(v: unknown): TotalsLine | null {
   if (!isObj(v)) return null;
   const id = str(v.id, 64) || newId("t");
@@ -167,6 +171,7 @@ function sanitizeTotalsLineBody(v: unknown): TotalsLine | null {
         hideWhenZero: bool(v.hideWhenZero, false),
         ...(LAYOUTS.includes(v.layout as FieldLayout) ? { layout: v.layout as FieldLayout } : {}),
         ...(ALIGNS.includes(v.align as Align) ? { align: v.align as Align } : {}),
+        ...replacesOf(v),
       };
     case "computation":
       return { id, kind: "computation", style: sanitizeStyle(v.style) };
@@ -274,6 +279,7 @@ function sanitizeBlock(v: unknown): Block | null {
         layout: oneOf(v.layout, LAYOUTS, "pair"),
         minus: bool(v.minus, false),
         hideWhenZero: bool(v.hideWhenZero, false),
+        ...replacesOf(v),
       };
     case "field": {
       if (typeof v.key !== "string" || !Object.hasOwn(TOTALS_FIELDS, v.key)) return null;

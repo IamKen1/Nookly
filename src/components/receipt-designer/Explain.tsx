@@ -3,18 +3,67 @@
 import { Calculator } from "lucide-react";
 import type { ReceiptData } from "@/types/receipt";
 import type { Block, TotalsKey, TotalsLine } from "@/lib/receipt-designer/types";
-import { TOTALS_FIELDS } from "@/lib/receipt-designer/totals";
-import { computationAsLines, explainComputation, explainKey, explainPart, fieldAsFormula, valueLineAsFormula, withNumbers, type Explanation } from "@/lib/receipt-designer/explain";
+import { fillLabel, TOTALS_FIELDS } from "@/lib/receipt-designer/totals";
+import {
+  computationAsLines,
+  explainComputation,
+  explainKey,
+  explainPart,
+  fieldAsFormula,
+  impliedVat,
+  posTargetOf,
+  valueLineAsFormula,
+  withNumbers,
+  type Explanation,
+} from "@/lib/receipt-designer/explain";
 import { computeFormula, formulaError } from "@/lib/receipt-designer/formula";
+
+// A change on the receipt that can also change what the POS charges.
+export type PosRequest =
+  | { kind: "formula"; label: string; expr: string }
+  | { kind: "discount"; label: string }
+  | { kind: "rounding" }
+  | { kind: "vat"; rate: number | null; seniorVatFirst: boolean | null; label: string };
 
 interface Item {
   e: Explanation;
   action?: { label: string; run: () => Block };
+  pos?: PosRequest | "follows"; // follows: nothing separate to apply at the POS
+}
+
+// "Apply to the POS too?" for a formula made from a value ("Change how it's computed").
+function posFor(replaces: TotalsKey | undefined, label: string, expr: string, sample: ReceiptData): Item["pos"] {
+  if (!replaces) return undefined; // the owner's own formula: "Charge customers this amount…" below
+  const name = fillLabel(label, sample).replace(/:\s*$/, "").trim() || TOTALS_FIELDS[replaces].name;
+  switch (posTargetOf(replaces)) {
+    case "formula":
+      return { kind: "formula", label: name, expr };
+    case "discount":
+      return { kind: "discount", label: name };
+    case "rounding":
+      return { kind: "rounding" };
+    case "vat":
+      return { kind: "vat", label: name, ...impliedVat(replaces, computeFormula(expr, sample), sample) };
+    default:
+      return "follows";
+  }
 }
 
 // "How is this computed?": the selected part's amounts, step by step with the
 // sale in the preview, and a way to change each computation.
-export default function Explain({ block, lineId, sample, onChange }: { block: Block; lineId: string | null; sample: ReceiptData | null; onChange: (b: Block) => void }) {
+export default function Explain({
+  block,
+  lineId,
+  sample,
+  onChange,
+  onApplyToPos,
+}: {
+  block: Block;
+  lineId: string | null;
+  sample: ReceiptData | null;
+  onChange: (b: Block) => void;
+  onApplyToPos?: (r: PosRequest) => void;
+}) {
   if (!sample) return null;
   const items: Item[] = [];
 
@@ -36,6 +85,7 @@ export default function Explain({ block, lineId, sample, onChange }: { block: Bl
         items.push({
           e,
           ...(l.kind === "computation" ? { action: { label: "Split into lines I can change", run: () => replace(l.id, computationAsLines()) } } : {}),
+          ...(l.kind === "formula" ? { pos: posFor(l.replaces, l.label, l.expr, sample) } : {}),
         });
       }
     }
@@ -45,6 +95,8 @@ export default function Explain({ block, lineId, sample, onChange }: { block: Bl
       e,
       ...(e.formula && TOTALS_FIELDS[block.key].format === "money" ? { action: { label: "Change how it's computed", run: () => fieldAsFormula(block, e.formula!) } } : {}),
     });
+  } else if (block.type === "formula") {
+    for (const e of explainPart(block, lineId, sample)) items.push({ e, pos: posFor(block.replaces, block.label, block.expr, sample) });
   } else {
     for (const e of explainPart(block, lineId, sample)) items.push({ e });
   }
@@ -56,7 +108,7 @@ export default function Explain({ block, lineId, sample, onChange }: { block: Bl
         <Calculator className="h-3.5 w-3.5" /> How this is computed
         <span className="font-normal text-sky-700">(with the sale in the preview)</span>
       </p>
-      {items.map(({ e, action }, i) => (
+      {items.map(({ e, action, pos }, i) => (
         <div key={i} className="space-y-1.5 rounded-lg border border-sky-100 bg-white p-2">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-xs font-semibold text-zinc-800">{e.title}</span>
@@ -87,6 +139,21 @@ export default function Explain({ block, lineId, sample, onChange }: { block: Bl
             >
               ✏️ {action.label}
             </button>
+          )}
+          {pos === "follows" && (
+            <p className="text-[10px] leading-snug text-zinc-500">At the POS this follows from the items and the total, so there&apos;s nothing separate to apply.</p>
+          )}
+          {pos && pos !== "follows" && onApplyToPos && (
+            <div className="rounded-md bg-amber-50 p-1.5">
+              <p className="text-[10px] leading-snug text-amber-900">This only changes the receipt. Want customers to be charged this way too?</p>
+              <button
+                type="button"
+                onClick={() => onApplyToPos(pos)}
+                className="mt-1 rounded-full bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-500"
+              >
+                Apply to the POS too…
+              </button>
+            </div>
           )}
         </div>
       ))}

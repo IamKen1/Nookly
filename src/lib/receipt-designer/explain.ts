@@ -76,6 +76,9 @@ export function explainKey(key: TotalsKey, sale: ReceiptData): Explanation {
   const vatItems = r.items.filter((i) => i.isVatable);
   const nonVatItems = r.items.filter((i) => !i.isVatable);
   const adjust = (r.adjustmentAmount ?? 0) !== 0 || (r.roundingAmount ?? 0) !== 0;
+  // The VAT rate the sale was made with (12 unless the owner changed it).
+  const rate = r.vatRate ?? 12;
+  const factor = String(1 + rate / 100); // "1.12"
 
   switch (key) {
     case "grossTotal":
@@ -97,21 +100,21 @@ export function explainKey(key: TotalsKey, sale: ReceiptData): Explanation {
         ...base,
         steps: exempt
           ? [
-              `Shelf prices include 12% VAT, so a price is 112% of the price without VAT.`,
-              `Price without VAT: ${n2(vg)} ÷ 1.12 = ${n2(ve)}`,
-              `VAT removed: ${n2(vg)} − ${n2(ve)} = ${n2(removed)}   (the same as ${n2(vg)} × 12 ÷ 112)`,
+              `Shelf prices include ${rate}% VAT, so a price is ${100 + rate}% of the price without VAT.`,
+              `Price without VAT: ${n2(vg)} ÷ ${factor} = ${n2(ve)}`,
+              `VAT removed: ${n2(vg)} − ${n2(ve)} = ${n2(removed)}   (the same as ${n2(vg)} × ${rate} ÷ ${100 + rate})`,
               `Senior/PWD (and other VAT-exempt) discounts take the VAT off first, as the law requires.`,
             ]
           : ["Only Senior/PWD and other VAT-exempt discounts take the VAT off. This sale has none: 0.00"],
-        formula: "if(vatExempt != 0, vatableGross - cents(vatableGross / 1.12), 0)",
+        formula: "if(vatExempt != 0, vatableGross - cents(vatableGross / (1 + vatRate / 100)), 0)",
       };
     case "vatExemptSales":
       return {
         ...base,
         steps: exempt
-          ? [`The items with VAT, without their VAT: ${n2(vg)} ÷ 1.12 = ${n2(ve)}`, `(${n2(vg)} − VAT removed ${n2(removed)} = ${n2(ve)})`]
+          ? [`The items with VAT, without their VAT: ${n2(vg)} ÷ ${factor} = ${n2(ve)}`, `(${n2(vg)} − VAT removed ${n2(removed)} = ${n2(ve)})`]
           : ["Only Senior/PWD and other VAT-exempt discounts make items VAT-exempt. This sale has none: 0.00"],
-        formula: "if(vatRemoved != 0, cents(vatableGross / 1.12), 0)",
+        formula: "if(vatRemoved != 0, cents(vatableGross / (1 + vatRate / 100)), 0)",
       };
     case "vatableDiscount":
     case "nonVatableDiscount":
@@ -144,17 +147,17 @@ export function explainKey(key: TotalsKey, sale: ReceiptData): Explanation {
         formula: "discount + vatRemoved",
       };
     case "vatAmount": {
-      if (exempt) return { ...base, steps: ["Senior/PWD (VAT-exempt): the VAT was taken off the price, so no VAT is charged: 0.00"], formula: "if(vatExempt != 0, 0, cents((vatableGross - vatableDiscount) * (12 / 112)))" };
+      if (exempt) return { ...base, steps: ["Senior/PWD (VAT-exempt): the VAT was taken off the price, so no VAT is charged: 0.00"], formula: "if(vatExempt != 0, 0, cents((vatableGross - vatableDiscount) * (vatRate / (100 + vatRate))))" };
       const after = Math.round((vg - vd) * 100) / 100;
       return {
         ...base,
         steps: [
           ...(vd ? [`Items with VAT, after the discount: ${n2(vg)} − ${n2(vd)} = ${n2(after)}`] : [`Items with VAT: ${n2(vg)}`]),
-          `Shelf prices already include 12% VAT, so the VAT inside is 12 out of every 112.`,
-          `VAT: ${n2(after)} × 12 ÷ 112 = ${n2(r.taxAmount)}`,
+          `Shelf prices already include ${rate}% VAT, so the VAT inside is ${rate} out of every ${100 + rate}.`,
+          `VAT: ${n2(after)} × ${rate} ÷ ${100 + rate} = ${n2(r.taxAmount)}`,
           ...(adjust ? [`Your price formula or cash rounding changed this sale's total, and the VAT was recomputed on it.`] : []),
         ],
-        formula: "if(vatExempt != 0, 0, cents((vatableGross - vatableDiscount) * (12 / 112)))",
+        formula: "if(vatExempt != 0, 0, cents((vatableGross - vatableDiscount) * (vatRate / (100 + vatRate))))",
       };
     }
     case "vatableSales":
@@ -259,7 +262,7 @@ export function explainComputation(sale: ReceiptData): Explanation {
     const label = l.label;
     const why =
       label === "VATable Sales" ? how("vatableGross")
-      : label === "Less: VAT (12%)" ? (exempt ? how("vatRemoved") : how("vatAmount"))
+      : label.startsWith("Less: VAT (") ? (exempt ? how("vatRemoved") : how("vatAmount"))
       : label === "VAT-Exempt Base" ? how("vatExemptSales")
       : label === "Net VATable Sales" ? how("vatableSales")
       : label === "Non-VAT Sales" ? how("nonVatableGross")
@@ -345,6 +348,7 @@ export function valueLineAsFormula(line: Extract<TotalsLine, { kind: "value" }>,
     kind: "formula",
     label: line.label,
     expr: formula,
+    replaces: line.key,
     format: "money",
     decimals: 2,
     style: line.style,
@@ -357,9 +361,8 @@ export function valueLineAsFormula(line: Extract<TotalsLine, { kind: "value" }>,
 }
 
 export function fieldAsFormula(block: Extract<Block, { type: "field" }>, formula: string): Block {
-  const { key: _key, ...rest } = block;
-  void _key;
-  return { ...rest, type: "formula", expr: formula, format: "money", decimals: 2 };
+  const { key, ...rest } = block;
+  return { ...rest, type: "formula", expr: formula, replaces: key, format: "money", decimals: 2 };
 }
 
 const vline = (key: TotalsKey, label: string, extra: Partial<Extract<TotalsLine, { kind: "value" }>> = {}): TotalsLine => ({
@@ -392,23 +395,59 @@ export function computationAsLines(): TotalsLine[] {
   const bold = { bold: true };
   return [
     vline("vatableGross", "VATable Sales:", { style: bold }),
-    vline("vatRemoved", "Less: VAT (12%):", { minus: true }),
-    fline("VAT-Exempt Base:", "if(vatableDiscount != 0, vatExempt, 0)", { style: bold }),
+    vline("vatRemoved", "Less: VAT ({vatRate}%):", { minus: true }),
+    fline("VAT-Exempt Base:", "if(vatableDiscount != 0, vatExempt, 0)", { style: bold, replaces: "vatExemptSales" }),
     vline("vatableDiscount", "Less: {discountName} Discount ({discountRate}):", { minus: true }),
     // The standard computation's own VAT and nets (before your price formula or cash
     // rounding, which follow as their own lines), worked out the way the checkout does.
-    fline("Less: VAT (12%):", "if(vatExempt != 0, 0, cents((vatableGross - vatableDiscount) * (12 / 112)))", { minus: true }),
+    fline("Less: VAT ({vatRate}%):", "if(vatExempt != 0, 0, cents((vatableGross - vatableDiscount) * (vatRate / (100 + vatRate))))", { minus: true, replaces: "vatAmount" }),
     fline(
       "Net VATable Sales:",
-      "if(vatableGross != 0, if(vatExempt != 0, vatExempt - vatableDiscount, vatableGross - vatableDiscount - cents((vatableGross - vatableDiscount) * (12 / 112))), 0)",
-      { style: bold }
+      "if(vatableGross != 0, if(vatExempt != 0, vatExempt - vatableDiscount, vatableGross - vatableDiscount - cents((vatableGross - vatableDiscount) * (vatRate / (100 + vatRate)))), 0)",
+      { style: bold, replaces: "vatableSales" }
     ),
     vline("nonVatableGross", "Non-VAT Sales:", { style: bold }),
     vline("nonVatableDiscount", "Less: {discountName} Discount ({discountRate}):", { minus: true }),
-    fline("Net Non-VAT Sales:", "if(nonVatDiscount != 0, nonVatGross - nonVatDiscount, 0)", { style: bold }),
+    fline("Net Non-VAT Sales:", "if(nonVatDiscount != 0, nonVatGross - nonVatDiscount, 0)", { style: bold, replaces: "nonVatableSales" }),
     vline("discount", "Total Discount:", { minus: true }),
-    fline("Total Savings:", "if(vatRemoved != 0, discount + vatRemoved, 0)", { style: bold }),
+    fline("Total Savings:", "if(vatRemoved != 0, discount + vatRemoved, 0)", { style: bold, replaces: "totalSavings" }),
     vline("adjustment", "{adjustmentLabel}:"),
     vline("rounding", "Rounding:"),
   ];
+}
+
+// ---------- "Apply to the POS too?" ----------
+
+// What a changed line can change at the POS:
+// formula = the price formula (what customers pay), discount = a discount's
+// terms, rounding = cash rounding, vat = the VAT rate / Senior-PWD VAT rule.
+// null: it follows from the items and the total, so there's nothing separate to apply.
+export type PosTarget = "formula" | "discount" | "rounding" | "vat";
+
+export function posTargetOf(key: TotalsKey | undefined): PosTarget | null {
+  if (!key || key === "totalDue" || key === "adjustment") return "formula";
+  if (key === "discount" || key === "vatableDiscount" || key === "nonVatableDiscount") return "discount";
+  if (key === "rounding") return "rounding";
+  if (key === "vatAmount" || key === "vatRemoved" || key === "vatExemptSales" || key === "vatableSales") return "vat";
+  return null;
+}
+
+// The VAT settings a changed VAT line means, worked out from what it gives
+// for the sale in the preview: the rate (null when the sale can't tell), and
+// for Senior/PWD sales whether the VAT is still taken off first.
+export function impliedVat(key: TotalsKey, value: number | null, sale: ReceiptData): { rate: number | null; seniorVatFirst: boolean | null } {
+  const r = forDesign(sale);
+  const g = r.vatableGross ?? 0;
+  const vd = r.vatableDiscountAmount ?? 0;
+  const exempt = vatRemovedSale(r);
+  const rate = (vat: number, without: number) => (without > 0 && vat >= 0 ? Math.round((100 * vat * 100) / without) / 100 : null);
+  if (value === null || g <= 0) return { rate: null, seniorVatFirst: null };
+  if (exempt) {
+    if ((key === "vatRemoved" || key === "vatExemptSales") && (key === "vatRemoved" ? value : g - value) < 0.005) return { rate: null, seniorVatFirst: false };
+    const without = key === "vatRemoved" ? g - value : key === "vatExemptSales" ? value : key === "vatableSales" ? value + vd : null;
+    return { rate: without === null ? null : rate(g - without, without), seniorVatFirst: true };
+  }
+  const base = g - vd;
+  const vat = key === "vatAmount" ? value : key === "vatableSales" ? base - value : null;
+  return { rate: vat === null ? null : rate(vat, base - vat), seniorVatFirst: null };
 }

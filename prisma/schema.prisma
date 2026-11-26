@@ -820,6 +820,9 @@ model Sale {
   // adjustments ({ vatableSales, vatAmount, nonVatableSales, finalTotal }), so
   // the receipt's step-by-step lines show it exactly.
   computedParts            Json?
+  // The VAT rate the sale was computed with (%). 12 unless the owner changed it
+  // (Receipt designer › What the POS charges), so reprints keep their own rate.
+  vatRate                  Decimal              @default(12) @db.Decimal(5, 2)
   paymentMethod            PaymentMethod
   cashReceived             Decimal?             @db.Decimal(10, 2)
   changeGiven              Decimal?             @db.Decimal(10, 2)
@@ -1262,6 +1265,10 @@ model PricingSettings {
   rulePayment  String   @default("any")
   ruleMinTotal Decimal? @db.Decimal(12, 2)
   ruleMaxTotal Decimal? @db.Decimal(12, 2)
+  // VAT the POS computes with: rate in % (null = the standard 12%), and whether
+  // Senior/PWD discounts take the VAT off first (the law: yes).
+  vatRate          Decimal? @db.Decimal(5, 2)
+  seniorVatFirst   Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

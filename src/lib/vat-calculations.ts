@@ -12,7 +12,12 @@ export interface VatCalculationInput {
   fixedAmount?: number | null
   // Most the discount can take off, in pesos.
   maxAmount?: number | null
+  // VAT rate in percent; 12 (the Philippine rate) unless the owner changed it
+  // under Receipt designer › What the POS charges.
+  vatRate?: number
 }
+
+export const STANDARD_VAT_RATE = 12
 
 export interface VatCalculationResult {
   subtotal: number
@@ -32,7 +37,10 @@ export interface VatCalculationResult {
   vatRemovedFromVatable: number // SENIOR/PWD only — VAT stripped before discounting
 }
 
-const VAT_INCLUSIVE_FACTOR = 1.12
+// At 12% these are exactly 1.12 and 12 / 112 (the same floating-point numbers),
+// so every sale at the standard rate computes as it always has.
+const inclusiveFactor = (rate: number) => 1 + rate / 100
+const vatShare = (rate: number) => rate / (100 + rate)
 
 const roundMoney = (value: number) => Number(value.toFixed(2))
 
@@ -74,6 +82,7 @@ export const calculateVatInclusiveTotals = ({
   vatExempt,
   fixedAmount,
   maxAmount,
+  vatRate = STANDARD_VAT_RATE,
 }: VatCalculationInput): VatCalculationResult => {
   const subtotal = roundMoney(vatableTotal + nonVatableTotal)
   const hasDiscount = discountType !== 'NONE'
@@ -81,7 +90,7 @@ export const calculateVatInclusiveTotals = ({
   if (hasDiscount && (vatExempt ?? isSeniorOrPwd(discountType))) {
     const appliedDiscountPercent = discountPercent > 0 ? discountPercent : isSeniorOrPwd(discountType) ? 20 : 0
     // For vattable items: remove VAT first, then apply discount
-    const vatExclusiveVatableTotal = roundMoney(vatableTotal / VAT_INCLUSIVE_FACTOR)
+    const vatExclusiveVatableTotal = roundMoney(vatableTotal / inclusiveFactor(vatRate))
     // For non-vattable items: apply discount directly
     const { vatable: vatableDiscountAmount, nonVatable: nonVatableDiscountAmount } = discountParts(
       vatExclusiveVatableTotal,
@@ -118,7 +127,7 @@ export const calculateVatInclusiveTotals = ({
     : { vatable: 0, nonVatable: 0 }
   const discountedVatableGross = vatableTotal - vatableDiscountAmount
   const discountedNonVatableTotal = nonVatableTotal - nonVatableDiscountAmount
-  const vatAmount = roundMoney(discountedVatableGross * (12 / 112))
+  const vatAmount = roundMoney(discountedVatableGross * vatShare(vatRate))
   const vatableSales = roundMoney(discountedVatableGross - vatAmount)
   const discountAmount = roundMoney(vatableDiscountAmount + nonVatableDiscountAmount)
   const finalTotal = roundMoney(subtotal - discountAmount)
@@ -153,8 +162,9 @@ export const getComputationLines = (
   result: VatCalculationResult,
   discountType: DiscountType = 'NONE',
   discountPercent = 0,
-  display?: { label?: string; rate?: string; vatExempt?: boolean }
+  display?: { label?: string; rate?: string; vatExempt?: boolean; vatRate?: number }
 ): ComputationLine[] => {
+  const vatLabel = `Less: VAT (${display?.vatRate ?? STANDARD_VAT_RATE}%)`
   const lines: ComputationLine[] = []
   const isSeniorPwd = display?.vatExempt ?? isSeniorOrPwd(discountType)
   const appliedPercent = discountType === 'NONE' ? 0 : discountPercent > 0 ? discountPercent : isSeniorOrPwd(discountType) ? 20 : discountPercent
@@ -164,7 +174,7 @@ export const getComputationLines = (
     lines.push({ label: 'VATable Sales', amount: result.vatableGross, kind: 'base' })
     if (isSeniorPwd) {
       // VAT stripped first (senior/PWD are VAT-exempt), discount applies after
-      lines.push({ label: 'Less: VAT (12%)', amount: -result.vatRemovedFromVatable, kind: 'subtract' })
+      lines.push({ label: vatLabel, amount: -result.vatRemovedFromVatable, kind: 'subtract' })
       if (result.vatableDiscountAmount > 0) {
         lines.push({ label: 'VAT-Exempt Base', amount: result.vatExemptSales ?? 0, kind: 'subtotal' })
         lines.push({ label: discountLabel, amount: -result.vatableDiscountAmount, kind: 'subtract' })
@@ -175,7 +185,7 @@ export const getComputationLines = (
       if (result.vatableDiscountAmount > 0) {
         lines.push({ label: discountLabel, amount: -result.vatableDiscountAmount, kind: 'subtract' })
       }
-      lines.push({ label: 'Less: VAT (12%)', amount: -result.vatAmount, kind: 'subtract' })
+      lines.push({ label: vatLabel, amount: -result.vatAmount, kind: 'subtract' })
       lines.push({ label: 'Net VATable Sales', amount: result.vatableSales, kind: 'subtotal' })
     }
   }

@@ -10,9 +10,22 @@ export interface PricingState {
   ruleLabel: string;
   ruleExpr: string;
   ruleWhen: RuleWhen;
+  vatRate: number | null; // null = the standard 12%
+  seniorVatFirst: boolean; // Senior/PWD discounts take the VAT off first (the law)
 }
 
-export const DEFAULT_PRICING_STATE: PricingState = { roundingStep: null, ruleEnabled: false, ruleLabel: "Adjustment", ruleExpr: "", ruleWhen: ANY_SALE };
+export const DEFAULT_PRICING_STATE: PricingState = {
+  roundingStep: null,
+  ruleEnabled: false,
+  ruleLabel: "Adjustment",
+  ruleExpr: "",
+  ruleWhen: ANY_SALE,
+  vatRate: null,
+  seniorVatFirst: true,
+};
+
+// Highest VAT rate that can be set (a typo guard, not a legal limit).
+export const MAX_VAT_RATE = 30;
 
 const num = (v: unknown) => (v == null ? null : Number(v));
 
@@ -25,6 +38,8 @@ export const pricingColumns = (s: PricingState) => ({
   rulePayment: s.ruleWhen.payment,
   ruleMinTotal: s.ruleWhen.minTotal,
   ruleMaxTotal: s.ruleWhen.maxTotal,
+  vatRate: s.vatRate,
+  seniorVatFirst: s.seniorVatFirst,
 });
 
 // A state from the change history. Ones saved before conditions existed apply to every sale.
@@ -36,6 +51,9 @@ export const stateFromJson = (v: unknown): PricingState => {
     ruleLabel: o.ruleLabel ?? "Adjustment",
     ruleExpr: o.ruleExpr ?? "",
     ruleWhen: { ...ANY_SALE, ...(o.ruleWhen ?? {}) },
+    // History saved before VAT settings existed: the standard VAT.
+    vatRate: o.vatRate ?? null,
+    seniorVatFirst: o.seniorVatFirst ?? true,
   };
 };
 
@@ -55,8 +73,13 @@ export async function getPricingState(tenantId: string): Promise<PricingState> {
       minTotal: num(row.ruleMinTotal),
       maxTotal: num(row.ruleMaxTotal),
     },
+    vatRate: num(row.vatRate),
+    seniorVatFirst: row.seniorVatFirst,
   };
 }
+
+// Whether the VAT settings differ from the standard (12%, Senior/PWD VAT off first).
+export const vatChanged = (s: Pick<PricingState, "vatRate" | "seniorVatFirst">) => (s.vatRate !== null && s.vatRate !== 12) || !s.seniorVatFirst;
 
 // What checkout applies. A formula that can't be used is treated as off.
 export function rulesFrom(s: PricingState): PricingRules {
@@ -66,6 +89,8 @@ export function rulesFrom(s: PricingState): PricingRules {
       s.ruleEnabled && s.ruleExpr.trim() && !ruleError(s.ruleExpr)
         ? { label: s.ruleLabel, expr: s.ruleExpr, ...(sameWhen(s.ruleWhen, ANY_SALE) ? {} : { when: s.ruleWhen }) }
         : null,
+    ...(s.vatRate !== null && s.vatRate !== 12 ? { vatRate: s.vatRate } : {}),
+    ...(s.seniorVatFirst ? {} : { seniorVatFirst: false }),
   };
 }
 
@@ -73,7 +98,7 @@ export function rulesFrom(s: PricingState): PricingRules {
 export async function getPricingRules(tenantId: string): Promise<PricingRules> {
   try {
     const [state, planCode] = await Promise.all([getPricingState(tenantId), getTenantPlanCode(tenantId)]);
-    if (state.roundingStep === null && !state.ruleEnabled) return NO_PRICING;
+    if (state.roundingStep === null && !state.ruleEnabled && !vatChanged(state)) return NO_PRICING;
     if (!(await hasFeature(planCode, "receiptDesigner"))) return NO_PRICING;
     return rulesFrom(state);
   } catch {
@@ -110,6 +135,16 @@ export function cleanPricingState(input: Partial<PricingState>, current: Pricing
       maxTotal: maxTotal === null ? null : Math.round(maxTotal * 100) / 100,
     };
   }
+  if (input.vatRate !== undefined) {
+    if (input.vatRate === null) next.vatRate = null;
+    else {
+      const rate = Number(input.vatRate);
+      if (!Number.isFinite(rate) || rate < 0 || rate > MAX_VAT_RATE) return { error: `VAT rate: enter 0 to ${MAX_VAT_RATE}%.` };
+      const r = Math.round(rate * 100) / 100;
+      next.vatRate = r === 12 ? null : r;
+    }
+  }
+  if (input.seniorVatFirst !== undefined) next.seniorVatFirst = Boolean(input.seniorVatFirst);
   if (next.ruleEnabled) {
     const problem = ruleError(next.ruleExpr);
     if (problem) return { error: `Formula: ${problem}` };
@@ -128,6 +163,9 @@ export function describePricingChange(before: PricingState, after: PricingState)
   else if (after.ruleEnabled && (before.ruleExpr !== after.ruleExpr || before.ruleLabel !== after.ruleLabel))
     parts.push(`Price formula: ${after.ruleLabel} = ${after.ruleExpr}`);
   if (after.ruleEnabled && !sameWhen(before.ruleWhen, after.ruleWhen)) parts.push(`Formula applies to ${describeWhen(after.ruleWhen) || "every sale"}`);
+  if (before.vatRate !== after.vatRate) parts.push(`VAT rate: ${before.vatRate ?? 12}% → ${after.vatRate ?? 12}%`);
+  if (before.seniorVatFirst !== after.seniorVatFirst)
+    parts.push(after.seniorVatFirst ? "Senior/PWD: VAT taken off first again (as the law requires)" : "Senior/PWD: VAT no longer taken off first");
   return parts.join(" · ") || "No change";
 }
 

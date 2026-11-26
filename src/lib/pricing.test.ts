@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { calculateVatInclusiveTotals } from "@/lib/vat-calculations";
-import { applyPricing, NO_PRICING, ruleError, type PricingRules, type RuleWhen } from "./pricing";
+import { applyPricing, NO_PRICING, ruleError, vatOptions, type PricingRules, type RuleWhen } from "./pricing";
 import { buildComputationLines, generateReceiptHTML, generateThermalReceiptText } from "@/lib/receipt";
 import type { ReceiptData } from "@/types/receipt";
 
@@ -183,4 +183,51 @@ test("formula may only use values known before payment", () => {
   assert.match(ruleError("cash") ?? "", /isn't known/);
   assert.match(ruleError("total +") ?? "", /ends too early/);
   assert.match(ruleError("") ?? "", /Type/);
+});
+
+test("VAT settings: 12% gives today's exact numbers; another rate splits and removes VAT at that rate", () => {
+  for (let i = 0; i < 20_000; i++) {
+    const c = cart();
+    const d = DISCOUNTS[i % DISCOUNTS.length];
+    const input = { vatableTotal: Number((c.totals.vatableGross).toFixed(2)), nonVatableTotal: Number((c.totals.nonVatableGross).toFixed(2)), ...d };
+    assert.deepEqual(calculateVatInclusiveTotals({ ...input, vatRate: 12 }), calculateVatInclusiveTotals(input), "explicit 12% = default");
+    const t = calculateVatInclusiveTotals({ ...input, vatRate: 10 });
+    if (t.vatRemovedFromVatable > 0) {
+      assert.equal(t.vatExemptSales, Number((input.vatableTotal / 1.1).toFixed(2)), "Senior/PWD: price without VAT at 10%");
+      assert.equal(t.vatAmount, 0);
+    } else {
+      assert.equal(t.vatAmount, Number(((input.vatableTotal - t.vatableDiscountAmount) * (10 / 110)).toFixed(2)), "VAT inside at 10%");
+    }
+    assert.equal(Number((t.vatableSales + t.vatAmount + t.nonVatableSales).toFixed(2)), t.finalTotal, "parts add up");
+  }
+});
+
+test("Senior/PWD VAT setting: on by default (the law); off computes it like any 20% discount with VAT", () => {
+  const sc = { code: "SENIOR", vatExempt: true };
+  assert.deepEqual(vatOptions(NO_PRICING, sc), { vatRate: 12, vatExempt: true });
+  assert.deepEqual(vatOptions({ ...NO_PRICING, seniorVatFirst: false }, sc), { vatRate: 12, vatExempt: false });
+  assert.deepEqual(vatOptions({ ...NO_PRICING, seniorVatFirst: false }, { code: "EX5", vatExempt: true }), { vatRate: 12, vatExempt: true }, "own VAT-exempt discounts keep their setting");
+  assert.deepEqual(vatOptions({ ...NO_PRICING, vatRate: 10 }, null), { vatRate: 10, vatExempt: false });
+  const off = calculateVatInclusiveTotals({ vatableTotal: 373, nonVatableTotal: 32.5, discountType: "SENIOR", discountPercent: 20, vatExempt: false });
+  assert.equal(off.vatRemovedFromVatable, 0);
+  assert.equal(off.finalTotal, Number((405.5 - 74.6 - 6.5).toFixed(2)), "20% off the shelf prices");
+});
+
+test("cash rounding recomputes VAT at the owner's rate", () => {
+  const t = calculateVatInclusiveTotals({ vatableTotal: 448.15, nonVatableTotal: 100, vatRate: 10 });
+  const r = applyPricing(t, { exemptSale: false, paymentMethod: "CASH", items: [{ quantity: 1 }] }, { roundingStep: 0.25, rule: null, vatRate: 10 });
+  assert.equal(r.totals.finalTotal, 548);
+  assert.equal(parts(r.totals), 548);
+  const vatable = Number((r.totals.vatableSales + r.totals.vatAmount).toFixed(2));
+  assert.equal(r.totals.vatAmount, Number((vatable * (10 / 110)).toFixed(2)));
+});
+
+test("receipts say the sale's own VAT rate", () => {
+  const t = calculateVatInclusiveTotals({ vatableTotal: 110, nonVatableTotal: 0, vatRate: 10 });
+  const data = {
+    subtotal: t.subtotal, vatableSales: t.vatableSales, nonVatableSales: t.nonVatableSales, taxAmount: t.vatAmount, discountAmount: 0, totalAmount: t.finalTotal,
+    vatableGross: t.vatableGross, nonVatableGross: 0, vatableDiscountAmount: 0, nonVatableDiscountAmount: 0, vatRemovedFromVatable: 0, discountType: "NONE", vatRate: 10,
+  } as unknown as ReceiptData;
+  assert.ok(buildComputationLines(data).some((l) => l.label === "Less: VAT (10%)" && l.amount === -10));
+  assert.ok(buildComputationLines({ ...data, vatRate: 12 }).some((l) => l.label === "Less: VAT (12%)"));
 });
